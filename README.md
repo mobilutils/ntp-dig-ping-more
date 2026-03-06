@@ -1,6 +1,6 @@
 # Network Utilities Checker
 
-A modern Android app for network diagnostics, providing **NTP reachability testing**, **DNS lookup (DIG)**, and **Ping**.
+A modern Android app for network diagnostics, providing **NTP reachability testing**, **DNS lookup (DIG)**, **Ping**, and **Traceroute**.
 
 ## Visuals
 
@@ -50,6 +50,19 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
   - ❌ No reply received
 - Last 5 pinged hosts kept as clickable history (persisted across app restarts)
 
+### 🛤 Traceroute
+- Enter any hostname or IP address
+- Tap **Traceroute** to start — button turns red and becomes **Stop** while running
+- Output streams live hop-by-hop in a scrolling monospace terminal card
+- Implemented via `ping -c 1 -t <TTL>` probing (no `traceroute` binary required)
+- Each hop that responds with ICMP Time Exceeded reveals its IP and round-trip time
+- Probes up to 30 hops; stops automatically when the destination replies
+- History icon reflects the outcome:
+  - ✅ Destination reached (all or most hops replied)
+  - 🤷‍♂️ Some hops replied but destination not reached
+  - ❌ No hop replied at all
+- Last 5 traced hosts kept as clickable history (persisted across app restarts)
+
 ## Stack
 
 | Layer | Technology |
@@ -61,7 +74,7 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 | Concurrency | Kotlin Coroutines (`Dispatchers.IO`) |
 | NTP | Apache Commons Net 3.11.1 (`NTPUDPClient`) |
 | DNS | dnsjava 3.6.2 (`SimpleResolver`) |
-| Persistence | AndroidX DataStore (NTP & Ping history) |
+| Persistence | AndroidX DataStore (NTP, Ping & Traceroute history) |
 | Min SDK | 26 (Android 8.0) |
 | Target SDK | 35 (Android 15) |
 
@@ -79,6 +92,9 @@ app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ├── PingScreen.kt            # Ping screen composable
 ├── PingViewModel.kt         # Ping UI state, process lifecycle, three-state status
 ├── PingHistoryStore.kt      # DataStore persistence for Ping history
+├── TracerouteScreen.kt      # Traceroute screen composable
+├── TracerouteViewModel.kt   # TTL-probing traceroute via ping, hop parsing, status
+├── TracerouteHistoryStore.kt# DataStore persistence for Traceroute history
 └── ui/theme/                # Material 3 colors, typography, theme
 ```
 
