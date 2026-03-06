@@ -4,9 +4,12 @@ A modern Android app for network diagnostics, providing **NTP reachability testi
 
 ## Visuals
 
-| Success | DNS Failure | Timeout |
+| NTP Check| DIG | PING |
 |---|---|---|
-|![Screenshot OK](screenshots/v2.0/20260303_v2.0_Screenshot_HISTORY_232632.png)|![Screenshot DNS FAILURE](screenshots/v2.0/20260303_v2.0_Screenshot_TIMEOUT_232710.png)|![Screenshot TIMEOUT](screenshots/v2.0/20260303_v2.0_Screenshot-DNS-KO_232646.png)|
+|![NTP](screenshots/v2.1/Screenshot_NTPCheck_20260306_202239.png)|![DIG](screenshots/v2.1/Screenshot_DIG_20260306_202247.png)|![PING](screenshots/v2.1/Screenshot_PING_20260306_202252.png)|
+|Port Scanner|Traceroute| |
+|![Port Scanner](screenshots/v2.1/Screenshot_PortScan_20260306_202259.png)|![Traceroute](screenshots/v2.1/Screenshot_Traceroute_20260306_202256.png)| |
+
 
 ## Features
 
@@ -63,6 +66,14 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
   - ❌ No hop replied at all
 - Last 5 traced hosts kept as clickable history (persisted across app restarts)
 
+### 🕵️ Port Scanner
+- Check which TCP or UDP ports are open on a specific IP or hostname
+- Define custom start and end port ranges
+- Select between TCP or UDP scanning protocols
+- Live progress bar and dynamically updating list of discovered open ports
+- Concurrently scans ports to ensure high performance
+- Last 5 scans kept as clickable history (persisted across app restarts)
+
 ## Stack
 
 | Layer | Technology |
@@ -95,6 +106,9 @@ app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ├── TracerouteScreen.kt      # Traceroute screen composable
 ├── TracerouteViewModel.kt   # TTL-probing traceroute via ping, hop parsing, status
 ├── TracerouteHistoryStore.kt# DataStore persistence for Traceroute history
+├── PortScannerScreen.kt     # Port Scanner screen composable
+├── PortScannerViewModel.kt  # Port Scanner UI state, concurrent scanning logic
+├── PortScannerHistoryStore.kt# DataStore persistence for Port Scanner history
 └── ui/theme/                # Material 3 colors, typography, theme
 ```
 
