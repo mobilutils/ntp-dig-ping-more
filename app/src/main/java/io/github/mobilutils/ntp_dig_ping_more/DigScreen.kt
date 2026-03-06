@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -42,6 +44,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -56,9 +59,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun DigScreen(
-    viewModel: DigViewModel = viewModel(),
-) {
+fun DigScreen() {
+    val context = LocalContext.current
+    val viewModel: DigViewModel = viewModel(factory = DigViewModel.factory(context))
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
 
@@ -153,6 +156,114 @@ fun DigScreen(
         ) {
             uiState.result?.let { DigResultCard(it) }
         }
+
+        // ── Dig History ───────────────────────────────────────────────────────
+        AnimatedVisibility(
+            visible = uiState.history.isNotEmpty(),
+            enter = fadeIn(tween(400)),
+            exit = fadeOut(tween(200)),
+        ) {
+            DigHistorySection(
+                entries = uiState.history,
+                onEntryClick = { entry ->
+                    focusManager.clearFocus()
+                    viewModel.selectHistoryEntry(entry)
+                },
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// History section composables
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun DigHistorySection(
+    entries: List<DigHistoryEntry>,
+    onEntryClick: (DigHistoryEntry) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = "Recent DIG Queries",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f))
+
+            entries.forEachIndexed { index, entry ->
+                if (index > 0) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.10f))
+                }
+                DigHistoryRow(entry = entry, onClick = { onEntryClick(entry) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun DigHistoryRow(entry: DigHistoryEntry, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = entry.timestamp,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // Show DNS server only when it was specified
+            if (entry.dnsServer.isNotBlank()) {
+                Text(
+                    text = "\t@${entry.dnsServer}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = "\t${entry.fqdn}",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = when (entry.status) {
+                DigStatus.SUCCESS -> "✅"
+                DigStatus.FAILED  -> "❌"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 
