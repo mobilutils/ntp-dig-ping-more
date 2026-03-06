@@ -1,6 +1,6 @@
 # Network Utilities Checker
 
-A modern Android app for network diagnostics, currently providing **NTP reachability testing** and **DNS lookup (DIG)**.
+A modern Android app for network diagnostics, providing **NTP reachability testing**, **DNS lookup (DIG)**, and **Ping**.
 
 ## Visuals
 
@@ -39,6 +39,17 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 - Full CNAME chain resolution included
 - Graceful error handling: NXDOMAIN, resolver unreachable, no network
 
+### 📡 Ping
+- Enter any hostname or IP address
+- Tap **Ping** to start — button turns red and becomes **Stop** while running
+- Output streams live in a scrolling monospace terminal card
+- Sends up to 100 ICMP packets (`ping -c 100`); can be stopped at any time
+- History icon reflects the outcome:
+  - ✅ All packets went through
+  - 🤷‍♂️ At least one succeeded but some were lost
+  - ❌ No reply received
+- Last 5 pinged hosts kept as clickable history (persisted across app restarts)
+
 ## Stack
 
 | Layer | Technology |
@@ -50,7 +61,7 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 | Concurrency | Kotlin Coroutines (`Dispatchers.IO`) |
 | NTP | Apache Commons Net 3.11.1 (`NTPUDPClient`) |
 | DNS | dnsjava 3.6.2 (`SimpleResolver`) |
-| Persistence | AndroidX DataStore (NTP history) |
+| Persistence | AndroidX DataStore (NTP & Ping history) |
 | Min SDK | 26 (Android 8.0) |
 | Target SDK | 35 (Android 15) |
 
@@ -65,6 +76,9 @@ app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ├── DigScreen.kt             # DIG test screen composable
 ├── DigViewModel.kt          # DIG UI state, delegates to DigRepository
 ├── DigRepository.kt         # DNS resolution via dnsjava SimpleResolver
+├── PingScreen.kt            # Ping screen composable
+├── PingViewModel.kt         # Ping UI state, process lifecycle, three-state status
+├── PingHistoryStore.kt      # DataStore persistence for Ping history
 └── ui/theme/                # Material 3 colors, typography, theme
 ```
 

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -82,9 +83,10 @@ sealed class AppScreen(
 ) {
     object NtpCheck : AppScreen("ntp_check", "NTP Check", Icons.Filled.NetworkCheck)
     object DigTest  : AppScreen("dig_test",  "DIG Test",  Icons.Filled.Dns)
+    object Ping     : AppScreen("ping",      "Ping",      Icons.Filled.Terminal)
 }
 
-private val bottomNavItems = listOf(AppScreen.NtpCheck, AppScreen.DigTest)
+private val bottomNavItems = listOf(AppScreen.NtpCheck, AppScreen.DigTest, AppScreen.Ping)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Activity
@@ -177,6 +179,9 @@ fun AppRoot() {
             }
             composable(AppScreen.DigTest.route) {
                 DigScreen()
+            }
+            composable(AppScreen.Ping.route) {
+                PingScreen()
             }
         }
     }
