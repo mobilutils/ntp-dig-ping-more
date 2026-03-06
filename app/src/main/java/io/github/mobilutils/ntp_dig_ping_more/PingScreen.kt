@@ -11,12 +11,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -42,15 +44,50 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scrollbar helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Draws a thin vertical scrollbar on the right edge of the composable,
+ * derived from [scrollState].
+ */
+private fun Modifier.verticalScrollbar(
+    scrollState: androidx.compose.foundation.ScrollState,
+    width: Dp = 4.dp,
+    color: Color = Color.Gray.copy(alpha = 0.5f),
+): Modifier = this.drawWithContent {
+    drawContent()
+    val contentHeight = scrollState.maxValue.toFloat() + size.height
+    if (contentHeight <= size.height) return@drawWithContent   // nothing to scroll
+
+    val thumbHeightPx = (size.height / contentHeight) * size.height
+    val thumbTopPx    = (scrollState.value.toFloat() / contentHeight) * size.height
+    val barWidth      = width.toPx()
+
+    drawRoundRect(
+        color        = color,
+        topLeft      = Offset(size.width - barWidth, thumbTopPx),
+        size         = Size(barWidth, thumbHeightPx),
+        cornerRadius = CornerRadius(barWidth / 2),
+    )
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Ping screen
@@ -63,20 +100,20 @@ fun PingScreen() {
     val uiState by vm.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
 
-    // Auto-scroll to bottom as new output lines arrive
-    val scrollState = rememberScrollState()
+    // Separate scroll state just for the output area
+    val outputScrollState = rememberScrollState()
     LaunchedEffect(uiState.outputLines.size) {
-        scrollState.animateScrollTo(scrollState.maxValue)
+        outputScrollState.animateScrollTo(outputScrollState.maxValue)
     }
 
+    // ── Outer column: no scroll — input+button pinned, output gets remaining space
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 20.dp)
-            .verticalScroll(scrollState),
+            .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // ── Hostname field ────────────────────────────────────────────
+        // ── Hostname field (always visible) ───────────────────────────
         OutlinedTextField(
             value = uiState.host,
             onValueChange = vm::onHostChange,
@@ -97,7 +134,7 @@ fun PingScreen() {
             enabled = !uiState.isRunning,
         )
 
-        // ── Ping / Stop button ────────────────────────────────────────
+        // ── Ping / Stop button (always visible) ───────────────────────
         Button(
             onClick = {
                 focusManager.clearFocus()
@@ -138,14 +175,15 @@ fun PingScreen() {
             }
         }
 
-        // ── Output terminal card ──────────────────────────────────────
+        // ── Output terminal card (weight(1f) = fills all remaining space)
         AnimatedVisibility(
             visible = uiState.outputLines.isNotEmpty(),
+            modifier = Modifier.weight(1f),
             enter = fadeIn(tween(300)),
             exit = fadeOut(tween(200)),
         ) {
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxSize(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -154,14 +192,21 @@ fun PingScreen() {
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .fillMaxSize()
                         .background(
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
                             shape = RoundedCornerShape(12.dp),
-                        )
-                        .padding(14.dp),
+                        ),
                 ) {
-                    Column {
+                    // Scrollable output content
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(end = 10.dp)          // room for scrollbar
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .verticalScroll(outputScrollState)
+                            .verticalScrollbar(outputScrollState),
+                    ) {
                         uiState.outputLines.forEach { line ->
                             Text(
                                 text = line,
@@ -178,7 +223,7 @@ fun PingScreen() {
             }
         }
 
-        // ── Ping History ──────────────────────────────────────────────
+        // ── Ping History (below the output, always at the bottom) ─────
         AnimatedVisibility(
             visible = uiState.history.isNotEmpty(),
             enter = fadeIn(tween(400)),
