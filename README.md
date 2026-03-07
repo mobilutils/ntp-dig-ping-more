@@ -8,7 +8,7 @@ A modern Android app for network diagnostics, providing **NTP reachability testi
 |---|---|---|
 |![NTP](screenshots/v2.1/Screenshot_NTPCheck_20260306_202239.png)|![DIG](screenshots/v2.1/Screenshot_DIG_20260306_202247.png)|![PING](screenshots/v2.1/Screenshot_PING_20260306_202252.png)|
 |Port Scanner|Traceroute| |
-|![Port Scanner](screenshots/v2.1/Screenshot_PortScan_20260306_202259.png)|![Traceroute](screenshots/v2.1/Screenshot_Traceroute_20260306_202256.png)| |
+|![Port Scanner](screenshots/v2.1/Screenshot_PortScan_20260306_202259.png)|![Traceroute](screenshots/v2.1/Screenshot_traceroute_20260306_202256.png)| ![LAN Scanner](screenshots/v2.1/Screenshot_20260307_080619.png)|
 
 
 ## Features
@@ -74,6 +74,14 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 - Concurrently scans ports to ensure high performance
 - Last 5 scans kept as clickable history (persisted across app restarts)
 
+### 🖥️ LAN Scanner
+- Discover active devices on your local Wi-Fi or Ethernet subnet
+- Custom scanning ranges with pre-populated values for your current subnet
+- Quick Scan (common IPs) or Full Scan (custom range sweep)
+- Live list updating with IP, Hostname, MAC address, and latency (ms) for each discovered device
+- Tracks scan progress with a stop/cancel capability
+- History of past scans persisted across app restarts
+
 ## Stack
 
 | Layer | Technology |
@@ -109,6 +117,10 @@ app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ├── PortScannerScreen.kt     # Port Scanner screen composable
 ├── PortScannerViewModel.kt  # Port Scanner UI state, concurrent scanning logic
 ├── PortScannerHistoryStore.kt# DataStore persistence for Port Scanner history
+├── LanScannerScreen.kt      # LAN Scanner screen composable
+├── LanScannerViewModel.kt   # LAN Scanner UI state, concurrent ping/ARP sweep
+├── LanScannerRepository.kt  # Networking logic, subnet detection, ARP parsing
+├── LanScannerHistoryStore.kt# DataStore persistence for LAN Scanner history
 └── ui/theme/                # Material 3 colors, typography, theme
 ```
 
@@ -141,9 +153,10 @@ adb shell am start -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
 
 ```xml
 <uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 ```
 
-Only `INTERNET` is required. No location, storage, or other sensitive permissions are used.
+Only `INTERNET` and `ACCESS_NETWORK_STATE` are required. No location, storage, or other sensitive permissions are used.
 
 ## Error States
 
