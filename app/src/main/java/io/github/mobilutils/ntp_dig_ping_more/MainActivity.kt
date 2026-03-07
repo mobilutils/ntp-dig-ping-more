@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material.icons.filled.WifiFind
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -88,6 +89,7 @@ sealed class AppScreen(
     object Ping        : AppScreen("ping",        "Ping",       Icons.Filled.Terminal)
     object Traceroute  : AppScreen("traceroute",  "Traceroute", Icons.Filled.Route)
     object PortScanner : AppScreen("port_scanner", "Port Scan", Icons.Filled.Search)
+    object LanScanner  : AppScreen("lan_scanner", "LAN Scan",   Icons.Filled.WifiFind)
 }
 
 private val bottomNavItems = listOf(
@@ -96,6 +98,7 @@ private val bottomNavItems = listOf(
     AppScreen.Ping,
     AppScreen.Traceroute,
     AppScreen.PortScanner,
+    AppScreen.LanScanner,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -198,6 +201,9 @@ fun AppRoot() {
             }
             composable(AppScreen.PortScanner.route) {
                 PortScannerScreen()
+            }
+            composable(AppScreen.LanScanner.route) {
+                LanScannerScreen()
             }
         }
     }
