@@ -6,9 +6,11 @@ A modern Android app for network diagnostics, providing **NTP reachability testi
 
 | NTP Check| DIG | PING |
 |---|---|---|
-|![NTP](screenshots/v2.1/Screenshot_NTPCheck_20260306_202239.png)|![DIG](screenshots/v2.1/Screenshot_DIG_20260306_202247.png)|![PING](screenshots/v2.1/Screenshot_PING_20260306_202252.png)|
+|![NTP](screenshots/v2.2/Screenshot_20260307_123547.png)|![DIG](screenshots/v2.2/Screenshot_20260307_123659.png)|![PING](screenshots/v2.2/Screenshot_20260307_123719.png)|
 |Port Scanner|Traceroute| |
-|![Port Scanner](screenshots/v2.1/Screenshot_PortScan_20260306_202259.png)|![Traceroute](screenshots/v2.1/Screenshot_traceroute_20260306_202256.png)| ![LAN Scanner](screenshots/v2.1/Screenshot_20260307_080619.png)|
+|![Port Scanner](screenshots/v2.2/Screenshot_20260307_125815.png)|![Traceroute](screenshots/v2.2/Screenshot_20260307_123802.png)| ![LAN Scanner](screenshots/v2.2/Screenshot_20260307_130032.png)|
+| Overlay menu (MORE)| | |
+|![Overlay menu](screenshots/v2.2/Screenshot_20260307_123727.png)| | |
 
 
 ## Features
@@ -102,6 +104,7 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 ```
 app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ├── MainActivity.kt          # NavHost, bottom navigation bar, NTP screen UI
+├── MoreToolsScreen.kt       # Overflow screen for Traceroute, Port Scanner, LAN Scanner
 ├── NtpRepository.kt         # NTP network I/O (NTPUDPClient, sealed NtpResult)
 ├── NtpViewModel.kt          # NTP UI state (StateFlow<NtpUiState>), coroutine lifecycle
 ├── NtpHistoryStore.kt       # DataStore persistence for NTP query history

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Search
@@ -90,15 +91,24 @@ sealed class AppScreen(
     object Traceroute  : AppScreen("traceroute",  "Traceroute", Icons.Filled.Route)
     object PortScanner : AppScreen("port_scanner", "Port Scan", Icons.Filled.Search)
     object LanScanner  : AppScreen("lan_scanner", "LAN Scan",   Icons.Filled.WifiFind)
+    object MoreTools   : AppScreen("more_tools",  "More",       Icons.Filled.MoreHoriz)
 }
 
-private val bottomNavItems = listOf(
+private val allAppScreens = listOf(
     AppScreen.NtpCheck,
     AppScreen.DigTest,
     AppScreen.Ping,
     AppScreen.Traceroute,
     AppScreen.PortScanner,
     AppScreen.LanScanner,
+    AppScreen.MoreTools,
+)
+
+private val bottomNavItems = listOf(
+    AppScreen.NtpCheck,
+    AppScreen.DigTest,
+    AppScreen.Ping,
+    AppScreen.MoreTools,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -130,7 +140,7 @@ fun AppRoot() {
     val currentDest = navBackStackEntry?.destination
 
     // Derive the current screen for the top bar title
-    val currentScreen = bottomNavItems.firstOrNull { screen ->
+    val currentScreen = allAppScreens.firstOrNull { screen ->
         currentDest?.hierarchy?.any { it.route == screen.route } == true
     } ?: AppScreen.NtpCheck
 
@@ -157,7 +167,13 @@ fun AppRoot() {
         bottomBar = {
             NavigationBar {
                 bottomNavItems.forEach { screen ->
-                    val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true
+                    val isMoreToolsSelected = screen == AppScreen.MoreTools && currentDest?.route in listOf(
+                        AppScreen.Traceroute.route,
+                        AppScreen.PortScanner.route,
+                        AppScreen.LanScanner.route,
+                        AppScreen.MoreTools.route
+                    )
+                    val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true || isMoreToolsSelected
                     NavigationBarItem(
                         icon = {
                             Icon(
@@ -168,13 +184,18 @@ fun AppRoot() {
                         label = { Text(screen.label) },
                         selected = selected,
                         onClick = {
-                            navController.navigate(screen.route) {
-                                // Avoid building up a large back-stack
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                            if (selected) {
+                                // If clicking the already selected tab, act like a "pop to root" of that tab
+                                navController.popBackStack(screen.route, inclusive = false)
+                            } else {
+                                navController.navigate(screen.route) {
+                                    // Avoid building up a large back-stack
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
                         },
                     )
@@ -204,6 +225,16 @@ fun AppRoot() {
             }
             composable(AppScreen.LanScanner.route) {
                 LanScannerScreen()
+            }
+            composable(AppScreen.MoreTools.route) {
+                MoreToolsScreen(
+                    onNavigate = { route ->
+                        navController.navigate(route) {
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
             }
         }
     }
