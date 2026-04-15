@@ -1,6 +1,6 @@
 # Network Utilities Checker
 
-A modern Android app for network diagnostics, providing **NTP reachability testing**, **DNS lookup (DIG)**, **Ping**, and **Traceroute**.
+A modern Android app for network diagnostics: **NTP reachability testing**, **DNS lookup (DIG)**, **Ping**, **Traceroute**, **Port Scanner**, **LAN Scanner**, and **Google Time Sync**.
 
 ## Visuals
 
@@ -84,6 +84,18 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 - Tracks scan progress with a stop/cancel capability
 - History of past scans persisted across app restarts
 
+### 🌐 Google Time Sync
+- Queries `http://clients2.google.com/time/1/current` over HTTP and parses Google's time response
+- Strips the `)]}'` XSSI protection prefix before JSON parsing
+- Computes full NTP-style time synchronisation metrics:
+  - 📡 **RTT** — round-trip time (T4 − T1)
+  - ⏱ **Clock Offset** — `correctedServerTime − T4` (positive = local clock behind, negative = ahead)
+  - 🧮 **Corrected Server Time** — `serverTime + RTT / 2`
+- Color-coded offset indicator: 🟢 < 100 ms · 🟠 < 500 ms · 🔴 ≥ 500 ms
+- Custom host field (defaults to `clients2.google.com`)
+- One-tap **Copy Offset** button for manual clock-adjustment workflows
+- Idle / Loading / Success / Error states survive rotation and config changes
+
 ## Stack
 
 | Layer | Technology |
@@ -103,28 +115,31 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 
 ```
 app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
-├── MainActivity.kt          # NavHost, bottom navigation bar, NTP screen UI
-├── MoreToolsScreen.kt       # Overflow screen for Traceroute, Port Scanner, LAN Scanner
-├── NtpRepository.kt         # NTP network I/O (NTPUDPClient, sealed NtpResult)
-├── NtpViewModel.kt          # NTP UI state (StateFlow<NtpUiState>), coroutine lifecycle
-├── NtpHistoryStore.kt       # DataStore persistence for NTP query history
-├── DigScreen.kt             # DIG test screen composable
-├── DigViewModel.kt          # DIG UI state, delegates to DigRepository
-├── DigRepository.kt         # DNS resolution via dnsjava SimpleResolver
-├── PingScreen.kt            # Ping screen composable
-├── PingViewModel.kt         # Ping UI state, process lifecycle, three-state status
-├── PingHistoryStore.kt      # DataStore persistence for Ping history
-├── TracerouteScreen.kt      # Traceroute screen composable
-├── TracerouteViewModel.kt   # TTL-probing traceroute via ping, hop parsing, status
-├── TracerouteHistoryStore.kt# DataStore persistence for Traceroute history
-├── PortScannerScreen.kt     # Port Scanner screen composable
-├── PortScannerViewModel.kt  # Port Scanner UI state, concurrent scanning logic
-├── PortScannerHistoryStore.kt# DataStore persistence for Port Scanner history
-├── LanScannerScreen.kt      # LAN Scanner screen composable
-├── LanScannerViewModel.kt   # LAN Scanner UI state, concurrent ping/ARP sweep
-├── LanScannerRepository.kt  # Networking logic, subnet detection, ARP parsing
-├── LanScannerHistoryStore.kt# DataStore persistence for LAN Scanner history
-└── ui/theme/                # Material 3 colors, typography, theme
+├── MainActivity.kt              # NavHost, bottom navigation bar, NTP screen UI
+├── MoreToolsScreen.kt           # Overflow screen: Traceroute, Port Scanner, LAN Scanner, Google Time Sync
+├── NtpRepository.kt             # NTP network I/O (NTPUDPClient, sealed NtpResult)
+├── NtpViewModel.kt              # NTP UI state (StateFlow<NtpUiState>), coroutine lifecycle
+├── NtpHistoryStore.kt           # DataStore persistence for NTP query history
+├── DigScreen.kt                 # DIG test screen composable
+├── DigViewModel.kt              # DIG UI state, delegates to DigRepository
+├── DigRepository.kt             # DNS resolution via dnsjava SimpleResolver
+├── PingScreen.kt                # Ping screen composable
+├── PingViewModel.kt             # Ping UI state, process lifecycle, three-state status
+├── PingHistoryStore.kt          # DataStore persistence for Ping history
+├── TracerouteScreen.kt          # Traceroute screen composable
+├── TracerouteViewModel.kt       # TTL-probing traceroute via ping, hop parsing, status
+├── TracerouteHistoryStore.kt    # DataStore persistence for Traceroute history
+├── PortScannerScreen.kt         # Port Scanner screen composable
+├── PortScannerViewModel.kt      # Port Scanner UI state, concurrent scanning logic
+├── PortScannerHistoryStore.kt   # DataStore persistence for Port Scanner history
+├── LanScannerScreen.kt          # LAN Scanner screen composable
+├── LanScannerViewModel.kt       # LAN Scanner UI state, concurrent ping/ARP sweep
+├── LanScannerRepository.kt      # Networking logic, subnet detection, ARP parsing
+├── LanScannerHistoryStore.kt    # DataStore persistence for LAN Scanner history
+├── GoogleTimeSyncRepository.kt  # HTTP fetch, XSSI strip, JSON parse, T1/T4 offset calc
+├── GoogleTimeSyncViewModel.kt   # Idle/Loading/Success/Error StateFlow, syncTime() & reset()
+├── GoogleTimeSyncScreen.kt      # Google Time Sync screen composable
+└── ui/theme/                    # Material 3 colors, typography, theme
 ```
 
 ## Requirements
@@ -161,14 +176,18 @@ adb shell am start -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
 
 Only `INTERNET` and `ACCESS_NETWORK_STATE` are required. No location, storage, or other sensitive permissions are used.
 
+> **Note:** `android:usesCleartextTraffic="true"` is set in `AndroidManifest.xml` because the Google Time Sync endpoint (`http://clients2.google.com/time/1/current`) is served over plain HTTP. All other features use HTTPS or non-HTTP protocols (UDP/ICMP/TCP sockets).
+
 ## Error States
 
 | Error | Cause |
 |---|---|
 | DNS Failure | Hostname could not be resolved |
 | NXDOMAIN | Queried name does not exist |
-| Timeout | Server did not respond within 5 seconds |
+| Timeout | Server did not respond within the timeout window |
 | No Network | Device has no active internet connection |
+| HTTP Error | Non-200 response from the Google Time endpoint |
+| Parse Error | Response body missing XSSI prefix or invalid JSON |
 | Error | Any other unexpected exception |
 
 ## License

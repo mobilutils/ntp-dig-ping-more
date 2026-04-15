@@ -19,7 +19,8 @@ fun MoreToolsScreen(
     val extraTools = listOf(
         AppScreen.Traceroute,
         AppScreen.PortScanner,
-        AppScreen.LanScanner
+        AppScreen.LanScanner,
+        AppScreen.GoogleTimeSync,
     )
 
     LazyColumn(
