@@ -21,6 +21,7 @@ fun MoreToolsScreen(
         AppScreen.PortScanner,
         AppScreen.LanScanner,
         AppScreen.GoogleTimeSync,
+        AppScreen.HttpsCert,
     )
 
     LazyColumn(

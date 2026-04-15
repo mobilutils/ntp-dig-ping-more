@@ -26,18 +26,19 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.WifiOff
-import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.WifiFind
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -93,6 +94,7 @@ sealed class AppScreen(
     object PortScanner : AppScreen("port_scanner", "Port Scan", Icons.Filled.Search)
     object LanScanner     : AppScreen("lan_scanner",      "LAN Scan",         Icons.Filled.WifiFind)
     object GoogleTimeSync : AppScreen("google_time_sync", "Google Time Sync", Icons.Filled.AccessTime)
+    object HttpsCert      : AppScreen("https_cert",       "HTTPS Cert",       Icons.Filled.Lock)
     object MoreTools      : AppScreen("more_tools",       "More",             Icons.Filled.MoreHoriz)
 }
 
@@ -104,6 +106,7 @@ private val allAppScreens = listOf(
     AppScreen.PortScanner,
     AppScreen.LanScanner,
     AppScreen.GoogleTimeSync,
+    AppScreen.HttpsCert,
     AppScreen.MoreTools,
 )
 
@@ -175,6 +178,7 @@ fun AppRoot() {
                         AppScreen.PortScanner.route,
                         AppScreen.LanScanner.route,
                         AppScreen.GoogleTimeSync.route,
+                        AppScreen.HttpsCert.route,
                         AppScreen.MoreTools.route
                     )
                     val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true || isMoreToolsSelected
@@ -232,6 +236,9 @@ fun AppRoot() {
             }
             composable(AppScreen.GoogleTimeSync.route) {
                 GoogleTimeSyncScreen()
+            }
+            composable(AppScreen.HttpsCert.route) {
+                HttpsCertScreen()
             }
             composable(AppScreen.MoreTools.route) {
                 MoreToolsScreen(
