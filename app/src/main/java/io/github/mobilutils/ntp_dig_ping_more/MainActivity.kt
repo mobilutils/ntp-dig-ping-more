@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.WifiFind
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -90,8 +91,9 @@ sealed class AppScreen(
     object Ping        : AppScreen("ping",        "Ping",       Icons.Filled.Terminal)
     object Traceroute  : AppScreen("traceroute",  "Traceroute", Icons.Filled.Route)
     object PortScanner : AppScreen("port_scanner", "Port Scan", Icons.Filled.Search)
-    object LanScanner  : AppScreen("lan_scanner", "LAN Scan",   Icons.Filled.WifiFind)
-    object MoreTools   : AppScreen("more_tools",  "More",       Icons.Filled.MoreHoriz)
+    object LanScanner     : AppScreen("lan_scanner",      "LAN Scan",         Icons.Filled.WifiFind)
+    object GoogleTimeSync : AppScreen("google_time_sync", "Google Time Sync", Icons.Filled.AccessTime)
+    object MoreTools      : AppScreen("more_tools",       "More",             Icons.Filled.MoreHoriz)
 }
 
 private val allAppScreens = listOf(
@@ -101,6 +103,7 @@ private val allAppScreens = listOf(
     AppScreen.Traceroute,
     AppScreen.PortScanner,
     AppScreen.LanScanner,
+    AppScreen.GoogleTimeSync,
     AppScreen.MoreTools,
 )
 
@@ -171,6 +174,7 @@ fun AppRoot() {
                         AppScreen.Traceroute.route,
                         AppScreen.PortScanner.route,
                         AppScreen.LanScanner.route,
+                        AppScreen.GoogleTimeSync.route,
                         AppScreen.MoreTools.route
                     )
                     val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true || isMoreToolsSelected
@@ -225,6 +229,9 @@ fun AppRoot() {
             }
             composable(AppScreen.LanScanner.route) {
                 LanScannerScreen()
+            }
+            composable(AppScreen.GoogleTimeSync.route) {
+                GoogleTimeSyncScreen()
             }
             composable(AppScreen.MoreTools.route) {
                 MoreToolsScreen(
