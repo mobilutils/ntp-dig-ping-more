@@ -62,7 +62,9 @@ sealed class GoogleTimeSyncResult {
 class GoogleTimeSyncRepository {
 
     companion object {
-        private const val PATH               = "/time/1/current"
+        /** Default endpoint – exposed so the ViewModel and Screen can reference
+         *  the same value without duplication. */
+        const val DEFAULT_URL        = "http://clients2.google.com/time/1/current"
         private const val CONNECT_TIMEOUT_MS = 10_000  // 10 s
         private const val READ_TIMEOUT_MS    = 15_000  // 15 s
 
@@ -74,13 +76,11 @@ class GoogleTimeSyncRepository {
      * Performs a synchronous HTTP GET on the IO dispatcher.
      * Safe to call from any coroutine scope.
      *
-     * @param host  Hostname to query (default: `clients2.google.com`).
+     * @param url  Full URL to query (default: [DEFAULT_URL]).
      */
     suspend fun fetchGoogleTime(
-        host: String = "clients2.google.com",
+        url: String = DEFAULT_URL,
     ): GoogleTimeSyncResult = withContext(Dispatchers.IO) {
-
-        val url = "http://$host$PATH"
         var connection: HttpURLConnection? = null
 
         try {
@@ -97,7 +97,7 @@ class GoogleTimeSyncRepository {
 
             val responseCode = connection.responseCode
             if (responseCode != HttpURLConnection.HTTP_OK) {
-                return@withContext GoogleTimeSyncResult.HttpError(responseCode, host)
+                return@withContext GoogleTimeSyncResult.HttpError(responseCode, url)
             }
 
             val rawBody = connection.inputStream.bufferedReader(Charsets.UTF_8).readText()
@@ -151,7 +151,7 @@ class GoogleTimeSyncRepository {
             )
 
         } catch (e: SocketTimeoutException) {
-            GoogleTimeSyncResult.Timeout(host)
+            GoogleTimeSyncResult.Timeout(url)
 
         } catch (e: IOException) {
             val msg = e.message.orEmpty()
