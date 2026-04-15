@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">NTP DIG PING MORE</string>
+
+    <!-- Google Time Sync screen -->
+    <string name="google_time_sync_title">Google Time Sync</string>
+    <string name="google_time_sync_subtitle">Query clients2.google.com for UTC time with offset calculation</string>
+    <string name="google_time_sync_button_sync">Sync Now</string>
+    <string name="google_time_sync_label_server_time">Server Time</string>
+    <string name="google_time_sync_label_rtt">Round-Trip Time</string>
+    <string name="google_time_sync_label_offset">Clock Offset</string>
+    <string name="google_time_sync_label_corrected">Corrected Time</string>
+    <string name="google_time_sync_helper">Offset = corrected server time − your device time</string>
+    <string name="google_time_sync_copy_offset">Copy Offset</string>
+    <string name="google_time_sync_copied">Copied!</string>
 </resources>
