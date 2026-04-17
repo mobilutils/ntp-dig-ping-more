@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.NetworkCheck
@@ -76,6 +77,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import io.github.mobilutils.ntp_dig_ping_more.deviceinfo.DeviceInfoScreen
 import io.github.mobilutils.ntp_dig_ping_more.ui.theme.NtpDigPingMoreTheme
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,6 +97,7 @@ sealed class AppScreen(
     object LanScanner     : AppScreen("lan_scanner",      "LAN Scan",         Icons.Filled.WifiFind)
     object GoogleTimeSync : AppScreen("google_time_sync", "Google Time Sync", Icons.Filled.AccessTime)
     object HttpsCert      : AppScreen("https_cert",       "HTTPS Cert",       Icons.Filled.Lock)
+    object DeviceInfo     : AppScreen("device_info",      "Device Info",      Icons.Filled.Info)
     object MoreTools      : AppScreen("more_tools",       "More",             Icons.Filled.MoreHoriz)
 }
 
@@ -107,6 +110,7 @@ private val allAppScreens = listOf(
     AppScreen.LanScanner,
     AppScreen.GoogleTimeSync,
     AppScreen.HttpsCert,
+    AppScreen.DeviceInfo,
     AppScreen.MoreTools,
 )
 
@@ -179,6 +183,7 @@ fun AppRoot() {
                         AppScreen.LanScanner.route,
                         AppScreen.GoogleTimeSync.route,
                         AppScreen.HttpsCert.route,
+                        AppScreen.DeviceInfo.route,
                         AppScreen.MoreTools.route
                     )
                     val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true || isMoreToolsSelected
@@ -239,6 +244,9 @@ fun AppRoot() {
             }
             composable(AppScreen.HttpsCert.route) {
                 HttpsCertScreen()
+            }
+            composable(AppScreen.DeviceInfo.route) {
+                DeviceInfoScreen()
             }
             composable(AppScreen.MoreTools.route) {
                 MoreToolsScreen(

@@ -96,6 +96,19 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 - One-tap **Copy Offset** button for manual clock-adjustment workflows
 - Idle / Loading / Success / Error states survive rotation and config changes
 
+### 📱 Device Info
+- Comprehensive read-only view of device identity, network, battery, and security
+- Displays: Device Name, IMEI, Serial Number, ICCID, Android Version, API Level, CPU Architecture
+- Current Device Time (auto-updating), Time Since Boot, Time Since Screen-Off
+- Network: IPv4/IPv6, Subnet Mask, Default Gateway, DNS Servers, NTP Server, Active Network Type
+- Wi-Fi SSID, Mobile Carrier/Operator name
+- Battery Level, Charging Status, Health
+- Total/Available RAM & Internal Storage
+- MDM/Device Policy Status (Device Owner, Profile Owner, Managed Profile, or None)
+- Installed System & User CA Certificates (subject, validity dates, type)
+- Handles Android 10+ API restrictions with clear fallback messages (e.g., "Restricted by Android 10+")
+- Runtime permission requests via `ActivityResultContracts`; rationale shown if denied
+
 ## Stack
 
 | Layer | Technology |
@@ -116,7 +129,7 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 ```
 app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ├── MainActivity.kt              # NavHost, bottom navigation bar, NTP screen UI
-├── MoreToolsScreen.kt           # Overflow screen: Traceroute, Port Scanner, LAN Scanner, Google Time Sync
+├── MoreToolsScreen.kt           # Overflow screen: Traceroute, Port Scanner, LAN Scanner, Google Time Sync, Device Info
 ├── NtpRepository.kt             # NTP network I/O (NTPUDPClient, sealed NtpResult)
 ├── NtpViewModel.kt              # NTP UI state (StateFlow<NtpUiState>), coroutine lifecycle
 ├── NtpHistoryStore.kt           # DataStore persistence for NTP query history
@@ -139,6 +152,11 @@ app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ├── GoogleTimeSyncRepository.kt  # HTTP fetch, XSSI strip, JSON parse, T1/T4 offset calc
 ├── GoogleTimeSyncViewModel.kt   # Idle/Loading/Success/Error StateFlow, syncTime() & reset()
 ├── GoogleTimeSyncScreen.kt      # Google Time Sync screen composable
+├── deviceinfo/
+│   ├── DeviceInfoModels.kt      # Data models: DeviceInfo, CertificateInfo, DeviceInfoState
+│   ├── SystemInfoRepository.kt  # System API calls: identity, network, battery, storage, MDM, certs
+│   ├── DeviceInfoViewModel.kt   # StateFlow<DeviceInfoState>, periodic updates
+│   └── DeviceInfoScreen.kt      # Compose UI: Scaffold, LazyColumn, Cards, permission handling
 └── ui/theme/                    # Material 3 colors, typography, theme
 ```
 
@@ -172,9 +190,13 @@ adb shell am start -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
 ```xml
 <uses-permission android:name="android.permission.INTERNET" />
 <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
 ```
 
-Only `INTERNET` and `ACCESS_NETWORK_STATE` are required. No location, storage, or other sensitive permissions are used.
+`INTERNET`, `ACCESS_NETWORK_STATE`, and `ACCESS_WIFI_STATE` are normal permissions (auto-granted at install). `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION`, and `READ_PHONE_STATE` are dangerous permissions requested at runtime via `ActivityResultContracts`. They are needed for Wi-Fi SSID, carrier name, IMEI, ICCID, and serial number.
 
 > **Note:** `android:usesCleartextTraffic="true"` is set in `AndroidManifest.xml` because the Google Time Sync endpoint (`http://clients2.google.com/time/1/current`) is served over plain HTTP. All other features use HTTPS or non-HTTP protocols (UDP/ICMP/TCP sockets).
 
