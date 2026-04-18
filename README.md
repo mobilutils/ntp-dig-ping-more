@@ -121,6 +121,7 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 | NTP | Apache Commons Net 3.11.1 (`NTPUDPClient`) |
 | DNS | dnsjava 3.6.2 (`SimpleResolver`) |
 | Persistence | AndroidX DataStore (NTP, Ping & Traceroute history) |
+| Testing | JUnit 4, MockK 1.13, Coroutines Test |
 | Min SDK | 26 (Android 8.0) |
 | Target SDK | 35 (Android 15) |
 
@@ -184,6 +185,20 @@ app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 # Launch on connected device
 adb shell am start -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
 ```
+
+## Testing
+
+This project includes a unit test suite (70+ tests) covering business logic, ViewModels, and data parsing.
+
+```bash
+# Run all unit tests
+./gradlew test
+
+# Run specific test class
+./gradlew test --tests "NtpViewModelTest"
+```
+
+See [TESTING.md](TESTING.md) for details.
 
 ## Permissions
 
