@@ -22,6 +22,7 @@ fun MoreToolsScreen(
         AppScreen.LanScanner,
         AppScreen.GoogleTimeSync,
         AppScreen.HttpsCert,
+        AppScreen.DeviceInfo,
     )
 
     LazyColumn(
