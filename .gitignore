@@ -38,5 +38,9 @@ captures/
 
 # ── Version control ────────────────────────────────────────────────────────────
 *.orig
+
+# -- QWEN RELATED ---------------------------------------------------------------
 .qwen/
 node_modules/
+package.json
+package-lock.json
