@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    jacoco
 }
 
 android {
@@ -25,6 +26,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            enableUnitTestCoverage = true
+            enableAndroidTestCoverage = true
         }
     }
 
@@ -53,6 +58,36 @@ android {
         }
     }
     buildToolsVersion = "36.0.0"
+}
+
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+// Add JaCoCo report task to match documentation
+tasks.register("jacocoUnitTestReport", org.gradle.testing.jacoco.tasks.JacocoReport::class) {
+    dependsOn("createDebugUnitTestCoverageReport")
+    group = "verification"
+    description = "Generate JaCoCo coverage reports"
+    
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+    }
+    
+    // Configure the execution data file
+    executionData.setFrom(fileTree("app/build/jacoco/"))
+    
+    // Configure class directories
+    classDirectories.setFrom(fileTree("app/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/"))
+    
+    // Configure source directories
+    sourceDirectories.setFrom(fileTree("app/src/main/java/"))
+}
+
+tasks.withType<Test> {
+    maxHeapSize = "2g"
+    jvmArgs("-XX:+UseG1GC")
 }
 
 dependencies {
