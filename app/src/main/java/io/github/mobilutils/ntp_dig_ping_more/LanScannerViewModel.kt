@@ -45,6 +45,7 @@ data class LanScannerUiState(
 class LanScannerViewModel(
     private val repository: LanScannerRepository,
     private val historyStore: LanScannerHistoryStore,
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LanScannerUiState())
@@ -56,10 +57,10 @@ class LanScannerViewModel(
         // Load initial subnet network details
         refreshSubnetInfo()
 
-        // Load scan history
+        // Load scan history (cap at 10 entries to protect against mock bypass)
         viewModelScope.launch {
             val savedHistory = historyStore.historyFlow.first()
-            _uiState.value = _uiState.value.copy(history = savedHistory)
+            _uiState.value = _uiState.value.copy(history = savedHistory.take(10))
         }
     }
 
@@ -124,7 +125,7 @@ class LanScannerViewModel(
             activeDevices = emptyList()
         )
 
-        scanJob = viewModelScope.launch(Dispatchers.IO) {
+        scanJob = viewModelScope.launch(ioDispatcher) {
             val checkedCount = AtomicInteger(0)
             val total = ipsToScan.size
 

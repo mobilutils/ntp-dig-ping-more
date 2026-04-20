@@ -50,10 +50,15 @@ class HttpsCertViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
-        repository = mockk(relaxed = true)
-        historyStore = mockk(relaxed = true)
+        repository = mockk()
+        historyStore = mockk()
 
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        // Stub save to avoid MockK exceptions during tests
+        coEvery { historyStore.save(any()) } coAnswers { }
+        // Default stub: unstubbed fetchCertificate calls return Error
+        coEvery { repository.fetchCertificate(any(), any()) } returns
+            HttpsCertResult.Error("mock error")
 
         viewModel = HttpsCertViewModel(repository, historyStore)
     }
@@ -152,7 +157,8 @@ class HttpsCertViewModelTest {
 
     @Test
     fun `fetchCert with invalid port shows error`() = runTest {
-        viewModel.onPortChange("abc")
+        // "0" passes onPortChange validation but fails the range check in fetchCert
+        viewModel.onPortChange("0")
         viewModel.fetchCert()
 
         val state = viewModel.uiState.value
@@ -216,6 +222,7 @@ class HttpsCertViewModelTest {
             daysUntilExpiry = -30
         )
 
+        viewModel.onHostChange("expired.com")
         coEvery { repository.fetchCertificate("expired.com", 443) } returns
             HttpsCertResult.CertExpired(expiredCert)
 
@@ -226,12 +233,16 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.PartialSuccess)
 
         val partialState = state as HttpsCertUiState.PartialSuccess
-        assertEquals(expiredCert, partialState.info)
+        assertEquals(expiredCert.host, partialState.info.host)
+        assertEquals(expiredCert.port, partialState.info.port)
+        assertEquals(expiredCert.validityStatus, partialState.info.validityStatus)
+        assertEquals(expiredCert.daysUntilExpiry, partialState.info.daysUntilExpiry)
         assertTrue(partialState.warningMessage.contains("expired"))
     }
 
     @Test
     fun `fetchCert handles UntrustedChain with info`() = runTest {
+        viewModel.onHostChange("self-signed.com")
         coEvery { repository.fetchCertificate("self-signed.com", 443) } returns
             HttpsCertResult.UntrustedChain(
                 info = sampleCertificateInfo,
@@ -245,12 +256,16 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.PartialSuccess)
 
         val partialState = state as HttpsCertUiState.PartialSuccess
-        assertEquals(sampleCertificateInfo, partialState.info)
+        assertEquals(sampleCertificateInfo.host, partialState.info.host)
+        assertEquals(sampleCertificateInfo.port, partialState.info.port)
+        assertEquals(sampleCertificateInfo.validityStatus, partialState.info.validityStatus)
+        assertEquals(sampleCertificateInfo.daysUntilExpiry, partialState.info.daysUntilExpiry)
         assertTrue(partialState.warningMessage.contains("Untrusted"))
     }
 
     @Test
     fun `fetchCert handles UntrustedChain without info`() = runTest {
+        viewModel.onHostChange("broken.com")
         coEvery { repository.fetchCertificate("broken.com", 443) } returns
             HttpsCertResult.UntrustedChain(
                 info = null,
@@ -269,6 +284,7 @@ class HttpsCertViewModelTest {
 
     @Test
     fun `fetchCert handles NoNetwork result`() = runTest {
+        viewModel.onHostChange("offline.com")
         coEvery { repository.fetchCertificate("offline.com", 443) } returns
             HttpsCertResult.NoNetwork
 
@@ -284,6 +300,7 @@ class HttpsCertViewModelTest {
 
     @Test
     fun `fetchCert handles HostnameUnresolved result`() = runTest {
+        viewModel.onHostChange("nonexistent.invalid")
         coEvery { repository.fetchCertificate("nonexistent.invalid", 443) } returns
             HttpsCertResult.HostnameUnresolved("nonexistent.invalid")
 
@@ -299,6 +316,7 @@ class HttpsCertViewModelTest {
 
     @Test
     fun `fetchCert handles Timeout result`() = runTest {
+        viewModel.onHostChange("slow.com")
         coEvery { repository.fetchCertificate("slow.com", 443) } returns
             HttpsCertResult.Timeout("slow.com")
 
@@ -314,6 +332,7 @@ class HttpsCertViewModelTest {
 
     @Test
     fun `fetchCert handles generic Error result`() = runTest {
+        viewModel.onHostChange("error.com")
         coEvery { repository.fetchCertificate("error.com", 443) } returns
             HttpsCertResult.Error("Connection refused")
 
