@@ -4,4 +4,4 @@ plugins {
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.compose) apply false
 }
-val defaultTargetSdkVersion by extra(36)
+val defaultTargetSdkVersion by extra(37)
