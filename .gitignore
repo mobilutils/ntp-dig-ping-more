@@ -39,3 +39,5 @@ captures/
 # ── Version control ────────────────────────────────────────────────────────────
 *.orig
 .qwen/
+node_modules/
+

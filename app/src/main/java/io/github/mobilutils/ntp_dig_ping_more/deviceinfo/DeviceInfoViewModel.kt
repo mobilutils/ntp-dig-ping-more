@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +30,8 @@ class DeviceInfoViewModel(
 
     /** Whether all required permissions have been granted. */
     private var permissionsGranted = true
+
+    private var periodicUpdateJob: Job? = null
 
     init {
         loadDeviceInfo()
@@ -83,7 +86,7 @@ class DeviceInfoViewModel(
      * avoiding expensive full repository re-fetches.
      */
     private fun startPeriodicUpdates() {
-        viewModelScope.launch {
+        periodicUpdateJob = viewModelScope.launch {
             while (isActive) {
                 delay(1000)
                 val currentState = _uiState.value
@@ -111,6 +114,21 @@ class DeviceInfoViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Stops the periodic update coroutine. Intended for testing.
+     */
+    internal fun stopPeriodicUpdates() {
+        periodicUpdateJob?.cancel()
+    }
+
+    /**
+     * Restarts the periodic update coroutine. Intended for testing.
+     */
+    internal fun restartPeriodicUpdates() {
+        stopPeriodicUpdates()
+        startPeriodicUpdates()
     }
 
     /**

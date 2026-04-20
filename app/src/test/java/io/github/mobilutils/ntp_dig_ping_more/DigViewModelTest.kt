@@ -31,10 +31,13 @@ class DigViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
-        repository = mockk(relaxed = true)
-        historyStore = mockk(relaxed = true)
+        repository = mockk()
+        historyStore = mockk()
 
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+        // Default stub: unstubbed resolve calls return NoNetwork
+        coEvery { repository.resolve(any(), any()) } returns DigResult.NoNetwork
 
         viewModel = DigViewModel(repository, historyStore)
     }
@@ -122,8 +125,9 @@ class DigViewModelTest {
     @Test
     fun `runDigQuery handles DnsServerError`() = runTest {
         viewModel.onDnsServerChange("bad.server")
+        viewModel.onFqdnChange("example.com")
 
-        coEvery { repository.resolve(any(), any()) } returns
+        coEvery { repository.resolve("bad.server", "example.com") } returns
             DigResult.DnsServerError("Connection refused")
 
         viewModel.runDigQuery()
