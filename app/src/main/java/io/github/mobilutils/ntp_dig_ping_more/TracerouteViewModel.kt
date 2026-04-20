@@ -63,7 +63,7 @@ class TracerouteViewModel(
     init {
         viewModelScope.launch {
             val saved = historyStore.historyFlow.first()
-            _uiState.value = _uiState.value.copy(history = saved)
+            _uiState.value = _uiState.value.copy(history = saved.take(5))
         }
     }
 
