@@ -1,13 +1,15 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.testing.jacoco.tasks.JacocoReport
+
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     jacoco
 }
 
 android {
     namespace = "io.github.mobilutils.ntp_dig_ping_more"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "io.github.mobilutils.ntp_dig_ping_more"
@@ -38,10 +40,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = "11"
-    }
-
     buildFeatures {
         compose = true
     }
@@ -65,7 +63,7 @@ jacoco {
 }
 
 // Add JaCoCo report task to match documentation
-tasks.register("jacocoUnitTestReport", org.gradle.testing.jacoco.tasks.JacocoReport::class) {
+tasks.register("jacocoUnitTestReport", JacocoReport::class) {
     dependsOn("createDebugUnitTestCoverageReport")
     group = "verification"
     description = "Generate JaCoCo coverage reports"
