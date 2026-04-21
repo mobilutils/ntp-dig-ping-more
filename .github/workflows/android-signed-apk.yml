@@ -30,7 +30,7 @@ jobs:
       - name: Copy APK to release/
         run: |
           mkdir -p app/release
-          cp app/build/outputs/apk/release/app-release.apk app/release/release.apk
+          cp app/build/outputs/apk/release/app-release-universal.apk app/release/release.apk
 
       - name: Upload APK as GitHub Release asset
         uses: softprops/action-gh-release@v2
