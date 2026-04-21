@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -64,16 +63,19 @@ fun PortScannerScreen() {
     val focusManager = LocalFocusManager.current
 
     val outputScrollState = rememberScrollState()
-    
-    // Auto-scroll to bottom of discovered ports
-    LaunchedEffect(uiState.discoveredPorts.size) {
-        outputScrollState.animateScrollTo(outputScrollState.maxValue)
+
+    // Auto-scroll to bottom only when new ports are discovered (not on every progress update)
+    LaunchedEffect(uiState.discoveredPorts.size, uiState.isRunning) {
+        if (uiState.discoveredPorts.isNotEmpty() && uiState.isRunning) {
+            outputScrollState.animateScrollTo(outputScrollState.maxValue)
+        }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 20.dp),
+            .padding(horizontal = 16.dp, vertical = 20.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         OutlinedTextField(
@@ -199,7 +201,7 @@ fun PortScannerScreen() {
                 )
             }
             Card(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -207,7 +209,7 @@ fun PortScannerScreen() {
             ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
                         .padding(14.dp)
                 ) {
                     Text(
@@ -219,7 +221,7 @@ fun PortScannerScreen() {
                     )
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .fillMaxWidth()
                             .background(
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
                                 shape = RoundedCornerShape(8.dp),
@@ -227,9 +229,8 @@ fun PortScannerScreen() {
                     ) {
                         Column(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(8.dp)
-                                .verticalScroll(outputScrollState),
+                                .fillMaxWidth()
+                                .padding(8.dp),
                         ) {
                             if (uiState.discoveredPorts.isEmpty() && !uiState.isRunning) {
                                 Text(
@@ -254,8 +255,6 @@ fun PortScannerScreen() {
                     }
                 }
             }
-        } else {
-            Spacer(Modifier.weight(1f))
         }
 
         AnimatedVisibility(
@@ -309,11 +308,23 @@ private fun PortScannerHistorySection(
             Spacer(Modifier.height(10.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f))
 
-            entries.forEachIndexed { index, entry ->
-                if (index > 0) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.10f))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    entries.forEachIndexed { index, entry ->
+                        if (index > 0) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.10f))
+                        }
+                        PortScannerHistoryRow(entry = entry, onClick = { onEntryClick(entry) })
+                    }
                 }
-                PortScannerHistoryRow(entry = entry, onClick = { onEntryClick(entry) })
             }
         }
     }
