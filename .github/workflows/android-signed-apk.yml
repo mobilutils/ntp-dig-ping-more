@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build & Sign Release APK
+    name: Build & Release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -27,39 +27,28 @@ jobs:
       - name: Build release APK
         run: ./gradlew assembleRelease
 
-      - name: Sign APK
-        id: sign_apk
-        uses: r0adkll/sign-android-release@v1
-        with:
-          releaseDirectory: app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "34.0.0"
-
-      - name: Copy signed APK to app/release/
+      - name: Copy APK to release/
         run: |
           mkdir -p app/release
-          cp ${{ steps.sign_apk.outputs.signedReleaseFile }} app/release/release-signed.apk
+          cp app/build/outputs/apk/release/app-release.apk app/release/release.apk
 
       - name: Upload APK as GitHub Release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: app/release/release-signed.apk
+          files: app/release/release.apk
           name: Release ${{ github.ref_name }}
           body: |
             ## Release ${{ github.ref_name }}
 
             ### Download
-            - `release-signed.apk` — signed release build, ready to install
+            - `release.apk` — unsigned release build. Install via \`adb install\`.
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-signed-${{ github.ref_name }}
-          path: app/release/release-signed.apk
+          name: release-${{ github.ref_name }}
+          path: app/release/release.apk
           retention-days: 30
