@@ -30,6 +30,7 @@ android {
             )
         }
         debug {
+            versionNameSuffix = "-dev"
             enableUnitTestCoverage = true
             enableAndroidTestCoverage = true
         }
