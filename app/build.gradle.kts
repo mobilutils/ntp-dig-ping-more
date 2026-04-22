@@ -8,6 +8,20 @@ plugins {
 }
 
 android {
+    signingConfigs {
+        getByName("debug") {
+            storeFile =
+                file("/Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/.keystore/my-debug.keystore")
+            storePassword = "ASuperAmazingPassword4Keystore$}"
+            keyAlias = "my-debug-key"
+        }
+        create("release") {
+            storeFile =
+                file("/Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/.keystore/my-release.keystore")
+            storePassword = "1PassIs1PassWaitNoMaybe?"
+            keyAlias = "my-release-key"
+        }
+    }
     namespace = "io.github.mobilutils.ntp_dig_ping_more"
     compileSdk = 37
 
@@ -19,6 +33,7 @@ android {
         versionName = "2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        signingConfig = signingConfigs.getByName("release")
     }
 
     buildTypes {

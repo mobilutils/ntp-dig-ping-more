@@ -4,7 +4,7 @@
 
 A modern Android app (min SDK 26, target SDK 36) providing **network diagnostics tools**: NTP Check, DNS Lookup (DIG), Ping, Traceroute, Port Scanner, LAN Scanner, Google Time Sync, and Device Info. Built with **Kotlin**, **Jetpack Compose (Material 3)**, **MVVM architecture**, and **Kotlin Coroutines**.
 
-The app is packaged under `io.github.mobilutils.ntp_dig_ping_more` (version 2.3, versionCode 6).
+The app is packaged under `io.github.mobilutils.ntp_dig_ping_more` (version 2.4, versionCode 6).
 
 ---
 
@@ -54,6 +54,61 @@ app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ```
 
 **37 Kotlin source files** total across the main source set.
+
+---
+
+## Versioning
+
+- `defaultVersionName = "2.3"` (root `build.gradle.kts`)
+- `defaultVersionCode = 6`
+- `debug` build type appends `-dev` suffix → version name `2.3-dev`
+- `release` build type has no suffix → version name `2.3`
+
+---
+
+## CI/CD
+
+### Workflows
+
+| Workflow | Trigger | Output |
+|---|---|---|
+| `build.yml` | Every push/PR | Debug APK as workflow artifact (login required) |
+| `android-signed-apk.yml` | Tags matching `v*` | Signed APK as GitHub Release (public, no login) |
+
+### GitHub Release Workflow
+
+The `android-signed-apk.yml` workflow:
+1. Builds release APK (`./gradlew assembleRelease`)
+2. Signs it with `r0adkll/sign-android-release@v1` using keystore secrets
+3. Publishes as a GitHub Release via `softprops/action-gh-release@v2`
+
+**Required repo setting:** Settings > Actions > General > Workflow permissions → **"Read and write permissions"**. Without this, the release upload fails with 403.
+
+**Signing secrets:**
+| Secret | Content |
+|---|---|
+| `KEYSTORE_BASE64` | Base64-encoded `.keystore` file |
+| `KEY_ALIAS` | Key alias name (e.g., `my-release-key`) |
+| `KEY_STORE_PASSWORD` | Password for the keystore file |
+| `KEY_PASSWORD` | Password for the key entry (may be empty) |
+
+**Releasing:**
+```bash
+git tag -a v2.5 -m "Release 2.5"
+git push origin v2.5
+```
+
+### Keystore
+
+Stored in `.keystore/` directory. Create with:
+```bash
+keytool -genkeypair -v \
+  -keystore .keystore/my-release.keystore \
+  -alias my-release-key \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Full documentation: `notes/20260421_Sign-android-release_workflow.md`
 
 ---
 
