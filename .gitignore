@@ -39,8 +39,12 @@ captures/
 # ── Version control ────────────────────────────────────────────────────────────
 *.orig
 
+# -- Keystore
+.keystore/
+
 # -- QWEN RELATED ---------------------------------------------------------------
 .qwen/
 node_modules/
 package.json
 package-lock.json
+
