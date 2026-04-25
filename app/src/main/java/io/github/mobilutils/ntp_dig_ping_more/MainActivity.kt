@@ -82,7 +82,7 @@ import io.github.mobilutils.ntp_dig_ping_more.ui.theme.NtpDigPingMoreTheme
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Navigation destinations
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────
 
 sealed class AppScreen(
     val route: String,
@@ -98,6 +98,7 @@ sealed class AppScreen(
     object GoogleTimeSync : AppScreen("google_time_sync", "Google Time Sync", Icons.Filled.AccessTime)
     object HttpsCert      : AppScreen("https_cert",       "HTTPS Cert",       Icons.Filled.Lock)
     object DeviceInfo     : AppScreen("device_info",      "Device Info",      Icons.Filled.Info)
+    object BulkActions    : AppScreen("bulk_actions",     "Bulk Actions",     Icons.Filled.Dns)
     object MoreTools      : AppScreen("more_tools",       "More",             Icons.Filled.MoreHoriz)
 }
 
@@ -111,6 +112,7 @@ private val allAppScreens = listOf(
     AppScreen.GoogleTimeSync,
     AppScreen.HttpsCert,
     AppScreen.DeviceInfo,
+    AppScreen.BulkActions,
     AppScreen.MoreTools,
 )
 
@@ -257,6 +259,9 @@ fun AppRoot() {
                         }
                     }
                 )
+            }
+            composable(AppScreen.BulkActions.route) {
+                BulkActionsScreen()
             }
         }
     }
