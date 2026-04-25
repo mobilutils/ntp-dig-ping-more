@@ -1,6 +1,6 @@
 # Network Utilities Checker
 
-A modern Android app for network diagnostics: **NTP reachability testing**, **DNS lookup (DIG)**, **Ping**, **Traceroute**, **Port Scanner**, **LAN Scanner**, and **Google Time Sync**.
+A modern Android app for network diagnostics: **NTP reachability testing**, **DNS lookup (DIG)**, **Ping**, **Traceroute**, **Port Scanner**, **LAN Scanner**, **Google Time Sync**, and **Bulk Actions** (batch execute commands from a JSON config).
 
 ## Visuals
 
@@ -108,6 +108,18 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 - Installed System & User CA Certificates (subject, validity dates, type)
 - Handles Android 10+ API restrictions with clear fallback messages (e.g., "Restricted by Android 10+")
 - Runtime permission requests via `ActivityResultContracts`; rationale shown if denied
+
+### ⚡ Bulk Actions
+- Load a JSON configuration file defining multiple diagnostic commands to execute in sequence
+- Supports built-in command types: `ping`, `dig`, `ntp`, `nmap` (port scan), `checkcert` (HTTPS certificate)
+- Unknown command prefixes fall back to raw shell execution
+- Each command runs with a 30-second timeout; failures and timeouts are captured per-command without stopping the batch
+- Real-time progress bar with command-by-command status (SUCCESS / ERROR / TIMEOUT)
+- Terminal-style output with color-coded results
+- Auto-saves results to the `"output-file"` path defined in the config after execution (with writability validation)
+- **"Validate Config"** button checks JSON structure and output-file writability, suggesting a fallback path if needed
+- **"Write to File"** button launches an SAF picker for manual save location selection
+- Graceful error handling: invalid JSON, unwritable paths, network failures — all captured and displayed without crashing
 
 ## Stack
 

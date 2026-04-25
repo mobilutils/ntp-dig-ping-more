@@ -57,6 +57,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,6 +81,7 @@ fun BulkActionsScreen() {
     val context = LocalContext.current
     val viewModel: BulkActionsViewModel = viewModel(factory = BulkActionsViewModel.factory(context))
     val uiState by viewModel.uiState.collectAsState()
+    val currentUiState by rememberUpdatedState(uiState)
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -96,8 +98,13 @@ fun BulkActionsScreen() {
         contract = ActivityResultContracts.CreateDocument("text/plain")
     ) { uri: Uri? ->
         if (uri != null) {
-            viewModel.writeFileViaSAF(uri, uiState.results)
+            viewModel.writeFileViaSAF(uri, currentUiState.results)
         }
+    }
+
+    // Wire up launcher to ViewModel
+    LaunchedEffect(outputLauncher) {
+        viewModel.setOutputLauncher(outputLauncher)
     }
 
     // Validation message display
@@ -400,7 +407,10 @@ fun BulkActionsScreen() {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Button(
-                            onClick = viewModel::onWriteOutputFile,
+                            onClick = {
+                                val filename = "bulk-output-${System.currentTimeMillis()}.txt"
+                                outputLauncher.launch(filename)
+                            },
                             enabled = !uiState.isFileWriting,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
@@ -425,6 +435,39 @@ fun BulkActionsScreen() {
                                 Spacer(Modifier.width(6.dp))
                                 Text("Write to File", fontWeight = FontWeight.Medium)
                             }
+                        }
+                    }
+                }
+
+                // ── Green success card for auto-save ──
+                AnimatedVisibility(
+                    visible = uiState.autoSaved && uiState.autoSavedPath != null,
+                    enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 },
+                    exit = fadeOut(tween(200)),
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Text(
+                                text = "File saved to: ${uiState.autoSavedPath}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
                         }
                     }
                 }

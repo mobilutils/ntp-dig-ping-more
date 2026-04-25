@@ -18,9 +18,9 @@ Added a **Bulk Actions** screen accessible from the MORE overflow menu. Users se
 
 | File | Purpose |
 |---|---|
-| `BulkActionsRepository.kt` | JSON config parsing (`BulkConfigParser`), command mapping (ping/dig/ntp/nmap/checkcert → app tools or raw shell), sequential execution with 30s timeout per command |
-| `BulkActionsViewModel.kt` | UI state (`BulkUiState`), file loading, run/stop/clear/export logic, validation message support |
-| `BulkActionsScreen.kt` | File picker (JSON filter), config summary, progress bar, terminal-style result output (color-coded by status), validation message display, write-to-file button |
+| `BulkActionsRepository.kt` | JSON config parsing (`BulkConfigParser`), command mapping (ping/dig/ntp/nmap/checkcert → app tools or raw shell), sequential execution with 30s timeout per command, output-file writability validation (`validateOutputFile`) |
+| `BulkActionsViewModel.kt` | UI state (`BulkUiState`), file loading, run/stop/clear/export logic, validation message support, validated output-file tracking |
+| `BulkActionsScreen.kt` | File picker (JSON filter), config summary, progress bar, terminal-style result output (color-coded by status), validation message display, write-to-file button (always uses SAF picker) |
 | `BulkActionsHistoryStore.kt` | DataStore persistence of last 5 loaded config URIs |
 | `BulkConfigParserTest.kt` | 9 unit tests for parsing logic (valid config, tilde expansion, missing run key, empty commands, blank command filtering, etc.) |
 | `BulkActionsViewModelTest.kt` | 5 unit tests for ViewModel state management |
@@ -123,13 +123,33 @@ Tests ViewModel state management using MockK:
 
 ## Output File Strategy (Resolved)
 
-The output file strategy was implemented with a **dual approach**:
+The output file strategy was implemented with **three tiers**:
 
-1. **Config-specified path** — If the JSON config includes `"output-file"`, results are written directly to that path (with `~` expanded to external storage). The write attempts SAF first via `contentResolver.openOutputStream()`, then falls back to direct file write if SAF fails.
+### 1. Auto-save after execution (primary)
 
-2. **SAF picker fallback** — If no `"output-file"` is in the config, or the config-specified path fails, the "Write to File" button launches an SAF `CreateDocument` picker, letting the user choose the save location.
+When a config includes an `"output-file"` field, results are **automatically saved** to that path immediately after all commands finish executing. A green success card appears showing the exact path:
 
-This dual strategy handles scoped storage on Android 10+ gracefully — SAF works universally across API levels, while direct write provides a no-prompt path for configs that specify a target.
+```
+✅ File saved to: /storage/emulated/0/Downloads/output-test-run.txt
+```
+
+The auto-save uses the same dual-write strategy (SAF first, then direct fallback). The `autoSaved` and `autoSavedPath` fields in `BulkUiState` track the result. The success card is hidden when results are cleared.
+
+### 2. Config-specified path validation
+
+If the `"output-file"` path is unwritable, the **"Validate Config"** button detects this and shows an Info message with a suggested fallback path:
+
+```
+ⓘ "/storage/emulated/0/Downloads/output.txt" is not writable. Use: /storage/emulated/0/BulkActions/output.txt
+```
+
+The suggested path (`/storage/emulated/0/BulkActions/`) is used automatically for auto-save.
+
+### 3. SAF picker (manual override)
+
+The **"Write to File"** button always launches an SAF `CreateDocument` picker, letting the user choose any location. This works as a manual override regardless of whether the config has an `"output-file"` field.
+
+This three-tier strategy handles scoped storage on Android 10+ gracefully: auto-save provides a no-prompt path for configs that specify a target, validation warns the user when the target is unwritable with a suggested alternative, and SAF provides a universal fallback.
 
 ---
 
