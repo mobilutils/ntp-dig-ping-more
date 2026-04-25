@@ -31,6 +31,9 @@ data class BulkUiState(
     val results: List<BulkCommandResult> = emptyList(),
     val isFileWriting: Boolean = false,
     val outputFileWritten: Boolean? = null,
+    val autoSaved: Boolean = false,
+    val autoSavedPath: String? = null,
+    val validatedOutputFile: String? = null,
     val validationMessage: BulkActionsViewModel.ValidationMessage? = null,
 )
 
@@ -133,11 +136,23 @@ class BulkActionsViewModel(
                 allResults.add(finalResult)
             }
 
+            // Auto-save if output-file is defined
+            var autoSavedPath: String? = null
+            if (config.outputFile != null) {
+                val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
+                val saved = autoSaveResults(outputPath, allResults)
+                if (saved) {
+                    autoSavedPath = outputPath
+                }
+            }
+
             _uiState.value = _uiState.value.copy(
                 isExecuting = false,
                 results = allResults,
                 progress = 1f,
                 currentCommand = null,
+                autoSaved = autoSavedPath != null,
+                autoSavedPath = autoSavedPath,
             )
         }
     }
@@ -155,43 +170,29 @@ class BulkActionsViewModel(
             results = emptyList(),
             progress = 0f,
             currentCommand = null,
+            autoSaved = false,
+            autoSavedPath = null,
         )
     }
 
-    /** Writes results to the output file specified in the config. */
-    fun onWriteOutputFile() {
-        val results = _uiState.value.results
-        if (results.isEmpty() || _uiState.value.isFileWriting) return
-
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isFileWriting = true)
-
-            val configUriStr = _uiState.value.configUri ?: return@launch
-            val json = context.contentResolver.openInputStream(android.net.Uri.parse(configUriStr))?.readBytes()?.decodeToString() ?: ""
-            val config = runCatching { BulkConfigParser.parse(json) }.getOrNull()
-            val outputPath = config?.outputFile
-
-            var success = false
-            if (outputPath != null) {
-                // Try SAF first (via content resolver openOutputStream)
-                success = writeViaSAF(outputPath, results)
-                // Fallback to direct write if SAF fails
-                if (!success) {
-                    success = writeDirect(outputPath, results)
-                }
+    /** Auto-saves results to the validated output path after execution. */
+    private suspend fun autoSaveResults(outputPath: String, results: List<BulkCommandResult>): Boolean {
+        return try {
+            val success = writeViaSAF(outputPath, results)
+            if (!success) {
+                writeDirect(outputPath, results)
+            } else {
+                true
             }
-
-            _uiState.value = _uiState.value.copy(
-                isFileWriting = false,
-                outputFileWritten = success,
-            )
+        } catch (_: Exception) {
+            false
         }
     }
 
     /** Writes results via SAF picker, letting the user choose the output location. */
-    fun onWriteOutputFileViaSAF(launcher: androidx.activity.result.ActivityResultLauncher<String>) {
+    fun onWriteOutputFile() {
         val results = _uiState.value.results
-        if (results.isEmpty()) return
+        if (results.isEmpty() || _uiState.value.isFileWriting) return
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isFileWriting = true)
@@ -212,11 +213,21 @@ class BulkActionsViewModel(
             }
 
             // Launch SAF picker with suggested filename
-            launcher.launch("bulk-output-${System.currentTimeMillis()}.txt")
+            val launcher = _outputLauncher
+            if (launcher != null) {
+                launcher.launch("bulk-output-${System.currentTimeMillis()}.txt")
+            }
 
             _uiState.value = _uiState.value.copy(isFileWriting = false)
         }
     }
+
+    /** Sets the SAF launcher for output file writing. */
+    fun setOutputLauncher(launcher: androidx.activity.result.ActivityResultLauncher<String>) {
+        _outputLauncher = launcher
+    }
+
+    private var _outputLauncher: androidx.activity.result.ActivityResultLauncher<String>? = null
 
     /** Validates the currently loaded config. */
     fun validateConfig() {
@@ -235,15 +246,50 @@ class BulkActionsViewModel(
                 return@launch
             }
 
-            val result = runCatching { BulkConfigParser.parse(json) }
+            val parseResult = runCatching { BulkConfigParser.parse(json) }
+
+            if (!parseResult.isSuccess) {
+                _uiState.value = _uiState.value.copy(
+                    validationMessage = ValidationMessage.Error("Validation failed: ${parseResult.exceptionOrNull()?.message}"),
+                )
+                return@launch
+            }
+
+            val config = parseResult.getOrNull()!!
+
+            // Validate output-file if present
+            val validatedOutputFile = config.outputFile?.let { rawPath ->
+                val validation = BulkConfigParser.validateOutputFile(rawPath)
+                when (validation) {
+                    is BulkConfigParser.OutputFileValidationResult.Valid -> {
+                        _uiState.value = _uiState.value.copy(
+                            validationMessage = ValidationMessage.Success("output-file: $rawPath is writable")
+                        )
+                        rawPath
+                    }
+                    is BulkConfigParser.OutputFileValidationResult.Invalid -> {
+                        _uiState.value = _uiState.value.copy(
+                            validationMessage = ValidationMessage.Info(
+                                "'$rawPath' is not writable. Use: ${validation.suggestedPath}"
+                            )
+                        )
+                        validation.suggestedPath
+                    }
+                }
+            }
+
+            val msg = when {
+                validatedOutputFile != null ->
+                    ValidationMessage.Success("output-file validated: $validatedOutputFile")
+                config.outputFile == null ->
+                    ValidationMessage.Success("${config.commands.size} command(s) validated successfully")
+                else ->
+                    ValidationMessage.Success("output-file validated successfully")
+            }
 
             _uiState.value = _uiState.value.copy(
-                validationMessage = if (result.isSuccess) {
-                    val config = result.getOrNull()!!
-                    ValidationMessage.Success("${config.commands.size} command(s) validated successfully")
-                } else {
-                    ValidationMessage.Error("Validation failed: ${result.exceptionOrNull()?.message}")
-                },
+                validationMessage = msg,
+                validatedOutputFile = validatedOutputFile,
             )
         }
     }

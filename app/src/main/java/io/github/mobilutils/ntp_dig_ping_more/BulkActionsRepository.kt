@@ -90,7 +90,7 @@ object BulkConfigParser {
         val root = JSONObject(json)
 
         val outputFile = runCatching {
-            val path = root.optString("output-file", null)
+            val path = root.optString("output-file", "")
             if (path.isNullOrBlank()) null
             else expandTilde(path)
         }.getOrNull()
@@ -116,6 +116,53 @@ object BulkConfigParser {
         if (!path.startsWith("~/")) return path
         val externalDir = Environment.getExternalStorageDirectory().absolutePath
         return "$externalDir${path.substring(1)}"
+    }
+
+    /**
+     * Validates whether [rawPath] can be written to. If not, suggests a fallback path.
+     *
+     * @return `OutputFileValid(path)` if writable, or `OutputFileInvalid(original, suggested)` if not.
+     */
+    fun validateOutputFile(rawPath: String): OutputFileValidationResult {
+        val expanded = expandTilde(rawPath)
+
+        // Try to create parent dirs and a test file
+        val parent = File(expanded).parentFile
+        val canCreateDirs = parent?.mkdirs() == true || parent?.exists() == true
+        if (!canCreateDirs) {
+            val suggested = suggestFallbackPath(rawPath)
+            return OutputFileValidationResult.Invalid(rawPath, suggested)
+        }
+
+        val testFile = File(expanded)
+        val canWrite = try {
+            testFile.createNewFile() && testFile.canWrite()
+        } catch (_: Exception) {
+            false
+        }
+
+        return if (canWrite) {
+            // Clean up the test file
+            runCatching { testFile.delete() }
+            OutputFileValidationResult.Valid(expanded)
+        } else {
+            val suggested = suggestFallbackPath(rawPath)
+            OutputFileValidationResult.Invalid(rawPath, suggested)
+        }
+    }
+
+    /** Suggests a fallback writable path using the external storage BulkActions directory. */
+    private fun suggestFallbackPath(rawPath: String): String {
+        val externalDir = Environment.getExternalStorageDirectory().absolutePath
+        val bulkDir = "$externalDir/BulkActions"
+        val fileName = rawPath.substringAfterLast("/")
+        return "$bulkDir/$fileName"
+    }
+
+    /** Result of output file validation. */
+    sealed class OutputFileValidationResult {
+        data class Valid(val path: String) : OutputFileValidationResult()
+        data class Invalid(val originalPath: String, val suggestedPath: String) : OutputFileValidationResult()
     }
 }
 
