@@ -17,6 +17,7 @@ fun MoreToolsScreen(
     onNavigate: (String) -> Unit
 ) {
     val extraTools = listOf(
+        AppScreen.BulkActions,
         AppScreen.Traceroute,
         AppScreen.PortScanner,
         AppScreen.LanScanner,
