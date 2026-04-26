@@ -27,10 +27,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * @param outputFile  Optional expanded output file path (null = don't write to file).
  * @param commands    Ordered command map (key = command name, value = command string).
+ * @param timeoutMs   Optional per-command timeout in milliseconds (null = use default 30s).
  */
 data class BulkConfig(
     val outputFile: String?,
     val commands: Map<String, String>,
+    val timeoutMs: Long? = null,
 )
 
 /**
@@ -74,6 +76,20 @@ data class BulkProgress(
 object BulkConfigParser {
 
     /**
+     * Parses a per-command `-t N` timeout from the command string.
+     * Returns the timeout in milliseconds, or null if not present.
+     * Example: "ping -c 4 -t 10 google.com" → 10_000L
+     */
+    fun extractCommandTimeout(cmd: String): Long? {
+        val parts = cmd.trim().split(Regex("\\s+"))
+        val tIdx = parts.indexOf("-t")
+        if (tIdx >= 0 && tIdx < parts.size - 1) {
+            return parts[tIdx + 1].toLongOrNull()?.takeIf { it > 0 }?.let { it * 1000L }
+        }
+        return null
+    }
+
+    /**
      * Parses a JSON string into a [BulkConfig].
      *
      * Expected structure:
@@ -97,6 +113,12 @@ object BulkConfigParser {
             else expandTilde(path)
         }.getOrNull()
 
+        val timeoutMs = runCatching {
+            val seconds = root.optLong("timeout", 0L)
+            if (seconds == null || seconds <= 0) null
+            else seconds * 1000L
+        }.getOrNull()
+
         val runObj = root.optJSONObject("run")
             ?: throw IllegalArgumentException("Missing required 'run' object in configuration")
 
@@ -110,7 +132,7 @@ object BulkConfigParser {
             }
         }
 
-        return BulkConfig(outputFile, commands)
+        return BulkConfig(outputFile, commands, timeoutMs)
     }
 
     /** Expands `~` to the external storage directory path. */
@@ -191,6 +213,20 @@ class BulkActionsRepository(
     private val timestampFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     /**
+     * Parses a per-command `-t N` timeout from the command string.
+     * Returns the timeout in milliseconds, or null if not present.
+     * Example: "ping -c 4 -t 10 google.com" → 10_000L
+     */
+    private fun extractCommandTimeout(cmd: String): Long? {
+        val parts = cmd.trim().split(Regex("\\s+"))
+        val tIdx = parts.indexOf("-t")
+        if (tIdx >= 0 && tIdx < parts.size - 1) {
+            return parts[tIdx + 1].toLongOrNull()?.takeIf { it > 0 }?.let { it * 1000L }
+        }
+        return null
+    }
+
+    /**
      * Executes all commands in [config] sequentially.
      */
     suspend fun executeCommands(
@@ -201,14 +237,21 @@ class BulkActionsRepository(
         val results = mutableListOf<BulkCommandResult>()
         val commands = config.commands.toList()
         val total = commands.size
+        val defaultTimeoutMs = config.timeoutMs ?: 30_000L
 
         commands.forEachIndexed { index, (name, cmd) ->
-            if (cancellationToken.get()) return results
+            if (cancellationToken.get()) {
+                results.add(BulkCommandTimeout(name, cmd))
+                return@forEachIndexed
+            }
 
             onProgress?.invoke(BulkProgress(index, total, name, cmd))
 
-            val result = withTimeoutOrNull(30_000) {
-                executeSingleCommand(name, cmd)
+            // Per-command `-t N` overrides config-level timeout
+            val commandTimeoutMs = extractCommandTimeout(cmd) ?: defaultTimeoutMs
+
+            val result = withTimeoutOrNull(commandTimeoutMs) {
+                executeSingleCommand(name, cmd, commandTimeoutMs)
             }
 
             val finalResult = result ?: BulkCommandTimeout(name, cmd)
@@ -218,32 +261,68 @@ class BulkActionsRepository(
         return results
     }
 
-    suspend fun executeSingleCommand(name: String, cmd: String): BulkCommandResult {
+    suspend fun executeSingleCommand(name: String, cmd: String, timeoutMs: Long? = null): BulkCommandResult {
         val trimmed = cmd.trim()
         val parts = trimmed.split(Regex("\\s+"))
         val prefix = parts.firstOrNull()?.lowercase() ?: ""
 
         return when {
-            prefix == "ping"            -> executePing(name, trimmed, parts)
-            prefix == "dig"             -> executeDig(name, trimmed)
-            prefix == "ntp"             -> executeNtp(name, trimmed)
-            prefix == "port-scan"       -> executePortScan(name, trimmed)
-            prefix == "checkcert"       -> executeCheckcert(name, trimmed)
+            prefix == "ping"            -> executePing(name, trimmed, parts, timeoutMs)
+            prefix == "dig"             -> executeDig(name, trimmed, timeoutMs)
+            prefix == "ntp"             -> executeNtp(name, trimmed, timeoutMs)
+            prefix == "port-scan"       -> executePortScan(name, trimmed, timeoutMs)
+            prefix == "checkcert"       -> executeCheckcert(name, trimmed, timeoutMs)
             prefix == "device-info"     -> executeDeviceInfo(name, trimmed)
-            prefix == "tracert"         -> executeTracert(name, trimmed)
-            prefix == "google-timesync" -> executeGoogleTimeSync(name, trimmed)
-            prefix == "lan-scan"        -> executeLanScan(name, trimmed)
-            else                        -> executeRaw(name, trimmed)
+            prefix == "tracert"         -> executeTracert(name, trimmed, timeoutMs)
+            prefix == "google-timesync" -> executeGoogleTimeSync(name, trimmed, timeoutMs)
+            prefix == "lan-scan"        -> executeLanScan(name, trimmed, timeoutMs)
+            else                        -> executeRaw(name, trimmed, timeoutMs)
         }
     }
 
-    // ── ping ────────────────────────────────────────────────────────────
+    // ── ping ───────────────────────────────────────────────────────
 
-    private suspend fun executePing(name: String, cmd: String, parts: List<String>): BulkCommandResult {
+    private suspend fun executePing(name: String, cmd: String, parts: List<String>, timeoutMs: Long?): BulkCommandResult {
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
-                val process = Runtime.getRuntime().exec(arrayOf("ping", "-c", "4", parts.last()))
+
+                // Parse -c count (default 4)
+                val countIdx = parts.indexOf("-c")
+                val count = if (countIdx >= 0 && countIdx < parts.size - 1) {
+                    parts[countIdx + 1].toIntOrNull() ?: 4
+                } else {
+                    4
+                }
+
+                // Parse -t timeout (default 0 = no per-packet timeout)
+                val timeoutIdx = parts.indexOf("-t")
+                val timeout = if (timeoutIdx >= 0 && timeoutIdx < parts.size - 1) {
+                    parts[timeoutIdx + 1].toIntOrNull() ?: 0
+                } else {
+                    0
+                }
+
+                // Host = first non-flag argument after skipping flag-value pairs (works regardless of -t position)
+                val host = run {
+                    var i = 1
+                    val flags = setOf("-c", "-t", "-W", "-i", "-I", "-D", "-S", "-p", "-f", "-q", "-C", "-N", "-R", "-r", "-l", "-L", "-M", "-n", "-O", "-s", "-T", "-v")
+                    while (i < parts.size) {
+                        if (parts[i] in flags && i + 1 < parts.size) i += 2
+                        else if (parts[i].startsWith("-")) i++
+                        else break
+                    }
+                    parts.getOrNull(i) ?: parts.last()
+                }
+
+                val pingArgs = mutableListOf("ping", "-c", count.toString())
+                if (timeout > 0) {
+                    pingArgs.add("-W")
+                    pingArgs.add(timeout.toString())
+                }
+                pingArgs.add(host)
+
+                val process = Runtime.getRuntime().exec(pingArgs.toTypedArray())
                 val output = process.inputStream.bufferedReader().readLines()
                 val exitCode = process.waitFor()
                 val duration = System.currentTimeMillis() - t0
@@ -260,13 +339,13 @@ class BulkActionsRepository(
         }
     }
 
-    // ── dig ─────────────────────────────────────────────────────────────
+    // ── dig ───────────────────────────────────────────────────────────────
 
-    private suspend fun executeDig(name: String, cmd: String): BulkCommandResult {
+    private suspend fun executeDig(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
-                // Parse: dig @server fqdn
+                // Parse: dig @server fqdn [-t timeout]
                 val parts = cmd.split(Regex("\\s+"))
                 val serverIdx = parts.indexOfFirst { it == "@" }
                 val (server, fqdn) = if (serverIdx > 0 && serverIdx < parts.size - 1) {
@@ -304,9 +383,9 @@ class BulkActionsRepository(
         }
     }
 
-    // ── ntp ─────────────────────────────────────────────────────────────
+    // ── ntp ─────────────────────────────────────────────────────────────────
 
-    private suspend fun executeNtp(name: String, cmd: String): BulkCommandResult {
+    private suspend fun executeNtp(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
@@ -342,17 +421,30 @@ class BulkActionsRepository(
         }
     }
 
-    // ── port-scan (formerly nmap) ────────────────────────────────────────────────
+    // ── port-scan (formerly nmap) ───────────────────────────────────────
 
-    private suspend fun executePortScan(name: String, cmd: String): BulkCommandResult {
+    private suspend fun executePortScan(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
-                // Parse: nmap -p ports host
+                // Parse: port-scan -p ports [-t timeout] host
                 val parts = cmd.split(Regex("\\s+"))
-                val portStr = parts.getOrNull(parts.indexOfFirst { it == "-p" } + 1) ?: "22"
-                val host = parts.getOrNull(parts.indexOfFirst { it == "-p" } + 2)
-                    ?: parts.last()
+                val portIdx = parts.indexOfFirst { it == "-p" }
+                val portStr = parts.getOrNull(portIdx + 1) ?: "22"
+                // Parse host: everything after -t N (if present) that's not a flag
+                val host = run {
+                    val tIdx2 = parts.indexOf("-t")
+                    val startIdx = if (tIdx2 >= portIdx) tIdx2 + 2 else portIdx + 2
+                    parts.subList(startIdx, parts.size).lastOrNull() ?: parts.last()
+                }
+
+                // Parse per-command -t timeout (default 2000ms per port)
+                val tIdx = parts.indexOf("-t")
+                val connectTimeout = if (tIdx >= 0 && tIdx < parts.size - 1) {
+                    parts[tIdx + 1].toIntOrNull()?.times(1000) ?: 2000
+                } else {
+                    timeoutMs ?: 2000L
+                }.toInt()
 
                 val ports = parsePortRange(portStr)
                 val openPorts = mutableListOf<Int>()
@@ -360,7 +452,7 @@ class BulkActionsRepository(
                 ports.forEach { port ->
                     try {
                         val socket = Socket()
-                        socket.connect(InetSocketAddress(host, port), 2000)
+                        socket.connect(InetSocketAddress(host, port), connectTimeout)
                         socket.close()
                         openPorts.add(port)
                     } catch (_: Exception) {
@@ -385,17 +477,23 @@ class BulkActionsRepository(
         }
     }
 
-    // ── checkcert ───────────────────────────────────────────────────────
+    // ── checkcert ────────────────────────────────────────────────────────
 
-    private suspend fun executeCheckcert(name: String, cmd: String): BulkCommandResult {
+    private suspend fun executeCheckcert(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
-                // Parse: checkcert -p port host
+                // Parse: checkcert -p port [-t timeout] host
                 val parts = cmd.split(Regex("\\s+"))
                 val portIdx = parts.indexOfFirst { it == "-p" }
                 val port = parts.getOrNull(portIdx + 1)?.toIntOrNull() ?: 443
-                val host = parts.getOrNull(portIdx + 2) ?: parts.last()
+                // Skip -t N if present between port and host
+                val tIdx = parts.indexOf("-t")
+                val host = if (tIdx > portIdx && tIdx < parts.size - 1) {
+                    parts.getOrNull(tIdx + 2) ?: parts.last()
+                } else {
+                    parts.getOrNull(portIdx + 2) ?: parts.last()
+                }
 
                 val result = certRepo.fetchCertificate(host, port)
                 val duration = System.currentTimeMillis() - t0
@@ -485,12 +583,20 @@ class BulkActionsRepository(
 
     // ── tracert ─────────────────────────────────────────────────────────
 
-    private suspend fun executeTracert(name: String, cmd: String): BulkCommandResult {
+    private suspend fun executeTracert(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
         return withContext(Dispatchers.IO) {
             try {
                 val parts = cmd.split(Regex("\\s+"))
                 val host = parts.getOrNull(1)
                     ?: return@withContext BulkCommandError(name, cmd, "Usage: tracert <host>")
+
+                // Parse per-command -t as max hops (default 30)
+                val tIdx = parts.indexOf("-t")
+                val maxHops = if (tIdx >= 0 && tIdx < parts.size - 1) {
+                    parts[tIdx + 1].toIntOrNull()?.takeIf { it > 0 } ?: 30
+                } else {
+                    timeoutMs?.toInt()?.takeIf { it > 0 } ?: 30
+                }
 
                 val t0 = System.currentTimeMillis()
                 val out = mutableListOf<String>()
@@ -498,13 +604,13 @@ class BulkActionsRepository(
                 var hops = 0
 
                 out.add("[${timestampFmt.format(LocalDateTime.now())}] $cmd")
-                out.add("traceroute to $host, 30 hops max")
+                out.add("traceroute to $host, $maxHops hops max")
 
                 val ttlIpRegex = Regex("""From (\S+).*[Tt]ime to live exceeded""")
                 val dstReplyRegex = Regex("""bytes from (\S+):""")
                 val ttlAltRegex = Regex("""From (\S+):.*ttl""", RegexOption.IGNORE_CASE)
 
-                for (ttl in 1..30) {
+                for (ttl in 1..maxHops) {
                     val num = ttl.toString().padStart(2)
                     try {
                         val proc = Runtime.getRuntime().exec(
@@ -555,7 +661,7 @@ class BulkActionsRepository(
 
     // ── google-timesync ─────────────────────────────────────────────────
 
-    private suspend fun executeGoogleTimeSync(name: String, cmd: String): BulkCommandResult {
+    private suspend fun executeGoogleTimeSync(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
@@ -594,7 +700,7 @@ class BulkActionsRepository(
 
     // ── lan-scan ────────────────────────────────────────────────────────
 
-    private suspend fun executeLanScan(name: String, cmd: String): BulkCommandResult {
+    private suspend fun executeLanScan(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
@@ -638,9 +744,9 @@ class BulkActionsRepository(
         }
     }
 
-    // ── raw ─────────────────────────────────────────────────────────────
+    // ── raw ────────────────────────────────────────────────────────────────
 
-    private suspend fun executeRaw(name: String, cmd: String): BulkCommandResult {
+    private suspend fun executeRaw(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
