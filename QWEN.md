@@ -2,7 +2,7 @@
 
 ## Overview
 
-A modern Android app (min SDK 26, target SDK 36) providing **network diagnostics tools**: NTP Check, DNS Lookup (DIG), Ping, Traceroute, Port Scanner, LAN Scanner, Google Time Sync, and Device Info. Built with **Kotlin**, **Jetpack Compose (Material 3)**, **MVVM architecture**, and **Kotlin Coroutines**.
+A modern Android app (min SDK 26, target SDK 36) providing **network diagnostics tools**: NTP Check, DNS Lookup (DIG), Ping, Traceroute, Port Scanner, LAN Scanner, Google Time Sync, Device Info, and **Bulk Actions** (batch execute commands from a JSON config). Built with **Kotlin**, **Jetpack Compose (Material 3)**, **MVVM architecture**, and **Kotlin Coroutines**.
 
 The app is packaged under `io.github.mobilutils.ntp_dig_ping_more` (version 2.4, versionCode 6).
 
@@ -42,6 +42,12 @@ app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ├── HttpsCertViewModel.kt        # HTTPS cert UI state
 ├── HttpsCertRepository.kt       # HTTPS cert I/O
 ├── HttpsCertHistoryStore.kt     # DataStore persistence
+├── BulkActionsRepository.kt     # JSON config parsing, command mapping (9 pseudo-commands), sequential execution
+├── BulkActionsViewModel.kt      # UI state, file loading, run/stop/clear/export
+├── BulkActionsScreen.kt         # File picker, config summary, progress bar, terminal output
+├── BulkActionsHistoryStore.kt   # DataStore persistence of last 5 config URIs
+├── BulkConfigParserTest.kt      # 9 unit tests for parsing logic
+├── BulkActionsViewModelTest.kt  # 5 unit tests for ViewModel state management
 ├── deviceinfo/
 │   ├── DeviceInfoModels.kt      # Data models (DeviceInfo, CertificateInfo)
 │   ├── SystemInfoRepository.kt  # Identity, network, battery, storage, certs
@@ -53,7 +59,41 @@ app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
     └── Type.kt                  # Typography
 ```
 
-**37 Kotlin source files** total across the main source set.
+**43 Kotlin source files** total across the main source set (includes Bulk Actions).
+
+---
+
+## Bulk Actions
+
+The **Bulk Actions** feature lets users execute multiple diagnostic commands from a JSON config file.
+
+### Supported Pseudo-Commands
+
+| Command | Syntax | Description |
+|---|---|-:--|
+| `ping` | `ping -c N host` | ICMP ping (N packets) |
+| `dig` | `dig @server fqdn` | DNS lookup |
+| `ntp` | `ntp pool` | NTP query |
+| `port-scan` | `port-scan -p ports host` | TCP port scan (renamed from `nmap`) |
+| `checkcert` | `checkcert -p port host` | HTTPS certificate check |
+| `device-info` | `device-info` | Device identity, network, battery, storage |
+| `tracert` | `tracert <host>` | TTL-probing traceroute |
+| `google-timesync` | `google-timesync` | Google time sync (server time, RTT, offset) |
+| `lan-scan` | `lan-scan` | LAN subnet device discovery |
+
+**Breaking change:** `nmap` prefix is no longer recognized. Use `port-scan` instead.
+
+### Architecture
+
+- `BulkConfigParser` — Pure JSON parsing (no Android API dependencies in JVM tests)
+- `BulkActionsRepository` — Command mapping, sequential execution with 30s timeout per command, Context-injected for `SystemInfoRepository`, `GoogleTimeSyncRepository`, `LanScannerRepository`
+- `BulkActionsViewModel` — UI state (`BulkUiState`), file loading, run/stop/clear/export
+- `BulkActionsHistoryStore` — DataStore persistence of last 5 config URIs
+- Example configs in `notes/config-files_bulk-actions/`
+
+### Traceroute Note
+
+Traceroute uses `ping -c 1 -t <TTL>` which requires `CAP_NET_RAW` (root or specific capabilities). On non-rooted Android devices, TTL probes may always show `* * *` — this is expected behavior.
 
 ---
 
@@ -226,6 +266,7 @@ All tools use sealed result classes to represent success/failure states:
 4. **LAN Scanner**: Uses concurrent ping/ARP sweep for device discovery.
 5. **Android 10+ restrictions**: IMEI, serial number, and other sensitive APIs are restricted; clear fallback messages are shown.
 6. **`android.builtInKotlin=false`** and other AGP 9.0 compatibility flags are set in `gradle.properties`.
+7. **Bulk Actions Context injection**: `BulkActionsRepository` requires `Context` (for `SystemInfoRepository`, `LanScannerRepository`). Always pass `context.applicationContext` from the ViewModel factory to avoid memory leaks.
 
 ## Qwen Added Memories
 - Project: android-ntp_dig_ping_more Android app (Kotlin, Compose, MVVM). Test fixing progress: 31 failures → 8 failures. Fixed: HttpsCertViewModelTest (7 tests via explicit result stubs), LanScannerViewModelTest initial state assertion, TracerouteViewModel history cap, DeviceInfoViewModel stopPeriodicUpdates. Remaining 8 failures: DigViewModelTest (1), LanScannerViewModelTest (history saved, activeDevices), DeviceInfoViewModelTest (4 periodic update/permission tests). Source changes: LanScannerViewModel.kt +.take(10) cap, TracerouteViewModel.kt +.take(5) cap, DeviceInfoViewModel.kt +stopPeriodicUpdates().

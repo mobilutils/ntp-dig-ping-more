@@ -137,7 +137,7 @@ class BulkConfigParserTest {
                     "cmd2": "ping -c 5 10.0.0.1",
                     "cmd3": "dig @1.1.1.1 cybernews.com",
                     "cmd4": "ntp pool.ntp.org",
-                    "cmd5": "nmap -p 80-443 mobilutils.com",
+                    "cmd5": "port-scan -p 80-443 mobilutils.com",
                     "cmd6": "checkcert -p 443 example.com"
                 }
             }

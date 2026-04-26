@@ -115,7 +115,7 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 
 ### ⚡ Bulk Actions
 - Load a JSON configuration file defining multiple diagnostic commands to execute in sequence
-- Supports built-in command types: `ping`, `dig`, `ntp`, `nmap` (port scan), `checkcert` (HTTPS certificate)
+- Supports built-in command types: `ping`, `dig`, `ntp`, `port-scan`, `checkcert`, `device-info`, `tracert`, `google-timesync`, `lan-scan`
 - Unknown command prefixes fall back to raw shell execution
 - Each command runs with a 30-second timeout; failures and timeouts are captured per-command without stopping the batch
 - Real-time progress bar with command-by-command status (SUCCESS / ERROR / TIMEOUT)
