@@ -1,0 +1,21 @@
+"cmd7": "nmap -p 80,89,443-445 landing.phttp.com",
+{
+  "output-file": "~/Downloads/output-test-run.txt",
+  "run": [
+    {
+      "cmd": "ping",
+      "arg": {
+      "server": "10.10.10.1",
+      "count": "2"
+    },
+    {
+      "cmd": "nmap",
+      "arg": {
+        "port": ["80", "443", "8080-8081"],
+        "server": "10.0.0.1",
+      }
+    }
+    }
+  ]
+}
+

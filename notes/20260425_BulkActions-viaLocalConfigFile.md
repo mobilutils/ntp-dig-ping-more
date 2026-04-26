@@ -40,9 +40,15 @@ Added a **Bulk Actions** screen accessible from the MORE overflow menu. Users se
 | `ping` | `ProcessBuilder("ping", "-c", N, host)` — streams stdout line-by-line |
 | `dig @server fqdn` | `DigRepository.resolve(server, fqdn)` — formatted as dig output |
 | `ntp pool` | `NtpRepository.query(pool)` — formatted as NTP result |
-| `nmap -p ports host` | TCP connect scan per port (parses ranges like `80-443` and comma lists) |
+| `port-scan -p ports host` | TCP connect scan per port (renamed from `nmap`; parses ranges like `80-443` and comma lists) |
 | `checkcert -p port host` | `HttpsCertRepository.fetchCertificate(host, port)` — formatted cert info |
+| `device-info` | `SystemInfoRepository.getDeviceInfo()` — outputs device identity, network, battery, storage |
+| `tracert <host>` | TTL-probing via `ping -c 1 -t <TTL>` — hop-by-hop traceroute |
+| `google-timesync` | `GoogleTimeSyncRepository.fetchGoogleTime()` — server time, RTT, clock offset |
+| `lan-scan` | `LanScannerRepository` subnet sweep — discovers active local devices |
 | Unknown | Raw `ProcessBuilder` execution — falls back to shell |
+
+> **Breaking change:** The `nmap` prefix is no longer recognized. Use `port-scan` instead.
 
 ---
 
@@ -109,9 +115,9 @@ Tests ViewModel state management using MockK:
     "cmd2": "ping -c 5 10.0.0.1",
     "cmd3": "dig @1.1.1.1 cybernews.com",
     "cmd4": "ntp pool.ntp.org",
-    "cmd5": "nmap -p 80-443 mobilutils.com",
-    "cmd6": "nmap -p 80,443,8080 cat.phttp.com",
-    "cmd7": "nmap -p 80 landing.phttp.com",
+    "cmd5": "port-scan -p 80-443 mobilutils.com",
+    "cmd6": "port-scan -p 80,443,8080 cat.phttp.com",
+    "cmd7": "port-scan -p 80 landing.phttp.com",
     "cmd8": "checkcert -p 443 landing.phttp.com",
     "cmd9": "checkcert -p 8443 proxy.phttp.com",
     "cmd10": "ntp fr.pool.ntp.org"

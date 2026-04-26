@@ -43,7 +43,7 @@ data class BulkUiState(
 
 class BulkActionsViewModel(
     private val context: Context,
-    private val repository: BulkActionsRepository = BulkActionsRepository(),
+    private val repository: BulkActionsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BulkUiState())
@@ -410,7 +410,7 @@ class BulkActionsViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
                     BulkActionsViewModel(
                         context = context.applicationContext,
-                        repository = BulkActionsRepository(),
+                        repository = BulkActionsRepository(context.applicationContext),
                     ) as T
             }
     }
