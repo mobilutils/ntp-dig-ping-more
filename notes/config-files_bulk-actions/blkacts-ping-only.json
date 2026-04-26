@@ -1,0 +1,11 @@
+{
+  "output-file": "~/Downloads/bulk-with-timeout.txt",
+  "timeout": 42,
+  "run": {
+    "ping_google": "ping -c 1 google.com -t 10",
+    "ping_google2": "ping -c 1 -t 10 google.com",
+    "ping_google_noto": "ping -c 1 google.com",
+    "ping_cybernews": "ping -c 4 cybernews.com",
+    "ping_mobilutils": "ping -c 2 mobilutils.eu -t 1"
+  }
+}

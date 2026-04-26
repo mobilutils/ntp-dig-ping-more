@@ -53,6 +53,7 @@ class BulkActionsViewModelTest {
         assertTrue(state.results.isEmpty())
         assertFalse(state.isFileWriting)
         assertNull(state.outputFileWritten)
+        assertNull(state.configTimeoutMs)
     }
 
     @Test
@@ -92,5 +93,10 @@ class BulkActionsViewModelTest {
 
         // Original state object should be unchanged
         assertEquals(initial.configLoaded, viewModel.uiState.value.configLoaded)
+    }
+
+    @Test
+    fun `initialState_configTimeoutMsDefaultsToNull`() = runTest {
+        assertNull(viewModel.uiState.value.configTimeoutMs)
     }
 }
