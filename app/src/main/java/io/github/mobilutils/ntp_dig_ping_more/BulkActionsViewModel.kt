@@ -25,6 +25,7 @@ data class BulkUiState(
     val configFileName: String? = null,
     val configUri: String? = null,
     val commandCount: Int = 0,
+    val configTimeoutMs: Long? = null,
     val isExecuting: Boolean = false,
     val currentCommand: String? = null,
     val progress: Float = 0f,
@@ -70,6 +71,7 @@ class BulkActionsViewModel(
                     configFileName = fileName,
                     configUri = uri.toString(),
                     commandCount = config.commands.size,
+                    configTimeoutMs = config.timeoutMs,
                     results = emptyList(),
                     progress = 0f,
                     outputFileWritten = null,
@@ -110,6 +112,7 @@ class BulkActionsViewModel(
 
             val commands = config.commands.toList()
             val total = commands.size
+            val defaultTimeoutMs = config.timeoutMs ?: 30_000L
             val allResults = mutableListOf<BulkCommandResult>()
 
             commands.forEachIndexed { index, (name, cmd) ->
@@ -124,9 +127,12 @@ class BulkActionsViewModel(
                     progress = index.toFloat() / total,
                 )
 
+                // Per-command `-t N` overrides config-level timeout
+                val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
+
                 val result = try {
-                    withTimeout(30_000L) {
-                        repository.executeSingleCommand(name, cmd)
+                    withTimeout(commandTimeoutMs) {
+                        repository.executeSingleCommand(name, cmd, commandTimeoutMs)
                     }
                 } catch (e: Exception) {
                     null
