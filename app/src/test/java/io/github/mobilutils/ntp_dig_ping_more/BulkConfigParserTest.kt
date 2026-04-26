@@ -27,6 +27,9 @@ class BulkConfigParserTest {
         // Extract "output-file" value (supports both quoted and unquoted)
         val outputFile = extractStringField(trimmed, "output-file")
 
+        // Extract "timeout" value (mirrors production parsing)
+        val timeoutMs = extractLongField(trimmed, "timeout")?.takeIf { it > 0 }?.let { it * 1000L }
+
         // Extract "run" object
         val runMatch = Regex("""\"run\"\s*:\s*\{([^}]*)\}""").find(trimmed)
             ?: throw IllegalArgumentException("Missing required 'run' object in configuration")
@@ -43,7 +46,14 @@ class BulkConfigParserTest {
             }
         }
 
-        return BulkConfig(outputFile, commands)
+        return BulkConfig(outputFile, commands, timeoutMs)
+    }
+
+    /** Extracts a long field value from JSON, returning null if not found. */
+    private fun extractLongField(json: String, fieldName: String): Long? {
+        val pattern = Regex("""\"$fieldName\"\s*:\s*(-?\d+)""")
+        val match = pattern.find(json)
+        return match?.groupValues?.getOrNull(1)?.toLongOrNull()
     }
 
     /** Extracts a string field value from JSON, returning null if not found. */
@@ -212,5 +222,92 @@ class BulkConfigParserTest {
         val config = parseBulkConfig(json)
 
         assertEquals("ping -c 1 example.com", config.commands["cmd1"])
+    }
+
+    @Test
+    fun `parseConfigWithTimeout returns timeoutMs`() {
+        val json = """
+            {
+                "timeout": 60,
+                "run": {
+                    "cmd1": "ping -c 1 example.com"
+                }
+            }
+        """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertEquals(60_000L, config.timeoutMs)
+    }
+
+    @Test
+    fun `parseConfigWithoutTimeout returns null`() {
+        val json = """
+            {
+                "run": {
+                    "cmd1": "ping -c 1 example.com"
+                }
+            }
+        """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertNull(config.timeoutMs)
+    }
+
+    @Test
+    fun `parseConfigWithZeroTimeout returns null`() {
+        val json = """
+            {
+                "timeout": 0,
+                "run": {
+                    "cmd1": "ping -c 1 example.com"
+                }
+            }
+        """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertNull(config.timeoutMs)
+    }
+
+    @Test
+    fun `parseConfigWithNegativeTimeout returns null`() {
+        val json = """
+            {
+                "timeout": -10,
+                "run": {
+                    "cmd1": "ping -c 1 example.com"
+                }
+            }
+        """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertNull(config.timeoutMs)
+    }
+
+    @Test
+    fun `extractCommandTimeoutWithValidValueReturnsMs`() {
+        assertEquals(10_000L, BulkConfigParser.extractCommandTimeout("ping -c 4 -t 10 google.com"))
+        assertEquals(30_000L, BulkConfigParser.extractCommandTimeout("dig @1.1.1.1 -t 30 example.com"))
+        assertEquals(5_000L, BulkConfigParser.extractCommandTimeout("port-scan -p 80 -t 5 host"))
+    }
+
+    @Test
+    fun `extractCommandTimeoutWithNoTFlagReturnsNull`() {
+        assertNull(BulkConfigParser.extractCommandTimeout("ping -c 4 google.com"))
+        assertNull(BulkConfigParser.extractCommandTimeout("device-info"))
+    }
+
+    @Test
+    fun `extractCommandTimeoutWithZeroOrNegativeReturnsNull`() {
+        assertNull(BulkConfigParser.extractCommandTimeout("ping -c 4 -t 0 google.com"))
+        assertNull(BulkConfigParser.extractCommandTimeout("ping -c 4 -t -5 google.com"))
+    }
+
+    @Test
+    fun `extractCommandTimeoutWithNonNumericReturnsNull`() {
+        assertNull(BulkConfigParser.extractCommandTimeout("ping -c 4 -t abc google.com"))
     }
 }

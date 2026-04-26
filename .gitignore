@@ -42,6 +42,9 @@ captures/
 # -- Keystore
 .keystore/
 
+# -- Me related -----------------------------------------------------------------
+troubleshooting/
+
 # -- QWEN RELATED ---------------------------------------------------------------
 .qwen/
 node_modules/

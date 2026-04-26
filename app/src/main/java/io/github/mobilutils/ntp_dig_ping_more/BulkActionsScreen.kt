@@ -193,8 +193,9 @@ fun BulkActionsScreen() {
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(Modifier.height(4.dp))
+                    val timeoutText = uiState.configTimeoutMs?.let { " · ${it / 1000}s timeout" } ?: ""
                     Text(
-                        text = "${uiState.configFileName} — ${uiState.commandCount} command(s)",
+                        text = "${uiState.configFileName} — ${uiState.commandCount} command(s)$timeoutText",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
@@ -391,7 +392,7 @@ fun BulkActionsScreen() {
                             verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             itemsIndexed(uiState.results) { index, result ->
-                                ResultItem(result)
+                                ResultItem(result, configTimeoutMs = uiState.configTimeoutMs)
                             }
                         }
                     }
@@ -514,7 +515,7 @@ fun BulkActionsScreen() {
 // ────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ResultItem(result: BulkCommandResult) {
+private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null) {
     val (icon, statusText, statusColor) = when (result) {
         is BulkCommandSuccess ->
             Triple(Icons.Filled.CheckCircle, "SUCCESS", MaterialTheme.colorScheme.secondary)
@@ -580,8 +581,9 @@ private fun ResultItem(result: BulkCommandResult) {
                     ),
                 )
             } else if (result is BulkCommandTimeout) {
+                val timeoutSec = configTimeoutMs?.let { "${it / 1000}s" } ?: "30s"
                 Text(
-                    text = "Command timed out after 30 seconds",
+                    text = "Command timed out after $timeoutSec",
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace,
                         fontStyle = FontStyle.Italic,
