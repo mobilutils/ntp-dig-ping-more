@@ -181,6 +181,76 @@ class BulkActionsViewModel(
         )
     }
 
+    /** Generates the full output file content including a summary table at the end. */
+    private fun generateOutputContent(results: List<BulkCommandResult>): String {
+        val total = results.size
+        val successCount = results.count { it is BulkCommandSuccess }
+        val errorCount = results.count { it is BulkCommandError }
+        val timeoutCount = results.count { it is BulkCommandTimeout }
+        val totalDurationMs = results
+            .filterIsInstance<BulkCommandSuccess>()
+            .sumOf { it.durationMs }
+
+        val lines = mutableListOf<String>()
+
+        // Header
+        lines.add("══════════════════════════════════════════════════════")
+        lines.add("  BULK ACTIONS — OUTPUT REPORT")
+        lines.add("══════════════════════════════════════════════════════")
+        lines.add("  Generated: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())}")
+        lines.add("══════════════════════════════════════════════════════")
+        lines.add("")
+
+        // Individual results
+        lines.add("── COMMAND RESULTS ──────────────────────────────────")
+        lines.add("")
+        results.forEachIndexed { index, result ->
+            when (result) {
+                is BulkCommandSuccess -> {
+                    lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
+                    lines.add("    Status: SUCCESS (${result.durationMs}ms)")
+                    result.outputLines.forEach { line -> lines.add("    $line") }
+                }
+                is BulkCommandError -> {
+                    lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
+                    lines.add("    Status: ERROR")
+                    lines.add("    ${result.errorMessage}")
+                }
+                is BulkCommandTimeout -> {
+                    lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
+                    lines.add("    Status: TIMEOUT")
+                }
+            }
+            lines.add("")
+        }
+
+        // Summary table
+        val successPct = if (total > 0) String.format("%5.1f%%", successCount.toFloat() / total * 100) else "  0.0%"
+        val errorPct = if (total > 0) String.format("%5.1f%%", errorCount.toFloat() / total * 100) else "  0.0%"
+        val timeoutPct = if (total > 0) String.format("%5.1f%%", timeoutCount.toFloat() / total * 100) else "  0.0%"
+        val successBar = "█".repeat(successCount) + "░".repeat(total - successCount)
+
+        lines.add("── SUMMARY ──────────────────────────────────────────")
+        lines.add("")
+        lines.add("  ┌───────────────────────┬──────────┬─────────────┐")
+        lines.add("  │ Metric                │ Count    │ Percentage  │")
+        lines.add("  ├───────────────────────┼──────────┼─────────────┤")
+        lines.add("  │ Total commands        │ ${total.toString().padStart(6)} │ ${"100.0%".padStart(7)} │")
+        lines.add("  ├───────────────────────┼──────────┼─────────────┤")
+        lines.add("  │ ✓ SUCCESS             │ ${successCount.toString().padStart(6)} │ ${successPct.padStart(7)} │")
+        lines.add("  │ ✗ ERROR               │ ${errorCount.toString().padStart(6)} │ ${errorPct.padStart(7)} │")
+        lines.add("  │ ⏱ TIMEOUT             │ ${timeoutCount.toString().padStart(6)} │ ${timeoutPct.padStart(7)} │")
+        lines.add("  ├───────────────────────┼──────────┼─────────────┤")
+        lines.add("  │ Total duration        │ ${String.format("%8d", totalDurationMs)} ms  │             │")
+        lines.add("  └───────────────────────┴──────────┴─────────────┘")
+        lines.add("")
+        lines.add("  Progress: [$successBar] $successCount/$total")
+        lines.add("")
+        lines.add("══════════════════════════════════════════════════════")
+
+        return lines.joinToString("\n")
+    }
+
     /** Auto-saves results to the validated output path after execution. */
     private suspend fun autoSaveResults(outputPath: String, results: List<BulkCommandResult>): Boolean {
         return try {
@@ -203,20 +273,7 @@ class BulkActionsViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isFileWriting = true)
 
-            val content = results.joinToString("\n\n") { result ->
-                when (result) {
-                    is BulkCommandSuccess ->
-                        "=== ${result.commandName}: ${result.command} ===\n" +
-                        "Status: SUCCESS (${result.durationMs}ms)\n" +
-                        result.outputLines.joinToString("\n")
-                    is BulkCommandError ->
-                        "=== ${result.commandName}: ${result.command} ===\n" +
-                        "Status: ERROR\n${result.errorMessage}"
-                    is BulkCommandTimeout ->
-                        "=== ${result.commandName}: ${result.command} ===\n" +
-                        "Status: TIMEOUT"
-                }
-            }
+            val content = generateOutputContent(results)
 
             // Launch SAF picker with suggested filename
             val launcher = _outputLauncher
@@ -319,20 +376,7 @@ class BulkActionsViewModel(
             val success = withContext(Dispatchers.IO) {
                 try {
                     context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        val content = results.joinToString("\n\n") { result ->
-                            when (result) {
-                                is BulkCommandSuccess ->
-                                    "=== ${result.commandName}: ${result.command} ===\n" +
-                                    "Status: SUCCESS (${result.durationMs}ms)\n" +
-                                    result.outputLines.joinToString("\n")
-                                is BulkCommandError ->
-                                    "=== ${result.commandName}: ${result.command} ===\n" +
-                                    "Status: ERROR\n${result.errorMessage}"
-                                is BulkCommandTimeout ->
-                                    "=== ${result.commandName}: ${result.command} ===\n" +
-                                    "Status: TIMEOUT"
-                            }
-                        }
+                        val content = generateOutputContent(results)
                         outputStream.write(content.toByteArray())
                         true
                     } ?: false
@@ -351,20 +395,7 @@ class BulkActionsViewModel(
         return try {
             val uri = android.net.Uri.parse(path)
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                val content = results.joinToString("\n\n") { result ->
-                    when (result) {
-                        is BulkCommandSuccess ->
-                            "=== ${result.commandName}: ${result.command} ===\n" +
-                            "Status: SUCCESS (${result.durationMs}ms)\n" +
-                            result.outputLines.joinToString("\n")
-                        is BulkCommandError ->
-                            "=== ${result.commandName}: ${result.command} ===\n" +
-                            "Status: ERROR\n${result.errorMessage}"
-                        is BulkCommandTimeout ->
-                            "=== ${result.commandName}: ${result.command} ===\n" +
-                            "Status: TIMEOUT"
-                    }
-                }
+                val content = generateOutputContent(results)
                 outputStream.write(content.toByteArray())
                 true
             } ?: false
@@ -377,20 +408,7 @@ class BulkActionsViewModel(
         return try {
             val file = File(path)
             file.parentFile?.mkdirs()
-            val content = results.joinToString("\n\n") { result ->
-                when (result) {
-                    is BulkCommandSuccess ->
-                        "=== ${result.commandName}: ${result.command} ===\n" +
-                        "Status: SUCCESS (${result.durationMs}ms)\n" +
-                        result.outputLines.joinToString("\n")
-                    is BulkCommandError ->
-                        "=== ${result.commandName}: ${result.command} ===\n" +
-                        "Status: ERROR\n${result.errorMessage}"
-                    is BulkCommandTimeout ->
-                        "=== ${result.commandName}: ${result.command} ===\n" +
-                        "Status: TIMEOUT"
-                }
-            }
+            val content = generateOutputContent(results)
             file.writeText(content)
             true
         } catch (e: Exception) {
