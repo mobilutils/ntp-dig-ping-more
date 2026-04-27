@@ -132,7 +132,7 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 | `ping` | `ping -c N [-t W] host` | ICMP ping (N packets, -t W = per-packet wait in seconds + coroutine timeout) |
 | `dig` | `dig @server fqdn [-t T]` | DNS lookup to custom server (-t T = coroutine timeout in seconds) |
 | `ntp` | `ntp [pool] [-t T]` | NTP query (-t T = coroutine timeout in seconds) |
-| `port-scan` | `port-scan -p ports [-t S] host` | TCP port scan (-t S = connect timeout per port in seconds) |
+| `port-scan` | `port-scan [-p ports] [-t S] host` | TCP port scan (-t S = connect timeout per port in seconds; ports defaults to 22) |
 | `checkcert` | `checkcert -p port [-t T] host` | HTTPS certificate check (-t T = coroutine timeout in seconds) |
 | `device-info` | `device-info` | Device identity, network, battery, storage (no -t) |
 | `tracert` | `tracert host [-t H]` | TTL-probing traceroute (-t H = max hops, also sets coroutine timeout) |

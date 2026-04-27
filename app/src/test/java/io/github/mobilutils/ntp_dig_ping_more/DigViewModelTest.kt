@@ -7,14 +7,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 
 /**
@@ -23,32 +21,22 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class DigViewModelTest {
 
-    private val testDispatcher = StandardTestDispatcher()
-    private lateinit var viewModel: DigViewModel
-    private lateinit var repository: DigRepository
-    private lateinit var historyStore: DigHistoryStore
-
-    @Before
-    fun setup() {
-        Dispatchers.setMain(testDispatcher)
-        repository = mockk()
-        historyStore = mockk()
-
+    private fun createViewModel(
+        repository: DigRepository = mockk(relaxed = true),
+        historyStore: DigHistoryStore = mockk(relaxed = true),
+    ): DigViewModel {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
-        // Default stub: unstubbed resolve calls return NoNetwork
         coEvery { repository.resolve(any(), any()) } returns DigResult.NoNetwork
-
-        viewModel = DigViewModel(repository, historyStore)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+        return DigViewModel(repository, historyStore)
     }
 
     @Test
     fun `initial state has default values`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel()
         val state = viewModel.uiState.value
 
         assertEquals("", state.dnsServer)
@@ -60,6 +48,10 @@ class DigViewModelTest {
 
     @Test
     fun `onDnsServerChange updates dns server and clears result`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel()
         viewModel.onDnsServerChange("8.8.8.8")
 
         val state = viewModel.uiState.value
@@ -69,6 +61,10 @@ class DigViewModelTest {
 
     @Test
     fun `onFqdnChange updates fqdn and clears result`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel()
         viewModel.onFqdnChange("example.com")
 
         val state = viewModel.uiState.value
@@ -78,6 +74,16 @@ class DigViewModelTest {
 
     @Test
     fun `runDigQuery with blank fqdn does nothing`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+        coEvery { repository.resolve(any(), any()) } returns DigResult.NoNetwork
+
+        val viewModel = DigViewModel(repository, historyStore)
         viewModel.onFqdnChange("")
         viewModel.runDigQuery()
 
@@ -87,6 +93,15 @@ class DigViewModelTest {
 
     @Test
     fun `runDigQuery sets loading and calls repository`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = DigViewModel(repository, historyStore)
         viewModel.onDnsServerChange("8.8.8.8")
         viewModel.onFqdnChange("example.com")
 
@@ -99,7 +114,7 @@ class DigViewModelTest {
         coEvery { repository.resolve("8.8.8.8", "example.com") } returns digResult
 
         viewModel.runDigQuery()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertFalse(state.isLoading)
@@ -110,13 +125,22 @@ class DigViewModelTest {
 
     @Test
     fun `runDigQuery handles NxDomain`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = DigViewModel(repository, historyStore)
         viewModel.onFqdnChange("nonexistent.invalid")
 
         coEvery { repository.resolve(any(), any()) } returns
             DigResult.NxDomain("nonexistent.invalid")
 
         viewModel.runDigQuery()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertTrue(state.result is DigResult.NxDomain)
@@ -124,6 +148,15 @@ class DigViewModelTest {
 
     @Test
     fun `runDigQuery handles DnsServerError`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = DigViewModel(repository, historyStore)
         viewModel.onDnsServerChange("bad.server")
         viewModel.onFqdnChange("example.com")
 
@@ -131,25 +164,42 @@ class DigViewModelTest {
             DigResult.DnsServerError("Connection refused")
 
         viewModel.runDigQuery()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.result is DigResult.DnsServerError)
     }
 
     @Test
     fun `runDigQuery handles NoNetwork`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = DigViewModel(repository, historyStore)
         viewModel.onFqdnChange("example.com")
 
         coEvery { repository.resolve(any(), any()) } returns DigResult.NoNetwork
 
         viewModel.runDigQuery()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.result is DigResult.NoNetwork)
     }
 
     @Test
     fun `runDigQuery saves history on completion`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = DigViewModel(repository, historyStore)
         viewModel.onDnsServerChange("8.8.8.8")
         viewModel.onFqdnChange("example.com")
 
@@ -161,13 +211,22 @@ class DigViewModelTest {
             )
 
         viewModel.runDigQuery()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         coVerify { historyStore.save(any()) }
     }
 
     @Test
     fun `selectHistoryEntry populates fields and runs query`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = DigViewModel(repository, historyStore)
         val entry = DigHistoryEntry(
             timestamp = "2024/01/15 10:30:00",
             dnsServer = "1.1.1.1",
@@ -183,7 +242,7 @@ class DigViewModelTest {
             )
 
         viewModel.selectHistoryEntry(entry)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertEquals("1.1.1.1", state.dnsServer)
@@ -193,6 +252,15 @@ class DigViewModelTest {
 
     @Test
     fun `history is deduplicated by dnsServer and fqdn`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = DigViewModel(repository, historyStore)
         viewModel.onDnsServerChange("8.8.8.8")
         viewModel.onFqdnChange("example.com")
 
@@ -205,16 +273,22 @@ class DigViewModelTest {
 
         // Run same query twice
         viewModel.runDigQuery()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.runDigQuery()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         assertEquals(1, viewModel.uiState.value.history.size)
     }
 
     @Test
     fun `history is capped at 5 entries`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { repository.resolve(any(), any()) } returns
             DigResult.Success(
                 questionSection = "example.com. IN A",
@@ -222,12 +296,14 @@ class DigViewModelTest {
                 dnsServer = "8.8.8.8"
             )
 
+        val viewModel = DigViewModel(repository, historyStore)
+
         // Run 6 different queries
         for (i in 1..6) {
             viewModel.onDnsServerChange("8.8.8.8")
             viewModel.onFqdnChange("server${i}.example.com")
             viewModel.runDigQuery()
-            testDispatcher.scheduler.advanceUntilIdle()
+            advanceUntilIdle()
         }
 
         assertEquals(5, viewModel.uiState.value.history.size)
@@ -235,6 +311,15 @@ class DigViewModelTest {
 
     @Test
     fun `history status is SUCCESS for successful result`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = DigViewModel(repository, historyStore)
         viewModel.onFqdnChange("example.com")
 
         coEvery { repository.resolve(any(), any()) } returns
@@ -245,20 +330,29 @@ class DigViewModelTest {
             )
 
         viewModel.runDigQuery()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         assertEquals(DigStatus.SUCCESS, viewModel.uiState.value.history[0].status)
     }
 
     @Test
     fun `history status is FAILED for error result`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<DigRepository>(relaxed = true)
+        val historyStore = mockk<DigHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = DigViewModel(repository, historyStore)
         viewModel.onFqdnChange("nonexistent.invalid")
 
         coEvery { repository.resolve(any(), any()) } returns
             DigResult.NxDomain("nonexistent.invalid")
 
         viewModel.runDigQuery()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         assertEquals(DigStatus.FAILED, viewModel.uiState.value.history[0].status)
     }

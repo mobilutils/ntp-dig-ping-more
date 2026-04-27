@@ -3,47 +3,28 @@ package io.github.mobilutils.ntp_dig_ping_more
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 
 /**
  * Unit tests for [PortScannerViewModel] focusing on input validation and state management.
  */
-@OptIn(ExperimentalCoroutinesApi::class)
 class PortScannerViewModelTest {
 
-    private val testDispatcher = StandardTestDispatcher()
-    private lateinit var viewModel: PortScannerViewModel
-    private lateinit var historyStore: PortScannerHistoryStore
-
-    @Before
-    fun setup() {
-        Dispatchers.setMain(testDispatcher)
-        historyStore = mockk(relaxed = true)
-
+    private fun createViewModel(): PortScannerViewModel {
+        val historyStore = mockk<PortScannerHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-
-        viewModel = PortScannerViewModel(historyStore)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+        return PortScannerViewModel(historyStore)
     }
 
     @Test
     fun `initial state has default values`() = runTest {
+        val viewModel = createViewModel()
         val state = viewModel.uiState.value
 
         assertEquals("", state.host)
@@ -57,6 +38,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `onHostChange updates host`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("192.168.1.1")
 
         val state = viewModel.uiState.value
@@ -65,6 +47,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `onStartPortChange updates start port`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onStartPortChange("80")
 
         val state = viewModel.uiState.value
@@ -73,6 +56,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `onEndPortChange updates end port`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onEndPortChange("8080")
 
         val state = viewModel.uiState.value
@@ -81,6 +65,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `onProtocolChange updates protocol`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onProtocolChange(PortScannerProtocol.UDP)
 
         val state = viewModel.uiState.value
@@ -89,6 +74,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `startScan rejects blank host`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("")
         viewModel.onStartPortChange("80")
         viewModel.onEndPortChange("100")
@@ -100,6 +86,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `startScan rejects start port less than 1`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("192.168.1.1")
         viewModel.onStartPortChange("0")
         viewModel.onEndPortChange("100")
@@ -111,6 +98,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `startScan rejects end port greater than 65535`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("192.168.1.1")
         viewModel.onStartPortChange("1")
         viewModel.onEndPortChange("70000")
@@ -122,6 +110,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `startScan rejects start port greater than end port`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("192.168.1.1")
         viewModel.onStartPortChange("500")
         viewModel.onEndPortChange("100")
@@ -133,6 +122,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `startScan rejects if already running`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("192.168.1.1")
         viewModel.onStartPortChange("80")
         viewModel.onEndPortChange("100")
@@ -152,6 +142,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `startScan with valid inputs sets running state`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("192.168.1.1")
         viewModel.onStartPortChange("80")
         viewModel.onEndPortChange("85")
@@ -166,6 +157,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `stopScan cancels job and sets not running`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("192.168.1.1")
         viewModel.onStartPortChange("80")
         viewModel.onEndPortChange("100")
@@ -179,6 +171,7 @@ class PortScannerViewModelTest {
 
     @Test
     fun `selectHistoryEntry populates fields and starts scan`() = runTest {
+        val viewModel = createViewModel()
         val entry = PortScannerHistoryEntry(
             timestamp = "2024/01/15 10:30:00",
             host = "192.168.1.100",
@@ -190,7 +183,7 @@ class PortScannerViewModelTest {
         viewModel.selectHistoryEntry(entry)
 
         // Advance to let the scan complete
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertEquals("192.168.1.100", state.host)
@@ -201,18 +194,19 @@ class PortScannerViewModelTest {
 
     @Test
     fun `history is deduplicated by host and port range`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("192.168.1.1")
         viewModel.onStartPortChange("80")
         viewModel.onEndPortChange("100")
 
         // Run scan twice with same parameters
         viewModel.startScan()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val historySizeAfterFirst = viewModel.uiState.value.history.size
 
         viewModel.startScan()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         // History should not have grown if deduplication works
