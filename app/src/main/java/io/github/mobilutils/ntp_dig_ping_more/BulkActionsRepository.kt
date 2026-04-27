@@ -458,6 +458,20 @@ class BulkActionsRepository(
                 }
 
                 val ports = parsePortRange(portStr ?: "22")
+
+                // Validate host resolves before scanning
+                try {
+                    java.net.InetAddress.getByName(host)
+                } catch (e: java.net.UnknownHostException) {
+                    val duration = System.currentTimeMillis() - t0
+                    val lines = buildList {
+                        add("[${timestampFmt.format(java.time.LocalDateTime.now())}] $cmd")
+                        add("[${timestampFmt.format(java.time.LocalDateTime.now())}] Status: HOST NOT FOUND (${duration}ms)")
+                        add("    ${e.message}")
+                    }
+                    return@withContext BulkCommandError(name, cmd, e.message ?: "Unknown host")
+                }
+
                 val openPorts = mutableListOf<Int>()
 
                 ports.forEach { port ->

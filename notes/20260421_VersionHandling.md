@@ -20,7 +20,7 @@
 // app/build.gradle.kts
 
 defaultConfig {
-    versionName = "2.3"
+    versionName = "2.7"
 }
 
 buildTypes {
