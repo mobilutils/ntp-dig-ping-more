@@ -160,6 +160,8 @@ class SystemInfoRepository(
      *
      * Note: On many modern devices, this returns "unknown" or null for privacy reasons.
      */
+    @SuppressLint("MissingPermission")
+    @Suppress("DEPRECATION")
     fun getSerialNumber(): String? {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

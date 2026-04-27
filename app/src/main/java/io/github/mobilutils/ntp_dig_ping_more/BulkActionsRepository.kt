@@ -427,26 +427,37 @@ class BulkActionsRepository(
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
-                // Parse: port-scan -p ports [-t timeout] host
+                // Parse: port-scan [-p ports] [-t timeout] host  OR  port-scan ports host  (positional)
                 val parts = cmd.split(Regex("\\s+"))
                 val portIdx = parts.indexOfFirst { it == "-p" }
-                val portStr = parts.getOrNull(portIdx + 1) ?: "22"
-                // Parse host: everything after -t N (if present) that's not a flag
+                val (portStr, hasFlag) = if (portIdx >= 0) {
+                    parts.getOrNull(portIdx + 1) to true
+                } else {
+                    // Positional: port-scan <ports> [-t timeout] <host>
+                    parts.getOrNull(1) to false
+                } ?: ("22" to false)
+                // Parse host: first non-flag element after ports (handles -t before or after host)
                 val host = run {
-                    val tIdx2 = parts.indexOf("-t")
-                    val startIdx = if (tIdx2 >= portIdx) tIdx2 + 2 else portIdx + 2
-                    parts.subList(startIdx, parts.size).lastOrNull() ?: parts.last()
-                }
+                    val hostStart = if (hasFlag) portIdx + 2 else 2  // right after ports
+                    var i = hostStart
+                    val skipFlags = setOf("-t")
+                    while (i < parts.size) {
+                        if (parts[i] in skipFlags && i + 1 < parts.size) i += 2
+                        else if (parts[i].startsWith("-")) i++
+                        else break
+                    }
+                    parts.getOrNull(i)
+                } ?: parts.last()
 
-                // Parse per-command -t timeout (default 2000ms per port)
+                // Parse per-command -t timeout (default 2000ms per port; config-level timeout is for coroutine, not connect)
                 val tIdx = parts.indexOf("-t")
                 val connectTimeout = if (tIdx >= 0 && tIdx < parts.size - 1) {
                     parts[tIdx + 1].toIntOrNull()?.times(1000) ?: 2000
                 } else {
-                    timeoutMs ?: 2000L
-                }.toInt()
+                    2000
+                }
 
-                val ports = parsePortRange(portStr)
+                val ports = parsePortRange(portStr ?: "22")
                 val openPorts = mutableListOf<Int>()
 
                 ports.forEach { port ->
