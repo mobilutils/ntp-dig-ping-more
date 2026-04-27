@@ -7,16 +7,14 @@ import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 
 /**
@@ -24,11 +22,6 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LanScannerViewModelTest {
-
-    private val testDispatcher = UnconfinedTestDispatcher()
-    private lateinit var viewModel: LanScannerViewModel
-    private lateinit var repository: LanScannerRepository
-    private lateinit var historyStore: LanScannerHistoryStore
 
     private val sampleSubnetInfo = SubnetInfo(
         ipAddress = "192.168.1.100",
@@ -38,13 +31,11 @@ class LanScannerViewModelTest {
         numHosts = 254
     )
 
-    @Before
-    fun setup() {
-        val testDispatcher = UnconfinedTestDispatcher()
-        Dispatchers.setMain(testDispatcher)
-        repository = mockk(relaxed = true)
-        historyStore = mockk()
-
+    private fun createViewModel(
+        repository: LanScannerRepository = mockk(relaxed = true),
+        historyStore: LanScannerHistoryStore = mockk(relaxed = true),
+        testDispatcher: kotlinx.coroutines.test.TestDispatcher = StandardTestDispatcher(),
+    ): LanScannerViewModel {
         every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
         every { repository.longToIp(any()) } answers {
             val ipLong = firstArg<Long>()
@@ -55,20 +46,17 @@ class LanScannerViewModelTest {
             val parts = ip.split(".")
             (parts[0].toLong() shl 24) or (parts[1].toLong() shl 16) or (parts[2].toLong() shl 8) or parts[3].toLong()
         }
-
-        every { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
-
-        viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+        return LanScannerViewModel(repository, historyStore, testDispatcher)
     }
 
     @Test
     fun `initial state has default values`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel(testDispatcher = testDispatcher)
         val state = viewModel.uiState.value
 
         assertNotNull(state.subnetInfo)
@@ -86,27 +74,43 @@ class LanScannerViewModelTest {
 
     @Test
     fun `init loads subnet info and history`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
         every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
 
-        val newViewModel = LanScannerViewModel(repository, historyStore)
-        testDispatcher.scheduler.advanceUntilIdle()
+        val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        advanceUntilIdle()
 
         assertNotNull(newViewModel.uiState.value.subnetInfo)
     }
 
     @Test
     fun `init sets error when subnet info is null`() = runTest {
-        every { repository.getLocalSubnetInfo() } returns null
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
 
-        val newViewModel = LanScannerViewModel(repository, historyStore)
-        testDispatcher.scheduler.advanceUntilIdle()
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns null
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        advanceUntilIdle()
 
         assertEquals("No WiFi / Ethernet connection detected.", newViewModel.uiState.value.errorMsg)
     }
 
     @Test
     fun `refreshSubnetInfo updates subnet info`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
         val newSubnetInfo = SubnetInfo(
             ipAddress = "10.0.0.50",
             networkPrefixLength = 16,
@@ -115,8 +119,13 @@ class LanScannerViewModelTest {
             numHosts = 65534
         )
 
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
         every { repository.getLocalSubnetInfo() } returns newSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
 
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.refreshSubnetInfo()
 
         val state = viewModel.uiState.value
@@ -126,8 +135,16 @@ class LanScannerViewModelTest {
 
     @Test
     fun `refreshSubnetInfo sets error when no connection`() = runTest {
-        every { repository.getLocalSubnetInfo() } returns null
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
 
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns null
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.refreshSubnetInfo()
 
         val state = viewModel.uiState.value
@@ -136,6 +153,10 @@ class LanScannerViewModelTest {
 
     @Test
     fun `onStartIpChange updates start IP`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel(testDispatcher = testDispatcher)
         viewModel.onStartIpChange("192.168.1.10")
 
         val state = viewModel.uiState.value
@@ -144,6 +165,10 @@ class LanScannerViewModelTest {
 
     @Test
     fun `onEndIpChange updates end IP`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel(testDispatcher = testDispatcher)
         viewModel.onEndIpChange("192.168.1.254")
 
         val state = viewModel.uiState.value
@@ -152,6 +177,10 @@ class LanScannerViewModelTest {
 
     @Test
     fun `startScan with invalid IP range shows error`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel(testDispatcher = testDispatcher)
         viewModel.onStartIpChange("invalid")
         viewModel.onEndIpChange("192.168.1.254")
         viewModel.startScan(isFullScan = true)
@@ -163,6 +192,10 @@ class LanScannerViewModelTest {
 
     @Test
     fun `startScan with reversed IP range shows error`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel(testDispatcher = testDispatcher)
         viewModel.onStartIpChange("192.168.1.254")
         viewModel.onEndIpChange("192.168.1.1")
         viewModel.startScan(isFullScan = true)
@@ -173,6 +206,10 @@ class LanScannerViewModelTest {
 
     @Test
     fun `startScan with range too large shows error`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel(testDispatcher = testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.169.1.1") // More than 65535 hosts
         viewModel.startScan(isFullScan = true)
@@ -183,6 +220,10 @@ class LanScannerViewModelTest {
 
     @Test
     fun `startScan validates IP format`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel(testDispatcher = testDispatcher)
         viewModel.onStartIpChange("999.999.999.999")
         viewModel.onEndIpChange("192.168.1.254")
         viewModel.startScan(isFullScan = true)
@@ -193,13 +234,23 @@ class LanScannerViewModelTest {
 
     @Test
     fun `startScan clears error and sets scanning state`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.10")
 
         coEvery { repository.ping(any()) } returns null
 
         viewModel.startScan(isFullScan = true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertEquals(null, state.errorMsg)
@@ -207,6 +258,16 @@ class LanScannerViewModelTest {
 
     @Test
     fun `startScan stops existing scan before starting new one`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.10")
 
@@ -214,7 +275,7 @@ class LanScannerViewModelTest {
 
         viewModel.startScan(isFullScan = true)
         viewModel.startScan(isFullScan = false)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // Should not crash, scanning state should be valid
         assertTrue(viewModel.uiState.value.isScanning || viewModel.uiState.value.ipsChecked >= 0)
@@ -222,6 +283,16 @@ class LanScannerViewModelTest {
 
     @Test
     fun `stopScan sets isScanning to false`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.10")
 
@@ -229,7 +300,7 @@ class LanScannerViewModelTest {
 
         viewModel.startScan(isFullScan = true)
         viewModel.stopScan()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertFalse(state.isScanning)
@@ -237,13 +308,23 @@ class LanScannerViewModelTest {
 
     @Test
     fun `quick scan uses sampled IPs`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.254")
 
         coEvery { repository.ping(any()) } returns null
 
         viewModel.startScan(isFullScan = false)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // Quick scan should check a small subset of IPs
         val totalIps = viewModel.uiState.value.totalIpsToCheck
@@ -252,13 +333,23 @@ class LanScannerViewModelTest {
 
     @Test
     fun `full scan uses all IPs in range`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.10")
 
         coEvery { repository.ping(any()) } returns null
 
         viewModel.startScan(isFullScan = true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // Full scan should check all IPs in range (10 IPs: 1-10)
         assertEquals(10, viewModel.uiState.value.totalIpsToCheck)
@@ -266,13 +357,23 @@ class LanScannerViewModelTest {
 
     @Test
     fun `scan progress updates correctly`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.5")
 
         coEvery { repository.ping(any()) } returns null
 
         viewModel.startScan(isFullScan = true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertTrue(state.progress in 0f..1f)
@@ -281,6 +382,15 @@ class LanScannerViewModelTest {
 
     @Test
     fun `history is loaded on init`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
         val savedHistory = listOf(
             LanScannerHistoryEntry(
                 timestamp = "2024/01/15 10:30:00",
@@ -290,10 +400,10 @@ class LanScannerViewModelTest {
             )
         )
 
-        every { historyStore.historyFlow } returns flowOf(savedHistory)
+        coEvery { historyStore.historyFlow } returns flowOf(savedHistory)
 
         val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         assertEquals(1, newViewModel.uiState.value.history.size)
         assertEquals("Full Scan", newViewModel.uiState.value.history[0].type)
@@ -301,6 +411,15 @@ class LanScannerViewModelTest {
 
     @Test
     fun `history is capped at 10 entries`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
         val largeHistory = (1..15).map { i ->
             LanScannerHistoryEntry(
                 timestamp = "2024/01/${i.toString().padStart(2, '0')} 10:00:00",
@@ -310,10 +429,10 @@ class LanScannerViewModelTest {
             )
         }
 
-        every { historyStore.historyFlow } returns flowOf(largeHistory)
+        coEvery { historyStore.historyFlow } returns flowOf(largeHistory)
 
         val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // HistoryStore should already have capped at 10
         assertTrue(newViewModel.uiState.value.history.size <= 10)
@@ -321,19 +440,37 @@ class LanScannerViewModelTest {
 
     @Test
     fun `history is saved after scan completes`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.5")
 
         coEvery { repository.ping(any()) } returns null
 
         viewModel.startScan(isFullScan = true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         coVerify { historyStore.save(any()) }
     }
 
     @Test
     fun `history is saved on partial scan stop`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.20")
 
@@ -341,7 +478,7 @@ class LanScannerViewModelTest {
 
         viewModel.startScan(isFullScan = true)
         viewModel.stopScan()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // History should be saved if any IPs were checked
         coVerify(atLeast = 0) { historyStore.save(any()) }
@@ -349,13 +486,23 @@ class LanScannerViewModelTest {
 
     @Test
     fun `onCleared cancels scanJob`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.254")
 
         coEvery { repository.ping(any()) } returns null
 
         viewModel.startScan(isFullScan = true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // onCleared() is protected and called by the framework when ViewModel is cleared
         // We can't directly test it, but verify the scan started without issues
@@ -364,6 +511,16 @@ class LanScannerViewModelTest {
 
     @Test
     fun `activeDevices is populated when ping succeeds`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val repository = mockk<LanScannerRepository>(relaxed = true)
+        val historyStore = mockk<LanScannerHistoryStore>(relaxed = true)
+        every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        coEvery { historyStore.save(any()) } coAnswers { }
+
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.2")
 
@@ -373,7 +530,7 @@ class LanScannerViewModelTest {
         coEvery { repository.resolveHostname(any()) } returns "device.local"
 
         viewModel.startScan(isFullScan = true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val devices = viewModel.uiState.value.activeDevices
         assertTrue(devices.isNotEmpty())
@@ -382,6 +539,10 @@ class LanScannerViewModelTest {
 
     @Test
     fun `scan with empty start or end IP shows error`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
+        val viewModel = createViewModel(testDispatcher = testDispatcher)
         viewModel.onStartIpChange("")
         viewModel.onEndIpChange("192.168.1.254")
         viewModel.startScan(isFullScan = true)

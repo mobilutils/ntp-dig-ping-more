@@ -3,49 +3,30 @@ package io.github.mobilutils.ntp_dig_ping_more
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 
 /**
  * Unit tests for [SimpleNtpViewModel] using MockK for mocking dependencies.
  */
-@OptIn(ExperimentalCoroutinesApi::class)
 class NtpViewModelTest {
 
-    private val testDispatcher = StandardTestDispatcher()
-    private lateinit var viewModel: SimpleNtpViewModel
-    private lateinit var repository: NtpRepository
-    private lateinit var historyStore: NtpHistoryStore
-
-    @Before
-    fun setup() {
-        Dispatchers.setMain(testDispatcher)
-        repository = mockk(relaxed = true)
-        historyStore = mockk(relaxed = true)
-
+    private fun createViewModel(
+        repository: NtpRepository = mockk(relaxed = true),
+        historyStore: NtpHistoryStore = mockk(relaxed = true),
+    ): SimpleNtpViewModel {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-
-        viewModel = SimpleNtpViewModel(repository, historyStore)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+        return SimpleNtpViewModel(repository, historyStore)
     }
 
     @Test
     fun `initial state has default values`() = runTest {
+        val viewModel = createViewModel()
         val state = viewModel.uiState.value
 
         assertEquals("pool.ntp.org", state.serverAddress)
@@ -57,6 +38,7 @@ class NtpViewModelTest {
 
     @Test
     fun `onServerAddressChange updates server address and clears result`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onServerAddressChange("time.google.com")
 
         val state = viewModel.uiState.value
@@ -66,6 +48,7 @@ class NtpViewModelTest {
 
     @Test
     fun `onPortChange accepts only digits`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onPortChange("123abc456")
 
         val state = viewModel.uiState.value
@@ -75,6 +58,7 @@ class NtpViewModelTest {
 
     @Test
     fun `onPortChange caps at 5 characters`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onPortChange("123456789")
 
         val state = viewModel.uiState.value
@@ -83,6 +67,7 @@ class NtpViewModelTest {
 
     @Test
     fun `onPortChange clears result`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onPortChange("8080")
 
         val state = viewModel.uiState.value
@@ -91,6 +76,11 @@ class NtpViewModelTest {
 
     @Test
     fun `checkReachability with empty host does nothing`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
         viewModel.onServerAddressChange("")
         viewModel.checkReachability()
 
@@ -101,6 +91,11 @@ class NtpViewModelTest {
 
     @Test
     fun `checkReachability sets loading state and calls repository`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
         viewModel.onServerAddressChange("pool.ntp.org")
         viewModel.onPortChange("123")
 
@@ -113,7 +108,7 @@ class NtpViewModelTest {
         viewModel.checkReachability()
 
         // Advance the test dispatcher to execute the coroutine
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertFalse(state.isLoading)
@@ -124,12 +119,17 @@ class NtpViewModelTest {
 
     @Test
     fun `checkReachability handles DNS failure`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
         viewModel.onServerAddressChange("invalid.host.xyz")
 
         coEvery { repository.query("invalid.host.xyz", 123) } returns NtpResult.DnsFailure("invalid.host.xyz")
 
         viewModel.checkReachability()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertTrue(state.result is NtpResult.DnsFailure)
@@ -137,12 +137,17 @@ class NtpViewModelTest {
 
     @Test
     fun `checkReachability handles timeout`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
         viewModel.onServerAddressChange("slow.server.com")
 
         coEvery { repository.query("slow.server.com", 123) } returns NtpResult.Timeout("slow.server.com")
 
         viewModel.checkReachability()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertTrue(state.result is NtpResult.Timeout)
@@ -150,12 +155,17 @@ class NtpViewModelTest {
 
     @Test
     fun `checkReachability handles no network`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
         viewModel.onServerAddressChange("pool.ntp.org")
 
         coEvery { repository.query("pool.ntp.org", 123) } returns NtpResult.NoNetwork
 
         viewModel.checkReachability()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertTrue(state.result is NtpResult.NoNetwork)
@@ -163,6 +173,11 @@ class NtpViewModelTest {
 
     @Test
     fun `checkReachability saves history on completion`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
         viewModel.onServerAddressChange("pool.ntp.org")
 
         coEvery { repository.query("pool.ntp.org", 123) } returns NtpResult.Success(
@@ -172,13 +187,18 @@ class NtpViewModelTest {
         )
 
         viewModel.checkReachability()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         coVerify { historyStore.save(any()) }
     }
 
     @Test
     fun `selectHistoryEntry populates fields and runs check`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
         val entry = NtpHistoryEntry(
             timestamp = "2024/01/15 10:30:00",
             server = "time.google.com",
@@ -193,7 +213,7 @@ class NtpViewModelTest {
         )
 
         viewModel.selectHistoryEntry(entry)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertEquals("time.google.com", state.serverAddress)
@@ -203,6 +223,11 @@ class NtpViewModelTest {
 
     @Test
     fun `history is deduplicated by server and port`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
         viewModel.onServerAddressChange("pool.ntp.org")
 
         coEvery { repository.query(any(), any()) } returns NtpResult.Success(
@@ -213,10 +238,10 @@ class NtpViewModelTest {
 
         // Run the same query twice
         viewModel.checkReachability()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         viewModel.checkReachability()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         // Should only have 1 entry, not 2
@@ -225,17 +250,22 @@ class NtpViewModelTest {
 
     @Test
     fun `history is capped at 5 entries`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { repository.query(any(), any()) } returns NtpResult.Success(
             serverTime = "2024-01-15 10:30:00 UTC",
             offsetMs = 45L,
             delayMs = 120L
         )
 
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
+
         // Run 6 different queries
         for (i in 1..6) {
             viewModel.onServerAddressChange("server${i}.ntp.org")
             viewModel.checkReachability()
-            testDispatcher.scheduler.advanceUntilIdle()
+            advanceUntilIdle()
         }
 
         val state = viewModel.uiState.value
@@ -244,6 +274,11 @@ class NtpViewModelTest {
 
     @Test
     fun `checkReachability uses default port 123 when port is invalid`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
         viewModel.onServerAddressChange("pool.ntp.org")
         viewModel.onPortChange("abc")
 
@@ -254,13 +289,18 @@ class NtpViewModelTest {
         )
 
         viewModel.checkReachability()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         coVerify { repository.query("pool.ntp.org", 123) }
     }
 
     @Test
     fun `checkReachability cancels previous job if already running`() = runTest {
+        val repository = mockk<NtpRepository>(relaxed = true)
+        val historyStore = mockk<NtpHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val viewModel = SimpleNtpViewModel(repository, historyStore)
         viewModel.onServerAddressChange("pool.ntp.org")
 
         // First query that takes a long time
@@ -273,7 +313,7 @@ class NtpViewModelTest {
         viewModel.checkReachability()
         // Immediately start another query
         viewModel.checkReachability()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // Repository should be called at least once (may be called twice if first isn't cancelled fast enough)
         // The key is that the second call completes
