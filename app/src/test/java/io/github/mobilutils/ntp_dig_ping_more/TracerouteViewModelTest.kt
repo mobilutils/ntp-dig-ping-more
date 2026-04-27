@@ -3,18 +3,12 @@ package io.github.mobilutils.ntp_dig_ping_more
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 
 /**
@@ -24,30 +18,17 @@ import org.junit.Test
  * be easily mocked. These tests focus on state management, input handlers,
  * history persistence, and job cancellation logic.
  */
-@OptIn(ExperimentalCoroutinesApi::class)
 class TracerouteViewModelTest {
 
-    private val testDispatcher = StandardTestDispatcher()
-    private lateinit var viewModel: TracerouteViewModel
-    private lateinit var historyStore: TracerouteHistoryStore
-
-    @Before
-    fun setup() {
-        Dispatchers.setMain(testDispatcher)
-        historyStore = mockk(relaxed = true)
-
+    private fun createViewModel(): TracerouteViewModel {
+        val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-
-        viewModel = TracerouteViewModel(historyStore)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+        return TracerouteViewModel(historyStore)
     }
 
     @Test
     fun `initial state has default values`() = runTest {
+        val viewModel = createViewModel()
         val state = viewModel.uiState.value
 
         assertEquals("", state.host)
@@ -58,6 +39,7 @@ class TracerouteViewModelTest {
 
     @Test
     fun `onHostChange updates host field`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("example.com")
 
         val state = viewModel.uiState.value
@@ -66,6 +48,7 @@ class TracerouteViewModelTest {
 
     @Test
     fun `onHostChange trims whitespace`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("  example.com  ")
 
         // Note: ViewModel stores the raw value; trimming happens in startTraceroute()
@@ -74,6 +57,7 @@ class TracerouteViewModelTest {
 
     @Test
     fun `startTraceroute with blank host does nothing`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("")
         viewModel.startTraceroute()
 
@@ -84,6 +68,7 @@ class TracerouteViewModelTest {
 
     @Test
     fun `startTraceroute with whitespace-only host does nothing`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("   ")
         viewModel.startTraceroute()
 
@@ -94,9 +79,11 @@ class TracerouteViewModelTest {
 
     @Test
     fun `startTraceroute sets isRunning and clears output`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
 
+        // These are synchronous state changes that happen before the coroutine body
         val state = viewModel.uiState.value
         assertTrue(state.isRunning)
         assertTrue(state.outputLines.isEmpty())
@@ -104,6 +91,7 @@ class TracerouteViewModelTest {
 
     @Test
     fun `startTraceroute does not run if already running`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
 
@@ -116,6 +104,7 @@ class TracerouteViewModelTest {
 
     @Test
     fun `stopTraceroute sets isRunning to false`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
         viewModel.stopTraceroute()
@@ -126,16 +115,20 @@ class TracerouteViewModelTest {
 
     @Test
     fun `stopTraceroute saves history when stopped`() = runTest {
+        val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        val viewModel = TracerouteViewModel(historyStore)
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
         viewModel.stopTraceroute()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         coVerify { historyStore.save(any()) }
     }
 
     @Test
     fun `selectHistoryEntry populates host and starts traceroute`() = runTest {
+        val viewModel = createViewModel()
         val entry = TracerouteHistoryEntry(
             timestamp = "2024/01/15 10:30:00",
             host = "google.com",
@@ -143,7 +136,7 @@ class TracerouteViewModelTest {
         )
 
         viewModel.selectHistoryEntry(entry)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertEquals("google.com", state.host)
@@ -152,6 +145,9 @@ class TracerouteViewModelTest {
 
     @Test
     fun `selectHistoryEntry stops previous traceroute if running`() = runTest {
+        val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        val viewModel = TracerouteViewModel(historyStore)
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
 
@@ -162,7 +158,7 @@ class TracerouteViewModelTest {
         )
 
         viewModel.selectHistoryEntry(entry)
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // Should have started the new traceroute
         assertEquals("google.com", viewModel.uiState.value.host)
@@ -175,14 +171,15 @@ class TracerouteViewModelTest {
             TracerouteHistoryEntry("2024/01/14 09:00:00", "example.com", TracerouteStatus.PARTIAL)
         )
 
+        val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(savedHistory)
 
         // Create a new ViewModel to trigger history loading
-        val newViewModel = TracerouteViewModel(historyStore)
-        testDispatcher.scheduler.advanceUntilIdle()
+        val viewModel = TracerouteViewModel(historyStore)
+        advanceUntilIdle()
 
-        assertEquals(2, newViewModel.uiState.value.history.size)
-        assertEquals("google.com", newViewModel.uiState.value.history[0].host)
+        assertEquals(2, viewModel.uiState.value.history.size)
+        assertEquals("google.com", viewModel.uiState.value.history[0].host)
     }
 
     @Test
@@ -196,21 +193,25 @@ class TracerouteViewModelTest {
             )
         }
 
+        val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(largeHistory)
 
-        val newViewModel = TracerouteViewModel(historyStore)
-        testDispatcher.scheduler.advanceUntilIdle()
+        val viewModel = TracerouteViewModel(historyStore)
+        advanceUntilIdle()
 
         // HistoryStore should already have capped at 5
-        assertTrue(newViewModel.uiState.value.history.size <= 5)
+        assertTrue(viewModel.uiState.value.history.size <= 5)
     }
 
     @Test
     fun `stopTraceroute calculates ALL_FAILED status when no hops replied`() = runTest {
+        val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        val viewModel = TracerouteViewModel(historyStore)
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
         viewModel.stopTraceroute()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // Verify history was saved (status calculation happens in saveHistory)
         coVerify { historyStore.save(any()) }
@@ -218,6 +219,7 @@ class TracerouteViewModelTest {
 
     @Test
     fun `onCleared cancels traceJob`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
 
@@ -228,6 +230,7 @@ class TracerouteViewModelTest {
 
     @Test
     fun `startTraceroute output starts with traceroute header`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
 
@@ -239,17 +242,20 @@ class TracerouteViewModelTest {
 
     @Test
     fun `multiple startTraceroute calls with different hosts`() = runTest {
+        val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+        val viewModel = TracerouteViewModel(historyStore)
         // Start first traceroute
         viewModel.onHostChange("google.com")
         viewModel.startTraceroute()
         viewModel.stopTraceroute()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // Start second traceroute
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
         viewModel.stopTraceroute()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         // Both should have saved history
         coVerify(atLeast = 2) { historyStore.save(any()) }
@@ -257,6 +263,7 @@ class TracerouteViewModelTest {
 
     @Test
     fun `ui state outputLines grows during traceroute`() = runTest {
+        val viewModel = createViewModel()
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
 
