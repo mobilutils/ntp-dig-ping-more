@@ -25,6 +25,9 @@ import androidx.annotation.RequiresPermission
 import io.github.mobilutils.ntp_dig_ping_more.deviceinfo.CertificateInfo
 import io.github.mobilutils.ntp_dig_ping_more.deviceinfo.DeviceInfo
 import java.io.File
+import java.io.FileInputStream
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
@@ -293,6 +296,7 @@ class SystemInfoRepository(
     /**
      * Gets the default gateway/router IP from link properties.
      * Uses LinkProperties.routes to find the default route (0.0.0.0/0).
+     * Falls back to reading /proc/net/route if ConnectivityManager doesn't provide it.
      */
     @SuppressLint("MissingPermission")
     fun getDefaultGateway(): String? {
@@ -301,8 +305,10 @@ class SystemInfoRepository(
             val linkProps = connectivityManager.getLinkProperties(network)
             // On Android 10+, routes may not be accessible without special permissions.
             // Try to get the gateway from linkAddresses as a fallback.
+            var gateway: String? = null
+            
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Android 12+: getHttpProxy is not gateway; use route info if available
+                // Android 12+: use explicit default route marker
                 linkProps?.routes
                     ?.firstOrNull { it.isDefaultRoute }
                     ?.gateway
@@ -314,6 +320,77 @@ class SystemInfoRepository(
                     ?.gateway
                     ?.hostAddress
             }
+            
+            // If ConnectivityManager didn't provide a gateway, try /proc/net/route
+            if (gateway == null) {
+                gateway = getGatewayFromProcNetRoute()
+            }
+            
+            gateway
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Fallback method: reads gateway from /proc/net/route.
+     * This is a low-level Linux interface that's always accessible.
+     * /proc/net/route uses hex-encoded little-endian IPs.
+     * Returns the default gateway IP if found, null otherwise.
+     */
+    private fun getGatewayFromProcNetRoute(): String? {
+        return try {
+            val procFile = File("/proc/net/route")
+            if (!procFile.exists()) return null
+
+            val lines = procFile.readLines()
+            if (lines.size < 2) return null
+
+            // Skip header line (interface names), parse each route entry
+            for (i in 1 until lines.size) {
+                val line = lines[i].trim()
+                if (line.isBlank()) continue
+
+                val parts = line.split(Regex("\\s+"))
+                if (parts.size < 9) continue
+
+                // Column layout (hex fields):
+                // [0] = interface name (e.g., "wlan0")
+                // [1] = destination IP (hex, little-endian) — "00000000" = default route
+                // [2] = gateway IP (hex, little-endian)
+                // [3] = flags
+                // [8] = metric
+                val destHex = parts[1]
+                val gatewayHex = parts[2]
+
+                // Default route: destination is 0.0.0.0 (all zeros in hex)
+                if (destHex == "00000000" || destHex == "0000000000000000") {
+                    // Skip directly connected routes (gateway 0.0.0.0)
+                    if (gatewayHex == "00000000" || gatewayHex == "0000000000000000") continue
+                    val gwIp = hexToIpv4(gatewayHex)
+                    if (gwIp != null) return gwIp
+                }
+            }
+
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Converts a hex string from /proc/net/route to a dotted-decimal IPv4 address.
+     * The hex value is stored in little-endian byte order.
+     * E.g., "4a0002ac" -> bytes [0xac, 0x02, 0x00, 0x4a] -> "172.2.0.74"
+     */
+    private fun hexToIpv4(hex: String): String? {
+        return try {
+            // Handle both 32-bit (8 chars) and 64-bit (16 chars) hex values
+            // For 64-bit values, the IPv4 address is in the lower 32 bits (first 8 chars in little-endian)
+            val cleanHex = if (hex.length > 8) hex.take(8) else hex
+            val bytes = cleanHex.chunked(2).map { it.toInt(16).toByte() }
+            // Reverse byte order (little-endian to network byte order)
+            bytes.reversed().joinToString(".") { (it.toInt() and 0xFF).toString() }
         } catch (e: Exception) {
             null
         }
