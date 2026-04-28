@@ -342,6 +342,16 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
+        every { repository.ipToLong(any()) } answers {
+            val ip = firstArg<String>()
+            val parts = ip.split(".")
+            (parts[0].toLong() shl 24) or (parts[1].toLong() shl 16) or (parts[2].toLong() shl 8) or parts[3].toLong()
+        }
+        every { repository.longToIp(any()) } answers {
+            val ipLong = firstArg<Long>()
+            "${(ipLong shr 24) and 0xff}.${(ipLong shr 16) and 0xff}.${(ipLong shr 8) and 0xff}.${ipLong and 0xff}"
+        }
+
         val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.10")
@@ -519,6 +529,16 @@ class LanScannerViewModelTest {
         every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
+
+        every { repository.ipToLong(any()) } answers {
+            val ip = firstArg<String>()
+            val parts = ip.split(".")
+            (parts[0].toLong() shl 24) or (parts[1].toLong() shl 16) or (parts[2].toLong() shl 8) or parts[3].toLong()
+        }
+        every { repository.longToIp(any()) } answers {
+            val ipLong = firstArg<Long>()
+            "${(ipLong shr 24) and 0xff}.${(ipLong shr 16) and 0xff}.${(ipLong shr 8) and 0xff}.${ipLong and 0xff}"
+        }
 
         val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
         viewModel.onStartIpChange("192.168.1.1")
