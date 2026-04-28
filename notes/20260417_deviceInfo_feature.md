@@ -69,3 +69,44 @@ Permissions are requested on first launch via `rememberLauncherForActivityResult
 | `AndroidManifest.xml` | Added `<uses-permission>` declarations for `ACCESS_WIFI_STATE`, `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION`, `READ_PHONE_STATE` |
 | `MainActivity.kt` | Added `DeviceInfo` to `AppScreen` sealed class, navigation route, `allAppScreens` list, bottom-bar highlight logic, and `composable` destination. Imported `DeviceInfoScreen` and `Icons.Filled.Info`. Fixed pre-existing `twee` → `tween` typo in animation import |
 | `MoreToolsScreen.kt` | Added `AppScreen.DeviceInfo` to the `extraTools` list so it appears in the overflow menu |
+
+---
+
+## Gateway Detection — /proc/net/route Fallback (2026-04-28)
+
+Added a `/proc/net/route` fallback to `getDefaultGateway()` when `ConnectivityManager` routes are unavailable (common on Android 10+ without privileged permissions).
+
+### Fallback Chain
+
+1. **`ConnectivityManager.getLinkProperties().routes`** — primary source (Android 12+ uses `isDefaultRoute`, older uses first route)
+2. **`/proc/net/route`** — reads the kernel routing table directly, parses hex-encoded little-endian IPs
+
+### Bugs Fixed
+
+| Bug | Root Cause | Fix |
+|---|---|---|
+| `0.0.0.0` returned as gateway | Directly connected routes have gateway `00000000`; no check to skip them | Added `continue` when `gatewayHex` is all zeros |
+| Wrong IP from 64-bit hex values | `hex.takeLast(8)` reads upper 32 bits (usually zeros) instead of lower 32 bits | Changed to `hex.take(8)` (first 8 chars = lower 32 bits in little-endian) |
+| `joinToString` type mismatch | Lambda returned `Int` instead of `CharSequence` | Added `.toString()` to the transform lambda |
+
+### Implementation Details
+
+- `getGatewayFromProcNetRoute()` — reads `/proc/net/route`, skips header, finds rows with destination `00000000` (default route), converts gateway hex to dotted-decimal
+- `hexToIpv4()` — handles both 8-char (32-bit) and 16-char (64-bit) hex, reverses byte order (little-endian → network order)
+- Example: `"ac01a8c0"` → bytes `[0xc0, 0xa8, 0x01, 0xac]` → `"192.168.1.172"`
+
+---
+
+## IP Information Suggestions
+
+### Future Enhancements for Network/Route Diagnostics
+
+| Suggestion | Description |
+|---|---|
+| **`ip route` shell fallback** | Run `Runtime.getRuntime().exec("ip route")` as a 3rd fallback when both ConnectivityManager and `/proc/net/route` fail. Parses `default via <GW>` lines. |
+| **Computed network address** | When no gateway is found, compute `IP & mask` (e.g., `192.168.1.172 & 255.255.255.0 = 192.168.1.0/24`) and display it as "Network: 192.168.1.0/24" — useful for directly connected networks with no gateway. |
+| **Multiple interfaces** | Currently only reads the active network's gateway. Could enumerate all interfaces (`wlan0`, `rmnet0`, etc.) and show per-interface gateway info. |
+| **IPv6 gateway** | `/proc/net/route` is IPv4-only. For IPv6 gateways, read `/proc/net/ipv6_route` or use `LinkProperties` routes (which support IPv6). |
+| **Route table summary** | Show the full routing table (not just default gateway) — helpful for troubleshooting split-tunneling, VPN routes, or policy-based routing. |
+| **DNS resolver info** | Beyond just listing DNS servers, show resolver type (DoH/DoT/regular), query latency per server, and whether DNSSEC is supported. |
+| **NAT/dual-stack detection** | Detect if the device is behind NAT (private IPv4 + public IPv4 mismatch) or using dual-stack (IPv4 + IPv6 simultaneously). |
