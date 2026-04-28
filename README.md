@@ -128,7 +128,7 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 #### Supported Pseudo-Commands
 
 | Command | Syntax | Description |
-|---|---|-:--|
+|---|---|---|
 | `ping` | `ping -c N [-t W] host` | ICMP ping (N packets, -t W = per-packet wait in seconds + coroutine timeout) |
 | `dig` | `dig @server fqdn [-t T]` | DNS lookup to custom server (-t T = coroutine timeout in seconds) |
 | `ntp` | `ntp [pool] [-t T]` | NTP query (-t T = coroutine timeout in seconds) |
