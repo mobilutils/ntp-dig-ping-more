@@ -1,4 +1,4 @@
-# HTTPS Certificate Inspector walkthrough
+# HTTPS Certificate Inspector 
 
 ## HttpsCertRepository.kt
 SSLSocket + RecordingTrustManager, certificate parsing, fingerprints, SANs
