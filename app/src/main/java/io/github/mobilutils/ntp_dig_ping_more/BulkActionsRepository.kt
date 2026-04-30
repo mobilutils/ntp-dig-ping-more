@@ -28,11 +28,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  * @param outputFile  Optional expanded output file path (null = don't write to file).
  * @param commands    Ordered command map (key = command name, value = command string).
  * @param timeoutMs   Optional per-command timeout in milliseconds (null = use default 30s).
+ * @param outputAsCsv Optional flag to output results as CSV (default false).
  */
 data class BulkConfig(
     val outputFile: String?,
     val commands: Map<String, String>,
     val timeoutMs: Long? = null,
+    val outputAsCsv: Boolean = false,
 )
 
 /**
@@ -59,6 +61,13 @@ data class BulkCommandError(
 data class BulkCommandTimeout(
     override val commandName: String,
     override val command: String,
+) : BulkCommandResult()
+
+data class BulkCommandClosed(
+    override val commandName: String,
+    override val command: String,
+    val outputLines: List<String>,
+    val durationMs: Long,
 ) : BulkCommandResult()
 
 /** Progress callback emitted during bulk execution. */
@@ -119,6 +128,10 @@ object BulkConfigParser {
             else seconds * 1000L
         }.getOrNull()
 
+        val outputAsCsv = runCatching {
+            root.optBoolean("outputAsCsv", false)
+        }.getOrDefault(false)
+
         val runObj = root.optJSONObject("run")
             ?: throw IllegalArgumentException("Missing required 'run' object in configuration")
 
@@ -132,7 +145,7 @@ object BulkConfigParser {
             }
         }
 
-        return BulkConfig(outputFile, commands, timeoutMs)
+        return BulkConfig(outputFile, commands, timeoutMs, outputAsCsv)
     }
 
     /** Expands `~` to the external storage directory path. */
@@ -488,14 +501,19 @@ class BulkActionsRepository(
                 val duration = System.currentTimeMillis() - t0
                 val lines = buildList {
                     add("[${timestampFmt.format(LocalDateTime.now())}] $cmd")
-                    add("[${timestampFmt.format(LocalDateTime.now())}] Status: SCAN COMPLETE (${duration}ms)")
                     if (openPorts.isEmpty()) {
+                        add("[${timestampFmt.format(LocalDateTime.now())}] Status: CLOSED (${duration}ms)")
                         add("  No open ports found.")
-                    } else {
+                     } else {
+                        add("[${timestampFmt.format(LocalDateTime.now())}] Status: SUCCESS (${duration}ms)")
                         add("  Open ports: ${openPorts.joinToString(", ")}")
-                    }
-                }
-                BulkCommandSuccess(name, cmd, lines, duration)
+                     }
+                 }
+                if (openPorts.isEmpty()) {
+                    BulkCommandClosed(name, cmd, lines, duration)
+                 } else {
+                    BulkCommandSuccess(name, cmd, lines, duration)
+                 }
             } catch (e: Exception) {
                 BulkCommandError(name, cmd, e.message ?: "Unknown error")
             }

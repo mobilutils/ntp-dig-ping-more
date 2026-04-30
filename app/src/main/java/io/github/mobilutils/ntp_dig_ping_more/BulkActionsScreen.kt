@@ -45,6 +45,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -82,6 +84,7 @@ fun BulkActionsScreen() {
     val viewModel: BulkActionsViewModel = viewModel(factory = BulkActionsViewModel.factory(context))
     val uiState by viewModel.uiState.collectAsState()
     val currentUiState by rememberUpdatedState(uiState)
+    val csvOutputEnabled by viewModel.csvOutputEnabled.collectAsState()
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -170,6 +173,27 @@ fun BulkActionsScreen() {
             )
             Spacer(Modifier.width(8.dp))
             Text("Load JSON Config", fontWeight = FontWeight.Medium)
+        }
+
+        // ── CSV Output Checkbox ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = csvOutputEnabled,
+                onCheckedChange = { viewModel.toggleCsvOutput() },
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.primary,
+                ),
+            )
+            Text(
+                text = "CSV output",
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
 
         // ── Config Loaded Summary ──
@@ -523,6 +547,8 @@ private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null)
             Triple(Icons.Filled.Error, "ERROR", MaterialTheme.colorScheme.error)
         is BulkCommandTimeout ->
             Triple(Icons.Filled.Close, "TIMEOUT", MaterialTheme.colorScheme.tertiary)
+        is BulkCommandClosed ->
+            Triple(Icons.Filled.Warning, "CLOSED", MaterialTheme.colorScheme.error)
     }
 
     Card(
@@ -581,6 +607,17 @@ private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null)
                     ),
                 )
             } else if (result is BulkCommandTimeout) {
+            } else if (result is BulkCommandClosed) {
+                result.outputLines.forEach { line ->
+                    Text(
+                        text = line,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
                 val timeoutSec = configTimeoutMs?.let { "${it / 1000}s" } ?: "30s"
                 Text(
                     text = "Command timed out after $timeoutSec",

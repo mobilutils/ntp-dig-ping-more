@@ -310,4 +310,39 @@ class BulkConfigParserTest {
     fun `extractCommandTimeoutWithNonNumericReturnsNull`() {
         assertNull(BulkConfigParser.extractCommandTimeout("ping -c 4 -t abc google.com"))
     }
+
+
+    @Test
+    fun `bulkCommandClosed_isSubtypeOfBulkCommandResult`() {
+        val result = BulkCommandClosed(
+            commandName = "port-scan-test",
+            command = "port-scan -p 443 10.0.0.1",
+            outputLines = listOf("No open ports found."),
+            durationMs = 2000L,
+        )
+
+         // Verify it's a valid BulkCommandResult
+        assertTrue(result is BulkCommandResult)
+        assertEquals("port-scan-test", result.commandName)
+        assertEquals("port-scan -p 443 10.0.0.1", result.command)
+     }
+
+    @Test
+    fun `bulkCommandClosed_containsOutputLinesAndDuration`() {
+        val lines = listOf(
+             "[2026-04-30 09:53:19] port-scan -p 443 10.0.0.1",
+             "[2026-04-30 09:53:19] Status: CLOSED (2004ms)",
+             "  No open ports found.",
+        )
+        val result = BulkCommandClosed(
+            commandName = "test",
+            command = "port-scan -p 443 10.0.0.1",
+            outputLines = lines,
+            durationMs = 2004L,
+        )
+
+        assertEquals(3, result.outputLines.size)
+        assertEquals(2004L, result.durationMs)
+        assertTrue(result.outputLines.any { "No open ports found" in it })
+     }
 }
