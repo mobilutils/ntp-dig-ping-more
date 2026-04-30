@@ -5,16 +5,28 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+
+/** Top-level DataStore instance for CSV output preference. */
+private val Context.bulkActionsCsvDataStore: DataStore<Preferences>
+    by preferencesDataStore(name = "bulk_actions_csv")
 
 // ────────────────────────────────────────────────────────────────────
 // UI state
@@ -26,6 +38,7 @@ data class BulkUiState(
     val configUri: String? = null,
     val commandCount: Int = 0,
     val configTimeoutMs: Long? = null,
+    val csvOutputEnabled: Boolean = false,
     val isExecuting: Boolean = false,
     val currentCommand: String? = null,
     val progress: Float = 0f,
@@ -53,6 +66,14 @@ class BulkActionsViewModel(
     private var executionJob: Job? = null
     private val cancellationToken = AtomicBoolean(false)
 
+    /** CSV output preference loaded from DataStore. */
+    private val csvDataStore: DataStore<Preferences> by lazy {
+        context.bulkActionsCsvDataStore
+    }
+    val csvOutputEnabled: StateFlow<Boolean> = csvDataStore.data.map { prefs ->
+        prefs[booleanPreferencesKey("csv_output_enabled")] ?: false
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), false)
+
     /**
      * Called when the user selects a JSON config file via the file picker.
      * Parses the file and loads the config into UI state.
@@ -66,12 +87,15 @@ class BulkActionsViewModel(
 
             try {
                 val config = BulkConfigParser.parse(json)
+                // Load DataStore CSV setting (JSON field overrides)
+                val csvFromStore = csvOutputEnabled.value
                 _uiState.value = _uiState.value.copy(
                     configLoaded = true,
                     configFileName = fileName,
                     configUri = uri.toString(),
                     commandCount = config.commands.size,
                     configTimeoutMs = config.timeoutMs,
+                    csvOutputEnabled = config.outputAsCsv || csvFromStore,
                     results = emptyList(),
                     progress = 0f,
                     outputFileWritten = null,
@@ -187,9 +211,10 @@ class BulkActionsViewModel(
         val successCount = results.count { it is BulkCommandSuccess }
         val errorCount = results.count { it is BulkCommandError }
         val timeoutCount = results.count { it is BulkCommandTimeout }
+        val closedCount = results.count { it is BulkCommandClosed }
         val totalDurationMs = results
-            .filterIsInstance<BulkCommandSuccess>()
-            .sumOf { it.durationMs }
+              .filterIsInstance<BulkCommandSuccess>().sumOf { it.durationMs }
+              .plus(results.filterIsInstance<BulkCommandClosed>().sumOf { it.durationMs })
 
         val lines = mutableListOf<String>()
 
@@ -209,45 +234,81 @@ class BulkActionsViewModel(
                 is BulkCommandSuccess -> {
                     lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
                     lines.add("    Status: SUCCESS (${result.durationMs}ms)")
-                    result.outputLines.forEach { line -> lines.add("    $line") }
+                    result.outputLines.forEach { line -> lines.add("     $line") }
                 }
                 is BulkCommandError -> {
                     lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
                     lines.add("    Status: ERROR")
-                    lines.add("    ${result.errorMessage}")
+                    lines.add("     ${result.errorMessage}")
                 }
                 is BulkCommandTimeout -> {
                     lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
                     lines.add("    Status: TIMEOUT")
                 }
+                is BulkCommandClosed -> {
+                    lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
+                    lines.add("    Status: CLOSED (${result.durationMs}ms)")
+                    result.outputLines.forEach { line -> lines.add("       $line") }
+                  }
             }
             lines.add("")
         }
 
         // Summary table
-        val successPct = if (total > 0) String.format("%5.1f%%", successCount.toFloat() / total * 100) else "  0.0%"
-        val errorPct = if (total > 0) String.format("%5.1f%%", errorCount.toFloat() / total * 100) else "  0.0%"
-        val timeoutPct = if (total > 0) String.format("%5.1f%%", timeoutCount.toFloat() / total * 100) else "  0.0%"
+        val successPct = if (total > 0) String.format("%5.1f%%", successCount.toFloat() / total * 100) else "   0.0%"
+        val errorPct = if (total > 0) String.format("%5.1f%%", errorCount.toFloat() / total * 100) else "   0.0%"
+        val timeoutPct = if (total > 0) String.format("%5.1f%%", timeoutCount.toFloat() / total * 100) else "   0.0%"
+        val closedPct = if (total > 0) String.format("%5.1f%%", closedCount.toFloat() / total * 100) else "    0.0%"
         val successBar = "█".repeat(successCount) + "░".repeat(total - successCount)
 
         lines.add("── SUMMARY ──────────────────────────────────────────")
         lines.add("")
-        lines.add("  ┌───────────────────────┬──────────┬─────────────┐")
-        lines.add("  │ Metric                │ Count    │ Percentage  │")
-        lines.add("  ├───────────────────────┼──────────┼─────────────┤")
-        lines.add("  │ Total commands        │ ${total.toString().padStart(6)} │ ${"100.0%".padStart(7)} │")
-        lines.add("  ├───────────────────────┼──────────┼─────────────┤")
-        lines.add("  │ ✓ SUCCESS             │ ${successCount.toString().padStart(6)} │ ${successPct.padStart(7)} │")
-        lines.add("  │ ✗ ERROR               │ ${errorCount.toString().padStart(6)} │ ${errorPct.padStart(7)} │")
-        lines.add("  │ ⏱ TIMEOUT             │ ${timeoutCount.toString().padStart(6)} │ ${timeoutPct.padStart(7)} │")
-        lines.add("  ├───────────────────────┼──────────┼─────────────┤")
-        lines.add("  │ Total duration        │ ${String.format("%8d", totalDurationMs)} ms  │             │")
-        lines.add("  └───────────────────────┴──────────┴─────────────┘")
+        lines.add("   ┌───────────────────────┬──────────┬─────────────┐")
+        lines.add("   │ Metric                 │ Count     │ Percentage   │")
+        lines.add("   ├───────────────────────┼──────────┼─────────────┤")
+        lines.add("   │ Total commands         │ ${total.toString().padStart(6)} │ ${"100.0%".padStart(7)} │")
+        lines.add("   ├───────────────────────┼──────────┼─────────────┤")
+        lines.add("   │ ✓ SUCCESS              │ ${successCount.toString().padStart(6)} │ ${successPct.padStart(7)} │")
+        lines.add("   │ ✗ ERROR                │ ${errorCount.toString().padStart(6)} │ ${errorPct.padStart(7)} │")
+        lines.add("   │ ⏱ TIMEOUT              │ ${timeoutCount.toString().padStart(6)} │ ${timeoutPct.padStart(7)} │")
+        lines.add("    │ ✗ CLOSED                 │ ${closedCount.toString().padStart(6)} │ ${closedPct.padStart(7)} │")
+        lines.add("   ├───────────────────────┼──────────┼─────────────┤")
+        lines.add("   │ Total duration         │ ${String.format("%8d", totalDurationMs)} ms   │              │")
+        lines.add("   └───────────────────────┴──────────┴─────────────┘")
         lines.add("")
         lines.add("  Progress: [$successBar] $successCount/$total")
         lines.add("")
         lines.add("══════════════════════════════════════════════════════")
 
+        return lines.joinToString("\n")
+    }
+
+    /** Generates CSV content for export. */
+    private fun generateCsvContent(results: List<BulkCommandResult>): String {
+        val lines = mutableListOf<String>()
+        lines.add("cmdname,command,time,result")
+        results.forEach { result ->
+            when (result) {
+                is BulkCommandSuccess -> {
+                    val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                    val resultText = result.outputLines.joinToString("; ")
+                    lines.add("${result.commandName},${result.command},${time},${resultText}")
+                }
+                is BulkCommandError -> {
+                    val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                    lines.add("${result.commandName},${result.command},${time},${result.errorMessage}")
+                }
+                is BulkCommandTimeout -> {
+                    val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                    lines.add("${result.commandName},${result.command},${time},TIMEOUT")
+                }
+                is BulkCommandClosed -> {
+                    val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                    val resultText = result.outputLines.joinToString("; ")
+                    lines.add("${result.commandName},${result.command},${time},${resultText}")
+                  }
+            }
+        }
         return lines.joinToString("\n")
     }
 
@@ -273,7 +334,12 @@ class BulkActionsViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isFileWriting = true)
 
-            val content = generateOutputContent(results)
+            val csvEnabled = csvOutputEnabled.value
+            val content = if (csvEnabled) {
+                generateCsvContent(results)
+            } else {
+                generateOutputContent(results)
+            }
 
             // Launch SAF picker with suggested filename
             val launcher = _outputLauncher
@@ -369,14 +435,25 @@ class BulkActionsViewModel(
         _uiState.value = _uiState.value.copy(validationMessage = null)
     }
 
+    /** Toggles CSV output setting (persists to DataStore). */
+    fun toggleCsvOutput() {
+        viewModelScope.launch {
+            val current = csvDataStore.data.first()[booleanPreferencesKey("csv_output_enabled")] ?: false
+            csvDataStore.edit {
+                it[booleanPreferencesKey("csv_output_enabled")] = !current
+            }
+        }
+    }
+
     /** Writes results via SAF to the given URI. */
     fun writeFileViaSAF(uri: Uri, results: List<BulkCommandResult>) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isFileWriting = true)
             val success = withContext(Dispatchers.IO) {
                 try {
+                    val csvEnabled = csvOutputEnabled.value
                     context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        val content = generateOutputContent(results)
+                        val content = if (csvEnabled) generateCsvContent(results) else generateOutputContent(results)
                         outputStream.write(content.toByteArray())
                         true
                     } ?: false
@@ -394,8 +471,9 @@ class BulkActionsViewModel(
     private suspend fun writeViaSAF(path: String, results: List<BulkCommandResult>): Boolean {
         return try {
             val uri = android.net.Uri.parse(path)
+            val csvEnabled = csvOutputEnabled.value
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                val content = generateOutputContent(results)
+                val content = if (csvEnabled) generateCsvContent(results) else generateOutputContent(results)
                 outputStream.write(content.toByteArray())
                 true
             } ?: false
@@ -408,7 +486,8 @@ class BulkActionsViewModel(
         return try {
             val file = File(path)
             file.parentFile?.mkdirs()
-            val content = generateOutputContent(results)
+            val csvEnabled = csvOutputEnabled.value
+            val content = if (csvEnabled) generateCsvContent(results) else generateOutputContent(results)
             file.writeText(content)
             true
         } catch (e: Exception) {
@@ -425,7 +504,7 @@ class BulkActionsViewModel(
         executionJob?.cancel()
     }
 
-    // ── Factory ───────────────────────────────────────────────────────────────
+    // ── Factory ──────────────────────────────────────────────────────
 
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory =
