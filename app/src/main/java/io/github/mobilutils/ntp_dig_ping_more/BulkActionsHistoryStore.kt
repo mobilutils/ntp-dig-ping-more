@@ -3,6 +3,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -33,10 +34,16 @@ class BulkActionsHistoryStore(private val context: Context) {
         private val KEY = stringPreferencesKey("bulk_history")
         private const val FIELD_SEP = "|"
         private const val ENTRY_SEP = "\n"
+        private val CSV_OUTPUT_ENABLED = booleanPreferencesKey("csv_output_enabled")
+        val CSV_PREF_KEY = CSV_OUTPUT_ENABLED // Expose for use in other modules
     }
 
     val historyFlow: Flow<List<BulkHistoryEntry>> = context.bulkActionsHistoryDataStore.data.map { prefs ->
         prefs[KEY]?.let { deserialise(it) } ?: emptyList()
+    }
+
+    val csvOutputEnabledFlow: Flow<Boolean> = context.bulkActionsHistoryDataStore.data.map { prefs ->
+        prefs[CSV_OUTPUT_ENABLED] ?: false
     }
 
     suspend fun save(history: List<BulkHistoryEntry>) {

@@ -1,5 +1,5 @@
 {
-  "output-file": "/sdcard/Download/bulk-with-timeout.txt",
+  "output-file": "/sdcard/Download/bulk-with-portscancsvnotset.txt",
   "timeout": 42,
   "run": {
     "port-scan_gg": "port-scan 80 google.com",
