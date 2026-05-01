@@ -40,7 +40,7 @@ Added a **Bulk Actions** screen accessible from the MORE overflow menu. Users se
 | `ping` | `ProcessBuilder("ping", "-c", N, host)` — streams stdout line-by-line |
 | `dig @server fqdn` | `DigRepository.resolve(server, fqdn)` — formatted as dig output |
 | `ntp pool` | `NtpRepository.query(pool)` — formatted as NTP result |
-| `port-scan -p ports host` | TCP connect scan per port (renamed from `nmap`; parses ranges like `80-443` and comma lists) |
+| `port-scan -p ports host` | TCP connect scan per port (renamed from `nmap`; parses ranges like `80-443` and comma lists). Scans concurrently in chunks of 50 with a 2000ms default per-port timeout (configurable via `-t` flag). |
 | `checkcert -p port host` | `HttpsCertRepository.fetchCertificate(host, port)` — formatted cert info |
 | `device-info` | `SystemInfoRepository.getDeviceInfo()` — outputs device identity, network, battery, storage |
 | `tracert <host>` | TTL-probing via `ping -c 1 -t <TTL>` — hop-by-hop traceroute |
@@ -58,7 +58,7 @@ The implementation follows the same error-handling pattern established across th
 
 1. **Sealed result classes** — Each command produces one of three outcomes: `BulkCommandSuccess`, `BulkCommandError`, or `BulkCommandTimeout`. This gives the UI type-safe, exhaustive-match rendering without null checks.
 
-2. **Per-command timeouts** — Each command has a 30-second timeout. If it exceeds that, the command is marked as `Timeout` and execution continues to the next command. No single slow command blocks the entire batch.
+2. **Per-command timeouts** — Each command has a 30-second timeout. If it exceeds that, the command is marked as `Timeout` and execution continues to the next command. No single slow command blocks the entire batch. For `port-scan`, each individual port probe also has a per-port timeout (2000ms default, configurable via `-t` flag) and scans are executed concurrently in chunks of 50 to prevent the scan from hanging.
 
 3. **Cancellation support** — The `AtomicBoolean` cancellation token lets users stop execution mid-batch. Commands already in-flight complete; the rest are skipped.
 
@@ -161,6 +161,6 @@ This three-tier strategy handles scoped storage on Android 10+ gracefully: auto-
 
 ## Questions
 
-1. **Concurrency** — Commands currently execute sequentially. Should we add a `max-concurrent` field to the config to allow parallel execution (e.g., multiple pings or dig queries in parallel)?
+1. ~~**Concurrency**~~ — ✅ Resolved. `port-scan` now scans concurrently in chunks of 50 with a 2000ms default per-port timeout (configurable via `-t` flag).
 
 2. **Config validation** — Should we add a "Validate Config" button that checks the JSON structure and command syntax before execution, giving feedback on any issues?
