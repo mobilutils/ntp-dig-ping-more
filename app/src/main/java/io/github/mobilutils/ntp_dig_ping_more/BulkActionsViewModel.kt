@@ -49,6 +49,7 @@ data class BulkUiState(
     val autoSavedPath: String? = null,
     val validatedOutputFile: String? = null,
     val validationMessage: BulkActionsViewModel.ValidationMessage? = null,
+    val outputFilePath: String? = null,
 )
 
 // ────────────────────────────────────────────────────────────────────
@@ -89,6 +90,26 @@ class BulkActionsViewModel(
                 val config = BulkConfigParser.parse(json)
                 // Load DataStore CSV setting (JSON field overrides)
                 val csvFromStore = csvOutputEnabled.value
+
+                // Auto-validate output-file if present
+                val outputFilePath = config.outputFile
+                val (validatedOutputFile, validationMsg) = config.outputFile?.let { rawPath ->
+                    val validation = BulkConfigParser.validateOutputFile(rawPath)
+                    val msg = when (validation) {
+                        is BulkConfigParser.OutputFileValidationResult.Valid ->
+                            ValidationMessage.Success("output-file: ${validation.path} is writable")
+                        is BulkConfigParser.OutputFileValidationResult.Invalid ->
+                            ValidationMessage.Info(
+                                "'$rawPath' is not writable. Use: ${validation.suggestedPath}"
+                            )
+                    }
+                    val resolvedPath = when (validation) {
+                        is BulkConfigParser.OutputFileValidationResult.Valid -> validation.path
+                        is BulkConfigParser.OutputFileValidationResult.Invalid -> validation.suggestedPath
+                    }
+                    resolvedPath to msg
+                } ?: (null to null)
+
                 _uiState.value = _uiState.value.copy(
                     configLoaded = true,
                     configFileName = fileName,
@@ -96,6 +117,9 @@ class BulkActionsViewModel(
                     commandCount = config.commands.size,
                     configTimeoutMs = config.timeoutMs,
                     csvOutputEnabled = config.outputAsCsv || csvFromStore,
+                    validatedOutputFile = validatedOutputFile,
+                    outputFilePath = outputFilePath,
+                    validationMessage = validationMsg,
                     results = emptyList(),
                     progress = 0f,
                     outputFileWritten = null,
@@ -105,6 +129,7 @@ class BulkActionsViewModel(
                     configLoaded = false,
                     configFileName = null,
                     commandCount = 0,
+                    validationMessage = ValidationMessage.Error("Failed to parse config: ${e.message}"),
                 )
             }
         }
