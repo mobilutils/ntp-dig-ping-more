@@ -1,0 +1,25 @@
+{
+    "run": {
+        "cmd01": "ping -c 1 google.com",
+        "cmd02": "ping -c 1 example.com",
+        "cmd03": "ping -c 1 cybernews.com",
+        "cmd04": "ping -c 1 mobilutils.eu",
+        "cmd05": "ping -c 1 cloudflare.com",
+        "cmd06": "ping -c 1 github.com",
+        "cmd07": "ping -c 1 stackoverflow.com",
+        "cmd08": "ping -c 1 wikipedia.org",
+        "cmd09": "ping -c 1 reddit.com",
+        "cmd10": "ping -c 1 amazon.com",
+        "cmd11": "ping -c 1 netflix.com",
+        "cmd12": "ping -c 1 youtube.com",
+        "cmd13": "ping -c 1 twitter.com",
+        "cmd14": "ping -c 1 facebook.com",
+        "cmd15": "ping -c 1 linkedin.com",
+        "cmd16": "ping -c 1 apple.com",
+        "cmd17": "ping -c 1 microsoft.com",
+        "cmd18": "ping -c 1 google.com",
+        "cmd19": "ping -c 1 example.com",
+        "cmd20": "ping -c 1 test.com",
+        "cmd21": "ping -c 1 dummy.invalid"
+    }
+}

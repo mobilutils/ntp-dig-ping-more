@@ -1,0 +1,5 @@
+{
+    "run": {
+        "only_one": "ping -c 1 google.com"
+    }
+}

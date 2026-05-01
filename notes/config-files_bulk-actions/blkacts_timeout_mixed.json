@@ -1,0 +1,7 @@
+{
+    "output-file": "~/Downloads/blkacts_timeout_mixed.txt",
+    "run": {
+        "ping_fast": "ping -c 2 google.com",
+        "tracert_slow": "tracert -t 5 google.com -t 1"
+    }
+}

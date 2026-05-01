@@ -1,0 +1,11 @@
+{
+  "output-file": "~/Downloads/blkacts_multi_timeout.txt",
+  "timeout": 42,
+  "run": {
+    "ping_google": "ping -c 4 google.com -t 10",
+    "dig_cloudflare": "dig @1.1.1.1 example.com",
+    "tracert_google": "tracert google.com",
+    "port_scan_google": "port-scan -p 80,443 google.com -t 10",
+    "ntp_pool": "ntp pool.ntp.org"
+  }
+}

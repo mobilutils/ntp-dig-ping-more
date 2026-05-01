@@ -1,0 +1,29 @@
+{
+  "output-file": "~/Download/blkacts_full_example.txt",
+  "run": {
+    "device_info": "device-info",
+
+    "traceroute_google": "tracert google.com",
+    "traceroute_cloudflare": "tracert 1.1.1.1",
+
+    "google_timesync": "google-timesync",
+
+    "lan_scan": "lan-scan",
+
+    "port_scan_google": "port-scan -p 80,443 google.com",
+    "port_scan_range": "port-scan -p 22-8080 example.com",
+
+    "ping_google": "ping -c 4 google.com",
+    "ping_local": "ping -c 2 10.0.0.1",
+
+    "dig_google_dns": "dig @1.1.1.1 google.com",
+    "dig_cloudflare": "dig @8.8.8.8 example.com",
+
+    "ntp_pool": "ntp pool.ntp.org",
+    "ntp_local": "ntp fr.pool.ntp.org",
+
+    "checkcert_google": "checkcert -p 443 google.com",
+    "checkcert_example": "checkcert -p 443 example.com",
+    "checkcert_phttp": "checkcert -p 443 cat.phttp.com"
+  }
+}

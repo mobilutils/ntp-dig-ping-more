@@ -1,0 +1,6 @@
+{
+   "output-file": "~/Downloads/blkacts_single_googletimesync_success.txt",
+   "run": {
+     "google_timesync": "google-timesync"
+   }
+}

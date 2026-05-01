@@ -1,0 +1,6 @@
+{
+   "output-file": "~/Downloads/blkacts_single_tracert_success.txt",
+   "run": {
+     "tracert_google": "tracert -t 5 google.com"
+   }
+}

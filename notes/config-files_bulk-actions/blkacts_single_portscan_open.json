@@ -1,0 +1,6 @@
+{
+   "output-file": "~/Downloads/blkacts_single_portscan_open.txt",
+   "run": {
+     "portscan_google_80": "port-scan -p 80 google.com"
+   }
+}

@@ -1,0 +1,16 @@
+{
+  "output-file": "/sdcard/Download/blkacts_single_portscan_only.txt",
+  "timeout": 42,
+  "run": {
+    "port-scan_gg": "port-scan 80 google.com",
+    "port-scan_ggp": "port-scan -p 80 google.com",
+    "port-scan_gg-2ips": "port-scan 80,443 google.com",
+    "port-scan_phttp80": "port-scan 80 phttp.com",
+    "port-scan_phttp80-82p": "port-scan -p 80-82 phttp.com",
+    "port-scan_phttp80-82": "port-scan 80-82 phttp.com",
+    "port-scan_phttp80and82": "port-scan 80,82 phttp.com",
+    "port-scan_phttp80timeout10": "port-scan 80 phttp.com -t 10",
+    "port-scan_noexistantdm": "port-scan ksldfjsdkuer.com",
+    "piping": "ping google.com"
+  }
+}

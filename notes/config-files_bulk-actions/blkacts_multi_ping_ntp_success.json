@@ -1,0 +1,7 @@
+{
+    "output-file": "~/Downloads/blkacts_multi_ping_ntp_success.txt",
+    "run": {
+        "ping_google": "ping -c 2 google.com",
+        "ntp_pool": "ntp pool.ntp.org"
+    }
+}

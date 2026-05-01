@@ -1,0 +1,7 @@
+{
+    "output-file": "~/Downloads/blkacts_timeout_command_level.txt",
+    "run": {
+        "ping_fast": "ping -c 2 google.com",
+        "ping_slow": "ping -c 5 google.com -t 1"
+    }
+}

@@ -1,0 +1,6 @@
+{
+  "output-file": "~/Download/blkacts_single_portscan_fullrange_results.txt",
+  "run": {
+    "port-scan_full": "port-scan -p 1-65534 google.com"
+  }
+}

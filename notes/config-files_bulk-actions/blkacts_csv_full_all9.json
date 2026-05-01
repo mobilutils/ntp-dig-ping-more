@@ -1,0 +1,16 @@
+{
+     "output-file": "~/Downloads/blkacts_csv_full_all9.txt",
+     "output-as-csv": "true",
+     "timeout": 120,
+     "run": {
+         "1_ping": "ping -c 2 google.com",
+         "2_dig": "dig @8.8.8.8 google.com",
+         "3_ntp": "ntp pool.ntp.org",
+         "4_portscan": "port-scan -p 80 google.com",
+         "5_checkcert": "checkcert -p 443 google.com",
+         "6_deviceinfo": "device-info",
+         "7_tracert": "tracert -t 5 google.com",
+         "8_googletimesync": "google-timesync",
+         "9_lanscan": "lan-scan"
+     }
+}

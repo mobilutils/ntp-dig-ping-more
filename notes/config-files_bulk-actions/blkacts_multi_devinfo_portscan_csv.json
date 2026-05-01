@@ -1,0 +1,12 @@
+{
+  "output-file": "/sdcard/Download/blkacts_multi_devinfo_portscan_csv.txt",
+  "output-as-csv": "true",
+  "timeout": 42,
+  "run": {
+    "deviceinfo": "device-info",
+    "port-scan_gg": "port-scan 80 google.com",
+    "port-scan_phttp": "port-scan -p 80-82 phttp.com",
+    "port-scan_phttp80timeout10": "port-scan 80 phttp.com -t 10",
+    "port-scan_noexistantdm": "port-scan ksldfjsdkuer.com"
+  }
+}

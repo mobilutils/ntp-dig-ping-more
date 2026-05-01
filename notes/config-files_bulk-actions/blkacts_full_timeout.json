@@ -1,0 +1,32 @@
+{
+  "output-file": "~/Downloads/blkacts_full_timeout.txt",
+  "timeout": 60,
+  "run": {
+    "1_ping_basic": "ping -c 4 -t 10 google.com",
+    "2_ping_custom_count": "ping -c 10 -t 15 example.com",
+    "3_ping_local": "ping -c 2 -t 5 10.0.0.1",
+
+    "4_dig_default": "dig @8.8.8.8 -t 10 google.com",
+    "5_dig_custom_server": "dig @1.1.1.1 -t 10 example.com",
+    "6_dig_cybernews": "dig @1.1.1.1 -t 10 cybernews.com",
+
+    "7_ntp_default": "ntp -t 15 pool.ntp.org",
+    "8_ntp_regional": "ntp -t 15 fr.pool.ntp.org",
+
+    "9_port_scan_specific": "port-scan -p 80,443 -t 10 google.com",
+    "10_port_scan_range": "port-scan -p 22-8080 -t 30 example.com",
+    "11_port_scan_single": "port-scan -p 80 -t 10 mobilutils.com",
+
+    "12_checkcert_default": "checkcert -p 443 -t 10 google.com",
+    "13_checkcert_custom_port": "checkcert -p 8443 -t 10 proxy.phttp.com",
+
+    "14_device_info": "device-info",
+
+    "15_tracert_google": "tracert -t 20 google.com",
+    "16_tracert_cloudflare": "tracert -t 20 1.1.1.1",
+
+    "17_google_timesync": "google-timesync -t 10",
+
+    "18_lan_scan": "lan-scan -t 30"
+  }
+}

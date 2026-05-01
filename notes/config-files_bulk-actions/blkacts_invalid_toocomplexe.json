@@ -1,0 +1,19 @@
+{
+  "output-file": "~/Downloads/blkacts_invalid_toocomplexe.txt",
+  "run": [
+    {
+      "cmd": "ping",
+      "arg": {
+        "server": "10.10.10.1",
+        "count": "2"
+      }
+    },
+    {
+      "cmd": "port-scan",
+      "arg": {
+        "port": ["80", "443", "8080-8081"],
+        "server": "10.0.0.1"
+      }
+    }
+  ]
+}

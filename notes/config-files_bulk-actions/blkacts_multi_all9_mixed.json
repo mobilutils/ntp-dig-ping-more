@@ -1,0 +1,15 @@
+{
+    "output-file": "~/Downloads/blkacts_multi_all9_mixed.txt",
+    "timeout": 120,
+    "run": {
+        "1_ping_good": "ping -c 2 google.com",
+        "2_dig_nxdomain": "dig @8.8.8.8 nonexistent.invalid",
+        "3_ntp": "ntp pool.ntp.org",
+        "4_portscan_bad": "port-scan 80 nonexistent.invalid",
+        "5_checkcert_bad": "checkcert -p 443 nonexistent.invalid",
+        "6_deviceinfo": "device-info",
+        "7_tracert_bad": "tracert -t 5 nonexistent.invalid",
+        "8_googletimesync": "google-timesync",
+        "9_lanscan": "lan-scan"
+    }
+}

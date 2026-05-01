@@ -1,0 +1,6 @@
+{
+   "output-file": "~/Downloads/blkacts_single_checkcert_badhost.txt",
+   "run": {
+     "checkcert_badhost": "checkcert -p 443 nonexistent.invalid"
+   }
+}

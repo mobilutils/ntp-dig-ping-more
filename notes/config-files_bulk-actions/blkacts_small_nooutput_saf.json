@@ -1,0 +1,11 @@
+{
+  "run": {
+    "cmd1": "ping -c 2 google.com",
+    "cmd2": "ping -c 1 10.0.0.1",
+    "cmd3": "dig @1.1.1.1 cybernews.com",
+    "cmd4": "ntp pool.ntp.org",
+    "cmd7": "port-scan -p 80,89,443-445 landing.phttp.com",
+    "cmd8": "checkcert -p 443 landing.phttp.com",
+    "cmd10": "ntp fr.pool.ntp.org"
+  }
+}

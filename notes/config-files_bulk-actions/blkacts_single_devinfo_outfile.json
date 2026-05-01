@@ -1,0 +1,7 @@
+{
+  "output-file": "/sdcard/Download/blkacts_single_devinfo_outfile.txt",
+  "run": {
+    "cmd": "device-info",
+    "cmd7": "port-scan -p 80,89,443-445 landing.phttp.com"
+  }
+}

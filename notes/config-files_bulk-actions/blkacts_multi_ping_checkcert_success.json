@@ -1,0 +1,7 @@
+{
+    "output-file": "~/Downloads/blkacts_multi_ping_checkcert_success.txt",
+    "run": {
+        "ping_google": "ping -c 2 google.com",
+        "checkcert_google": "checkcert -p 443 google.com"
+    }
+}

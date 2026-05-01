@@ -1,0 +1,7 @@
+{
+    "output-file": "~/Downloads/blkacts_multi_ping_portscan_success.txt",
+    "run": {
+        "ping_google": "ping -c 2 google.com",
+        "portscan_google": "port-scan -p 80 google.com"
+    }
+}

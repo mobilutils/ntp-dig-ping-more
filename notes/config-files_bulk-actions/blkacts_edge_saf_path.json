@@ -1,0 +1,6 @@
+{
+    "output-file": "/sdcard/Download/blkacts_edge_saf_path.txt",
+    "run": {
+        "ping_google": "ping -c 2 google.com"
+    }
+}

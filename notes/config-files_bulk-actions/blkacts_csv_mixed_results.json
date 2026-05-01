@@ -1,0 +1,8 @@
+{
+     "output-file": "~/Downloads/blkacts_csv_mixed_results.txt",
+     "output-as-csv": "true",
+     "run": {
+         "ping_good": "ping -c 2 google.com",
+         "dig_bad": "dig @8.8.8.8 nonexistent.invalid"
+     }
+}
