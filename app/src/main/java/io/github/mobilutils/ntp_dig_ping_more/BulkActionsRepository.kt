@@ -89,6 +89,10 @@ data class BulkProgress(
 
 object BulkConfigParser {
 
+    /** Application context, set once by BulkActionsViewModel factory. Used for private-dir path expansion. */
+    @Volatile
+    internal var appContext: Context? = null
+
     /**
      * Parses a per-command `-t N` timeout from the command string.
      * Returns the timeout in milliseconds, or null if not present.
@@ -153,11 +157,12 @@ object BulkConfigParser {
         return BulkConfig(outputFile, commands, timeoutMs, outputAsCsv)
     }
 
-    /** Expands `~` to the external storage directory path. */
+    /** Expands `~` to the app's private files directory (no permissions needed on SDK 33+). */
     private fun expandTilde(path: String): String {
         if (!path.startsWith("~/")) return path
-        val externalDir = Environment.getExternalStorageDirectory().absolutePath
-        return "$externalDir${path.substring(1)}"
+        val privateDir = appContext?.applicationContext?.filesDir?.absolutePath
+             ?: Environment.getExternalStorageDirectory().absolutePath
+        return "$privateDir${path.substring(1)}"
     }
 
     /**
@@ -193,10 +198,11 @@ object BulkConfigParser {
         }
     }
 
-    /** Suggests a fallback writable path using the external storage BulkActions directory. */
+    /** Suggests a fallback writable path using the app's private directory. */
     private fun suggestFallbackPath(rawPath: String): String {
-        val externalDir = Environment.getExternalStorageDirectory().absolutePath
-        val bulkDir = "$externalDir/BulkActions"
+        val privateDir = appContext?.applicationContext?.filesDir?.absolutePath
+             ?: Environment.getExternalStorageDirectory().absolutePath
+        val bulkDir = "$privateDir/BulkActions"
         val fileName = rawPath.substringAfterLast("/")
         return "$bulkDir/$fileName"
     }

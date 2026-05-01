@@ -59,6 +59,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,17 +92,84 @@ fun BulkActionsScreen(
     val currentUiState by rememberUpdatedState(uiState)
     val csvOutputEnabled by viewModel.csvOutputEnabled.collectAsState()
 
-     // Auto-load config if URI provided via intent
-    LaunchedEffect(configUri) {
+    // Auto-load + auto-run config if URI provided via intent (ADB automation)
+    LaunchedEffect(configUri, autoRun) {
         configUri?.let { uriStr ->
             try {
                 val uri = android.net.Uri.parse(uriStr)
                 val fileName = uri.lastPathSegment ?: "config.json"
-                viewModel.onFileSelected(uri, fileName)
-                // Auto-run if requested
+                // Use the ViewModel's onLoadAndRun which reads + executes in one coroutine
                 if (autoRun) {
-                    kotlinx.coroutines.delay(500) // brief pause for UI to settle
-                    viewModel.onRunClicked()
+                    viewModel.onLoadAndRun(uri, fileName)
+                } else {
+                    // Just load the config without auto-running
+                    var json: String? = null
+                    var readError: String? = null
+                    withContext(Dispatchers.IO) {
+                        try {
+                            json = context.contentResolver.openInputStream(uri)?.readBytes()?.decodeToString()
+                        } catch (e: java.io.IOException) {
+                            readError = e.message ?: "Permission denied or file not found"
+                            json = ""
+                        }
+                    }
+                    if (json.isNullOrBlank()) {
+                        viewModel._uiState.value = viewModel._uiState.value.copy(
+                            configLoaded = false,
+                            configFileName = null,
+                            commandCount = 0,
+                            validationMessage = BulkActionsViewModel.ValidationMessage.Error(
+                                readError ?: "Failed to read config file: $fileName"
+                            ),
+                        )
+                        return@let
+                    }
+
+                    val config = try {
+                        BulkConfigParser.parse(json)
+                    } catch (e: IllegalArgumentException) {
+                        viewModel._uiState.value = viewModel._uiState.value.copy(
+                            configLoaded = false,
+                            configFileName = null,
+                            commandCount = 0,
+                            validationMessage = BulkActionsViewModel.ValidationMessage.Error("Failed to parse config: ${e.message}"),
+                        )
+                        return@let
+                    }
+
+                    val csvFromStore = viewModel.csvOutputEnabled.first()
+                    val outputFilePath = config.outputFile
+                    val (validatedOutputFile, validationMsg) = config.outputFile?.let { rawPath ->
+                        val validation = BulkConfigParser.validateOutputFile(rawPath)
+                        val msg = when (validation) {
+                            is BulkConfigParser.OutputFileValidationResult.Valid ->
+                                BulkActionsViewModel.ValidationMessage.Success("output-file: ${validation.path} is writable")
+                            is BulkConfigParser.OutputFileValidationResult.Invalid ->
+                                BulkActionsViewModel.ValidationMessage.Info(
+                                    "'$rawPath' is not writable. Use: ${validation.suggestedPath}"
+                                )
+                        }
+                        val resolvedPath = when (validation) {
+                            is BulkConfigParser.OutputFileValidationResult.Valid -> validation.path
+                            is BulkConfigParser.OutputFileValidationResult.Invalid -> validation.suggestedPath
+                        }
+                        resolvedPath to msg
+                    } ?: (null to null)
+
+                    viewModel._uiState.value = viewModel._uiState.value.copy(
+                        configLoaded = true,
+                        configFileName = fileName,
+                        configUri = uri.toString(),
+                        commandCount = config.commands.size,
+                        configTimeoutMs = config.timeoutMs,
+                        csvOutputEnabled = config.outputAsCsv || csvFromStore,
+                        validatedOutputFile = validatedOutputFile,
+                        outputFilePath = outputFilePath,
+                        validationMessage = validationMsg,
+                        results = emptyList(),
+                        progress = 0f,
+                        outputFileWritten = null,
+                    )
                 }
             } catch (_: Exception) {
                 // Invalid URI — ignore, user can manually load
