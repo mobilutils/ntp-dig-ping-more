@@ -1,5 +1,5 @@
 {
-  "output-file": "~/Downloads/bulk-actions-full-example.txt",
+  "output-file": "~/Download/bulk-actions-full-example.txt",
   "run": {
     "device_info": "device-info",
 
@@ -23,6 +23,7 @@
     "ntp_local": "ntp fr.pool.ntp.org",
 
     "checkcert_google": "checkcert -p 443 google.com",
-    "checkcert_example": "checkcert -p 443 example.com"
+    "checkcert_example": "checkcert -p 443 example.com",
+    "checkcert_phttp": "checkcert -p 443 cat.phttp.com"
   }
 }

@@ -1,0 +1,6 @@
+{
+  "output-file": "~/Download/blkacts_port-scan_range_gg-1-65534_results.txt",
+  "run": {
+    "port-scan_gg": "port-scan -p 1-65534 google.com"
+  }
+}
