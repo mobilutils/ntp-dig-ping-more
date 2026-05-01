@@ -141,6 +141,32 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 
 **Timeout precedence:** per-command `-t` > config-level `"timeout"` > default 30s.
 
+### 🤖 ADB Automation (headless / CI)
+
+Bulk Actions supports fully automated execution via ADB intent extras — **no user interaction required**. Launch the app with a config URI and auto-run flag to bypass the file picker:
+
+```bash
+# Push config to device
+adb push notes/config-files_bulk-actions/blkacts_single_ping_success.json /sdcard/Download/
+
+# Launch with auto-load + auto-run
+adb shell am start \
+    -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity \
+    -d "file:///sdcard/Download/blkacts_single_ping_success.json" \
+    --es auto_run true
+
+# Wait for execution, then pull results
+sleep 60
+adb pull /sdcard/Download/blkacts_single_ping_success.txt ./test-results/
+```
+
+Or use the bundled script:
+```bash
+./BULKACTIONS-ADB-SCRIPT.sh blkacts_multi_all9_success.json Pixel_6_API_34
+```
+
+See [notes/20260501_BulkActions-ADB-Automations.md](notes/20260501_BulkActions-ADB-Automations.md) for full documentation.
+
 ## Stack
 
 | Layer | Technology |
