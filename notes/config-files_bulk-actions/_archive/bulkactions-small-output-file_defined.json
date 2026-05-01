@@ -1,6 +1,6 @@
 
 {
-  "output-file": "~/Downloads/output-test-run.txt",
+  "output-file": "~/files/output-test-run.txt",
   "run": {
     "cmd1": "ping -c 2 google.com",
     "cmd2": "ping -c 1 10.0.0.1",

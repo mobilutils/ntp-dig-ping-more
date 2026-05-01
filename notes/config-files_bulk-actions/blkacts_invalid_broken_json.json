@@ -1,4 +1,4 @@
 {
-     "output-file": "~/Download/blkacts_invalid_broken_json.txt",
+     "output-file": "~/files/blkacts_invalid_broken_json.txt",
      "run": {
          "cmd1": "ping -c 2 google.com"

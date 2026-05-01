@@ -1,5 +1,5 @@
 {
-  "output-file": "~/Download/blkacts_legacy_bulkactions1.txt",
+  "output-file": "~/files/blkacts_legacy_bulkactions1.txt",
   "run": {
     "cmd1": "ping -c 4 google.com",
     "cmd2": "ping -c 5 10.0.0.1",

@@ -1,5 +1,5 @@
 {
-  "output-file": "/sdcard/Download/blkacts_single_portscan_only.txt",
+  "output-file": "~/files/blkacts_single_portscan_only.txt",
   "timeout": 42,
   "run": {
     "port-scan_gg": "port-scan 80 google.com",

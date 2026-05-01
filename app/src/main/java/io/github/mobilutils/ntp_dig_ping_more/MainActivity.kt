@@ -57,6 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -155,6 +156,16 @@ fun AppRoot(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDest = navBackStackEntry?.destination
+
+     // Navigate to BulkActions when intent extras are present (first launch only)
+    if (configUri != null) {
+        LaunchedEffect(configUri, autoRun) {
+            navController.navigate(AppScreen.BulkActions.route) {
+                popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
 
     // Derive the current screen for the top bar title
     val currentScreen = allAppScreens.firstOrNull { screen ->

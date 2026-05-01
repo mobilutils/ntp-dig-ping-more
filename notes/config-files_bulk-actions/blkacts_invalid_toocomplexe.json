@@ -1,5 +1,5 @@
 {
-  "output-file": "~/Download/blkacts_invalid_toocomplexe.txt",
+  "output-file": "~/files/blkacts_invalid_toocomplexe.txt",
   "run": [
     {
       "cmd": "ping",

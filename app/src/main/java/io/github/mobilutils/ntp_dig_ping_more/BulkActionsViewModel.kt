@@ -61,7 +61,7 @@ class BulkActionsViewModel(
     private val repository: BulkActionsRepository,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(BulkUiState())
+    internal val _uiState = MutableStateFlow(BulkUiState())
     val uiState: StateFlow<BulkUiState> = _uiState.asStateFlow()
 
     private var executionJob: Job? = null
@@ -81,10 +81,27 @@ class BulkActionsViewModel(
      */
     fun onFileSelected(uri: Uri, fileName: String) {
         viewModelScope.launch {
-            val json = withContext(Dispatchers.IO) {
-                context.contentResolver.openInputStream(uri)?.readBytes()?.decodeToString() ?: ""
+            var json: String? = null
+            var readError: String? = null
+            withContext(Dispatchers.IO) {
+                try {
+                    json = context.contentResolver.openInputStream(uri)?.readBytes()?.decodeToString()
+                } catch (e: java.io.IOException) {
+                    readError = e.message ?: "Permission denied or file not found"
+                    json = ""
+                }
             }
-            if (json.isBlank()) return@launch
+            if (json.isNullOrBlank()) {
+                _uiState.value = _uiState.value.copy(
+                    configLoaded = false,
+                    configFileName = null,
+                    commandCount = 0,
+                    validationMessage = ValidationMessage.Error(
+                        readError ?: "Failed to read config file: $fileName"
+                    )
+                )
+                return@launch
+            }
 
             try {
                 val config = BulkConfigParser.parse(json)
@@ -132,6 +149,142 @@ class BulkActionsViewModel(
                     validationMessage = ValidationMessage.Error("Failed to parse config: ${e.message}"),
                 )
             }
+        }
+    }
+
+    /**
+     * Loads and runs a config from a URI — used for ADB automation.
+     * Reads the file synchronously, then starts execution, returning a Job that
+     * completes when all commands finish. This avoids the race condition where
+     * [onFileSelected] (async) hasn't finished when [onRunClicked] is called.
+     */
+    fun onLoadAndRun(uri: Uri, fileName: String): Job {
+        return viewModelScope.launch {
+            var json: String? = null
+            var readError: String? = null
+            withContext(Dispatchers.IO) {
+                try {
+                    json = context.contentResolver.openInputStream(uri)?.readBytes()?.decodeToString()
+                } catch (e: java.io.IOException) {
+                    readError = e.message ?: "Permission denied or file not found"
+                    json = ""
+                }
+            }
+            if (json.isNullOrBlank()) {
+                _uiState.value = _uiState.value.copy(
+                    configLoaded = false,
+                    configFileName = null,
+                    commandCount = 0,
+                    validationMessage = ValidationMessage.Error(
+                        readError ?: "Config file is empty or unreadable: $fileName"
+                    )
+                )
+                return@launch
+            }
+
+            val config = try {
+                BulkConfigParser.parse(json)
+            } catch (e: IllegalArgumentException) {
+                _uiState.value = _uiState.value.copy(
+                    configLoaded = false,
+                    configFileName = null,
+                    commandCount = 0,
+                    validationMessage = ValidationMessage.Error("Failed to parse config: ${e.message}"),
+                )
+                return@launch
+            }
+
+            val csvFromStore = csvOutputEnabled.value
+            val outputFilePath = config.outputFile
+            val (validatedOutputFile, validationMsg) = config.outputFile?.let { rawPath ->
+                val validation = BulkConfigParser.validateOutputFile(rawPath)
+                val msg = when (validation) {
+                    is BulkConfigParser.OutputFileValidationResult.Valid ->
+                        ValidationMessage.Success("output-file: ${validation.path} is writable")
+                    is BulkConfigParser.OutputFileValidationResult.Invalid ->
+                        ValidationMessage.Info(
+                            "'$rawPath' is not writable. Use: ${validation.suggestedPath}"
+                        )
+                }
+                val resolvedPath = when (validation) {
+                    is BulkConfigParser.OutputFileValidationResult.Valid -> validation.path
+                    is BulkConfigParser.OutputFileValidationResult.Invalid -> validation.suggestedPath
+                }
+                resolvedPath to msg
+            } ?: (null to null)
+
+            _uiState.value = _uiState.value.copy(
+                configLoaded = true,
+                configFileName = fileName,
+                configUri = uri.toString(),
+                commandCount = config.commands.size,
+                configTimeoutMs = config.timeoutMs,
+                csvOutputEnabled = config.outputAsCsv || csvFromStore,
+                validatedOutputFile = validatedOutputFile,
+                outputFilePath = outputFilePath,
+                validationMessage = validationMsg,
+                results = emptyList(),
+                progress = 0f,
+                outputFileWritten = null,
+            )
+
+            // Now run the config (reuses the same execution logic as onRunClicked)
+            cancellationToken.set(false)
+            _uiState.value = _uiState.value.copy(
+                isExecuting = true,
+                results = emptyList(),
+                progress = 0f,
+                currentCommand = null,
+            )
+
+            val commands = config.commands.toList()
+            val total = commands.size
+            val defaultTimeoutMs = config.timeoutMs ?: 30_000L
+            val allResults = mutableListOf<BulkCommandResult>()
+
+            commands.forEachIndexed { index, (name, cmd) ->
+                if (cancellationToken.get()) {
+                    allResults.add(BulkCommandError(name, cmd, "Cancelled"))
+                    return@forEachIndexed
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    currentCommand = "$name: $cmd",
+                    progress = index.toFloat() / total,
+                )
+
+                val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
+
+                val result = try {
+                    withTimeout(commandTimeoutMs) {
+                        repository.executeSingleCommand(name, cmd, commandTimeoutMs)
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+
+                val finalResult = result ?: BulkCommandTimeout(name, cmd)
+                allResults.add(finalResult)
+            }
+
+            // Auto-save if output-file is defined
+            var autoSavedPath: String? = null
+            if (config.outputFile != null) {
+                val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
+                val saved = autoSaveResults(outputPath, allResults)
+                if (saved) {
+                    autoSavedPath = outputPath
+                }
+            }
+
+            _uiState.value = _uiState.value.copy(
+                isExecuting = false,
+                results = allResults,
+                progress = 1f,
+                currentCommand = null,
+                autoSaved = autoSavedPath != null,
+                autoSavedPath = autoSavedPath,
+            )
         }
     }
 
@@ -238,8 +391,8 @@ class BulkActionsViewModel(
         val timeoutCount = results.count { it is BulkCommandTimeout }
         val closedCount = results.count { it is BulkCommandClosed }
         val totalDurationMs = results
-              .filterIsInstance<BulkCommandSuccess>().sumOf { it.durationMs }
-              .plus(results.filterIsInstance<BulkCommandClosed>().sumOf { it.durationMs })
+                .filterIsInstance<BulkCommandSuccess>().sumOf { it.durationMs }
+                .plus(results.filterIsInstance<BulkCommandClosed>().sumOf { it.durationMs })
 
         val lines = mutableListOf<String>()
 
@@ -273,33 +426,33 @@ class BulkActionsViewModel(
                 is BulkCommandClosed -> {
                     lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
                     lines.add("    Status: CLOSED (${result.durationMs}ms)")
-                    result.outputLines.forEach { line -> lines.add("       $line") }
-                  }
+                    result.outputLines.forEach { line -> lines.add("        $line") }
+                }
             }
             lines.add("")
         }
 
         // Summary table
-        val successPct = if (total > 0) String.format("%5.1f%%", successCount.toFloat() / total * 100) else "   0.0%"
-        val errorPct = if (total > 0) String.format("%5.1f%%", errorCount.toFloat() / total * 100) else "   0.0%"
-        val timeoutPct = if (total > 0) String.format("%5.1f%%", timeoutCount.toFloat() / total * 100) else "   0.0%"
-        val closedPct = if (total > 0) String.format("%5.1f%%", closedCount.toFloat() / total * 100) else "    0.0%"
+        val successPct = if (total > 0) String.format("%5.1f%%", successCount.toFloat() / total * 100) else "    0.0%"
+        val errorPct = if (total > 0) String.format("%5.1f%%", errorCount.toFloat() / total * 100) else "    0.0%"
+        val timeoutPct = if (total > 0) String.format("%5.1f%%", timeoutCount.toFloat() / total * 100) else "    0.0%"
+        val closedPct = if (total > 0) String.format("%5.1f%%", closedCount.toFloat() / total * 100) else "     0.0%"
         val successBar = "█".repeat(successCount) + "░".repeat(total - successCount)
 
         lines.add("── SUMMARY ──────────────────────────────────────────")
         lines.add("")
-        lines.add("   ┌───────────────────────┬──────────┬─────────────┐")
-        lines.add("   │ Metric                 │ Count     │ Percentage   │")
-        lines.add("   ├───────────────────────┼──────────┼─────────────┤")
-        lines.add("   │ Total commands         │ ${total.toString().padStart(6)} │ ${"100.0%".padStart(7)} │")
-        lines.add("   ├───────────────────────┼──────────┼─────────────┤")
-        lines.add("   │ ✓ SUCCESS              │ ${successCount.toString().padStart(6)} │ ${successPct.padStart(7)} │")
-        lines.add("   │ ✗ ERROR                │ ${errorCount.toString().padStart(6)} │ ${errorPct.padStart(7)} │")
-        lines.add("   │ ⏱ TIMEOUT              │ ${timeoutCount.toString().padStart(6)} │ ${timeoutPct.padStart(7)} │")
-        lines.add("    │ ✗ CLOSED                 │ ${closedCount.toString().padStart(6)} │ ${closedPct.padStart(7)} │")
-        lines.add("   ├───────────────────────┼──────────┼─────────────┤")
-        lines.add("   │ Total duration         │ ${String.format("%8d", totalDurationMs)} ms   │              │")
-        lines.add("   └───────────────────────┴──────────┴─────────────┘")
+        lines.add("    ┌───────────────────────┬──────────┬─────────────┐")
+        lines.add("    │ Metric                  │ Count      │ Percentage    │")
+        lines.add("    ├───────────────────────┼──────────┼─────────────┤")
+        lines.add("    │ Total commands          │ ${total.toString().padStart(6)} │ ${"100.0%".padStart(7)} │")
+        lines.add("    ├───────────────────────┼──────────┼─────────────┤")
+        lines.add("    │ ✓ SUCCESS               │ ${successCount.toString().padStart(6)} │ ${successPct.padStart(7)} │")
+        lines.add("    │ ✗ ERROR                 │ ${errorCount.toString().padStart(6)} │ ${errorPct.padStart(7)} │")
+        lines.add("    │ ⏱ TIMEOUT               │ ${timeoutCount.toString().padStart(6)} │ ${timeoutPct.padStart(7)} │")
+        lines.add("     │ ✗ CLOSED                  │ ${closedCount.toString().padStart(6)} │ ${closedPct.padStart(7)} │")
+        lines.add("    ├───────────────────────┼──────────┼─────────────┤")
+        lines.add("    │ Total duration          │ ${String.format("%8d", totalDurationMs)} ms    │               │")
+        lines.add("    └───────────────────────┴──────────┴─────────────┘")
         lines.add("")
         lines.add("  Progress: [$successBar] $successCount/$total")
         lines.add("")
@@ -331,7 +484,7 @@ class BulkActionsViewModel(
                     val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
                     val resultText = result.outputLines.joinToString("; ")
                     lines.add("${result.commandName},${result.command},${time},${resultText}")
-                  }
+                }
             }
         }
         return lines.joinToString("\n")
@@ -493,27 +646,36 @@ class BulkActionsViewModel(
         }
     }
 
+    /**
+     * Attempt to write via SAF. Plain file paths (e.g. /sdcard/…) are not valid URI syntax,
+     * so [Uri.parse] returns null and [openOutputStream] would NPE. Return false to fall
+     * through to [writeDirect], which handles plain paths correctly.
+     */
     private suspend fun writeViaSAF(path: String, results: List<BulkCommandResult>): Boolean {
+        val uri = android.net.Uri.parse(path)
+        // Plain file paths (not file:// URIs) skip SAF and fall through to writeDirect
+        if (uri == null) return false
+        val csvEnabled = csvOutputEnabled.value
         return try {
-            val uri = android.net.Uri.parse(path)
-            val csvEnabled = csvOutputEnabled.value
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                 val content = if (csvEnabled) generateCsvContent(results) else generateOutputContent(results)
                 outputStream.write(content.toByteArray())
                 true
             } ?: false
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
 
     private suspend fun writeDirect(path: String, results: List<BulkCommandResult>): Boolean {
         return try {
-            val file = File(path)
-            file.parentFile?.mkdirs()
-            val csvEnabled = csvOutputEnabled.value
-            val content = if (csvEnabled) generateCsvContent(results) else generateOutputContent(results)
-            file.writeText(content)
+            withContext(Dispatchers.IO) {
+                val file = File(path)
+                file.parentFile?.mkdirs()
+                val csvEnabled = csvOutputEnabled.value
+                val content = if (csvEnabled) generateCsvContent(results) else generateOutputContent(results)
+                file.writeText(content)
+            }
             true
         } catch (e: Exception) {
             false
@@ -529,17 +691,20 @@ class BulkActionsViewModel(
         executionJob?.cancel()
     }
 
-    // ── Factory ──────────────────────────────────────────────────────
+    // ── Factory ──────────────────────────────────────────────
 
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    BulkActionsViewModel(
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    // Set app context for BulkConfigParser to use private dir path expansion
+                    BulkConfigParser.appContext = context.applicationContext
+                    return BulkActionsViewModel(
                         context = context.applicationContext,
                         repository = BulkActionsRepository(context.applicationContext),
                     ) as T
+                }
             }
     }
 }

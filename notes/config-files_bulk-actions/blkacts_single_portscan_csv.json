@@ -1,5 +1,5 @@
 {
-  "output-file": "/sdcard/Download/blkacts_single_portscan_csv.txt",
+  "output-file": "~/files/blkacts_single_portscan_csv.txt",
   "output-as-csv": "true",
   "timeout": 42,
   "run": {
