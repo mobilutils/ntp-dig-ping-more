@@ -1,7 +1,7 @@
 # Bulk Actions — Applied Fixes
 
 > Date: 2026-05-01
-> Updated: 2026-05-01 (Option A — push to app private dir)
+> Updated: 2026-05-01 (Option A — push to app private dir, corrected for `run-as` workflow)
 > Related: `notes/20260501_Bulkactions-ADB-failure_troubleshooting.md`
 > Branch: `feat/bulk-actions-add-intent-for-adb-automation`
 
@@ -27,44 +27,43 @@ All config files and output paths were switched from `/sdcard/Download/` (or `~/
 
 #### ADB Script changes (`BULKACTIONS-ADB-SCRIPT.sh`)
 
-**Before:**
+**Variables:**
 ```bash
 APP_ID="io.github.mobilutils.ntp_dig_ping_more"
-PUSH_PATH="/sdcard/Download/$CONFIG"
-```
-
-**After:**
-```bash
-APP_ID="io.github.mobilutils.ntp_dig_ping_more"
-# Push config to app's private directory — no permission needed on SDK 33+
 PRIVATE_DIR="/data/user/0/$APP_ID/files"
 PUSH_PATH="$PRIVATE_DIR/$CONFIG"
 ```
 
-**Step 3 — permission grant replaced with dir creation:**
+**Step 2 — push via host-side pipe to `run-as` (corrected from direct push):**
 
-**Before:**
+> **Important:** `adb push` runs as the `shell` user, which **cannot write** to another app's private directory — this is a fundamental Android sandbox restriction. Additionally, `run-as` executes as the app's UID, which **cannot read** `/sdcard/Download/` (a different user namespace). The fix uses a **host-side pipe**: `cat` reads the file on the host, and pipes it into a single `adb shell` command that runs as the app's UID, writing directly to the private dir. The file content never touches `/sdcard/` on the device.
+
+**Before (failed with "Permission denied"):**
 ```bash
-echo "[3/7] Granting storage permission for automation..."
-adb shell pm grant "$APP_ID" android.permission.READ_EXTERNAL_STORAGE 2>/dev/null || true
+# Approach 1: direct push — shell user cannot write to app private dir
+adb push "$CONFIG_SOURCE" "$PUSH_PATH"
+
+# Approach 2: two-stage copy via /sdcard/ — run-as cannot read /sdcard/
+adb push "$CONFIG_SOURCE" "$SDCARD_PUSH"
+adb shell "run-as $APP_ID cp $SDCARD_PUSH $PUSH_PATH"
 ```
 
-**After:**
+**After (host-side pipe, single `adb shell`):**
 ```bash
-echo "[3/7] Ensuring app private directory exists..."
-adb shell "mkdir -p $PRIVATE_DIR" 2>/dev/null || true
+# Host-side cat pipes file content into a single adb shell that runs as the app's UID.
+# This avoids the /sdcard/ read permission issue (run-as cannot read /sdcard/).
+cat "$CONFIG_SOURCE" | adb shell "run-as $APP_ID cat > $PUSH_PATH"
 ```
 
-**`adb pull` source path expansion:**
-
-**Before:**
+**Step 3 — verification (new):**
 ```bash
-DEVICE_OUTPUT_FILE=$(echo "$OUTPUT_FILE" | sed 's|^~/|/sdcard/|')
-```
-
-**After:**
-```bash
-DEVICE_OUTPUT_FILE=$(echo "$OUTPUT_FILE" | sed 's|^~/|'"$PRIVATE_DIR/"'|')
+echo "[3/7] Verifying config file..."
+adb shell "run-as $APP_ID test -f $PUSH_PATH" || {
+    echo "  ERROR: Config file not found in private dir after push."
+    echo "  Try: adb shell run-as $APP_ID ls -la files/"
+    exit 1
+}
+echo "  Config file verified in private directory."
 ```
 
 #### Config files (`notes/config-files_bulk-actions/*.json`)
@@ -84,26 +83,26 @@ Added a context holder and updated path expansion:
 
 ```kotlin
 object BulkConfigParser {
-    /** Application context, set once by BulkActionsViewModel factory. */
-    @Volatile
+      /** Application context, set once by BulkActionsViewModel factory. */
+      @Volatile
     internal var appContext: Context? = null
 
-    /** Expands `~` to the app's private files directory (no permissions needed on SDK 33+). */
+      /** Expands `~` to the app's private files directory (no permissions needed on SDK 33+). */
     private fun expandTilde(path: String): String {
         if (!path.startsWith("~/")) return path
         val privateDir = appContext?.applicationContext?.filesDir?.absolutePath
-            ?: Environment.getExternalStorageDirectory().absolutePath
+              ?: Environment.getExternalStorageDirectory().absolutePath
         return "$privateDir${path.substring(1)}"
-    }
+      }
 
-    /** Suggests a fallback writable path using the app's private directory. */
+      /** Suggests a fallback writable path using the app's private directory. */
     private fun suggestFallbackPath(rawPath: String): String {
         val privateDir = appContext?.applicationContext?.filesDir?.absolutePath
-            ?: Environment.getExternalStorageDirectory().absolutePath
+              ?: Environment.getExternalStorageDirectory().absolutePath
         val bulkDir = "$privateDir/BulkActions"
         val fileName = rawPath.substringAfterLast("/")
         return "$bulkDir/$fileName"
-    }
+      }
 }
 ```
 
@@ -115,16 +114,16 @@ The factory now sets `BulkConfigParser.appContext` before creating the ViewModel
 companion object {
     fun factory(context: Context): ViewModelProvider.Factory =
         object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
+              @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                // Set app context for BulkConfigParser to use private dir path expansion
+                  // Set app context for BulkConfigParser to use private dir path expansion
                 BulkConfigParser.appContext = context.applicationContext
                 return BulkActionsViewModel(
                     context = context.applicationContext,
                     repository = BulkActionsRepository(context.applicationContext),
-                ) as T
-            }
-        }
+                  ) as T
+              }
+          }
 }
 ```
 
@@ -132,22 +131,22 @@ companion object {
 
 - `/data/user/0/<package>/files/` is the app's internal private storage (returned by `Context.getFilesDir()`).
 - No `READ_EXTERNAL_STORAGE` or `WRITE_EXTERNAL_STORAGE` permission needed.
-- `adb shell cat /sdcard/Download/config.json > /data/user/0/<package>/files/config.json` writes the file.
+- `cat "$CONFIG_SOURCE" | adb shell "run-as $APP_ID cat > $PUSH_PATH"` — the host reads the file and pipes it into a single `adb shell` process that runs as the app's UID, writing directly to its private dir. The file content never touches `/sdcard/` on the device.
 - `file:///data/user/0/<package>/files/config.json` URI opens successfully via `contentResolver.openInputStream()`.
 - `adb pull /data/user/0/<package>/files/output.txt` retrieves results.
 
 ### New automation flow
 
 ```
-Script: adb push config → /data/user/0/<package>/files/config.json
-    ↓
+Host: cat config.json | adb shell "run-as <package> cat > /data/user/0/<package>/files/config.json"
+      ↓
 App: MainActivity receives intent.data (file:// URI to private dir)
-    ↓
+      ↓
 App: openInputStream() → works, no permission needed
-    ↓
+      ↓
 App: commands execute, output written to /data/user/0/<package>/files/bulk-output.txt
-    ↓
-Script: adb pull /data/user/0/<package>/files/bulk-output.txt → local
+      ↓
+ADB: pull /data/user/0/<package>/files/bulk-output.txt → local
 ```
 
 ---
@@ -161,7 +160,7 @@ Script: adb pull /data/user/0/<package>/files/bulk-output.txt → local
 **Before:**
 ```bash
 if [ -n "$OUTPUT_FILE" ]; then
-    # Expand ~ to /sdcard
+      # Expand ~ to /sdcard
     LOCAL_OUTPUT="$RESULTS_DIR/$(basename "${OUTPUT_FILE~/}")"
     adb pull "$OUTPUT_FILE" "$LOCAL_OUTPUT" 2>/dev/null || {
 ```
@@ -169,7 +168,7 @@ if [ -n "$OUTPUT_FILE" ]; then
 **After:**
 ```bash
 if [ -n "$OUTPUT_FILE" ]; then
-    # Expand ~ to app's private dir for both device source and local destination
+      # Expand ~ to app's private dir for both device source and local destination
     DEVICE_OUTPUT_FILE=$(echo "$OUTPUT_FILE" | sed 's|^~/|'"$PRIVATE_DIR/"'|')
     LOCAL_OUTPUT="$RESULTS_DIR/$(basename "$DEVICE_OUTPUT_FILE")"
     adb pull "$DEVICE_OUTPUT_FILE" "$LOCAL_OUTPUT" 2>/dev/null || {
@@ -216,7 +215,7 @@ private suspend fun writeViaSAF(path: String, results: List<BulkCommandResult>):
 ```kotlin
 private suspend fun writeViaSAF(path: String, results: List<BulkCommandResult>): Boolean {
     val uri = android.net.Uri.parse(path)
-    // Plain file paths (not file:// URIs) skip SAF and fall through to writeDirect
+      // Plain file paths (not file:// URIs) skip SAF and fall through to writeDirect
     if (uri == null) return false
 ```
 
@@ -236,12 +235,12 @@ if (json.isBlank()) return@launch
 **After:**
 ```kotlin
 if (json.isBlank()) {
-    _uiState.value = _uiState.value.copy(
+      _uiState.value = _uiState.value.copy(
         configLoaded = false,
         configFileName = null,
         commandCount = 0,
         validationMessage = ValidationMessage.Error("Config file is empty or unreadable: $fileName")
-    )
+      )
     return@launch
 }
 ```
@@ -263,7 +262,7 @@ private suspend fun writeDirect(path: String, results: List<BulkCommandResult>):
         val content = if (csvEnabled) generateCsvContent(results) else generateOutputContent(results)
         file.writeText(content)
         true
-    } catch (e: Exception) { false }
+      } catch (e: Exception) { false }
 }
 ```
 
@@ -276,9 +275,9 @@ private suspend fun writeDirect(path: String, results: List<BulkCommandResult>):
             file.parentFile?.mkdirs()
             val content = if (csvEnabled) generateCsvContent(results) else generateOutputContent(results)
             file.writeText(content)
-        }
+          }
         true
-    } catch (e: Exception) { false }
+      } catch (e: Exception) { false }
 }
 ```
 
@@ -312,15 +311,15 @@ All changes applied via `sed -i ''` (macOS), Python, and `edit` tool. Verified w
 2. Added `--show-emulator` to arg parsing case block.
 3. Updated Usage comment: `[--show-emulator]` appended.
 4. Updated emulator launch logic:
-    - Default: `-no-skin` (hidden, no window)
-    - With `--show-emulator`: omits `-no-skin`, so emulator window is visible
+     - Default: `-no-skin` (hidden, no window)
+     - With `--show-emulator`: omits `-no-skin`, so emulator window is visible
 
 **Before:**
 ```bash
 NO_INTERACT=false
 for arg in "$@"; do
     case "$arg" in
-        --no-interact) NO_INTERACT=true ;;
+          --no-interact) NO_INTERACT=true ;;
     esac
 done
 ...
@@ -333,8 +332,8 @@ NO_INTERACT=false
 SHOW_EMULATOR=false
 for arg in "$@"; do
     case "$arg" in
-        --no-interact) NO_INTERACT=true ;;
-        --show-emulator) SHOW_EMULATOR=true ;;
+          --no-interact) NO_INTERACT=true ;;
+          --show-emulator) SHOW_EMULATOR=true ;;
     esac
 done
 ...
