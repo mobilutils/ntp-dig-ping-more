@@ -1,5 +1,5 @@
 {
-  "output-file": "~/Download/blkacts_small_output_file.txt",
+  "output-file": "~/files/blkacts_small_output_file.txt",
   "run": {
     "cmd1": "ping -c 2 google.com",
     "cmd2": "ping -c 1 10.0.0.1",

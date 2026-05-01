@@ -1,5 +1,5 @@
 {
-   "output-file": "~/Download/blkacts_single_checkcert_success.txt",
+   "output-file": "~/files/blkacts_single_checkcert_success.txt",
    "run": {
      "checkcert_google": "checkcert -p 443 google.com"
    }

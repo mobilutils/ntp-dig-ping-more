@@ -1,5 +1,5 @@
 {
-  "output-file": "~/Downloads/bulkactions-complete-with-timeout.txt",
+  "output-file": "~/files/bulkactions-complete-with-timeout.txt",
   "timeout": 60,
   "run": {
     "1_ping_basic": "ping -c 4 -t 10 google.com",

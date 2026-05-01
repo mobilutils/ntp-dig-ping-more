@@ -1,5 +1,5 @@
 {
-    "output-file": "~/Download/blkacts_timeout_portscan_slow.txt",
+    "output-file": "~/files/blkacts_timeout_portscan_slow.txt",
     "run": {
         "portscan_slow": "port-scan -p 1-1000 10.255.255.1 -t 1"
     }

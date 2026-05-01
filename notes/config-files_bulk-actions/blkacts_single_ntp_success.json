@@ -1,5 +1,5 @@
 {
-   "output-file": "~/Download/blkacts_single_ntp_success.txt",
+   "output-file": "~/files/blkacts_single_ntp_success.txt",
    "run": {
      "ntp_pool": "ntp pool.ntp.org"
    }

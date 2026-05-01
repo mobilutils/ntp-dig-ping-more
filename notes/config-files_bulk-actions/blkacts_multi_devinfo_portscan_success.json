@@ -1,5 +1,5 @@
 {
-    "output-file": "~/Download/blkacts_multi_devinfo_portscan_success.txt",
+    "output-file": "~/files/blkacts_multi_devinfo_portscan_success.txt",
     "run": {
         "device_info": "device-info",
         "portscan_google": "port-scan -p 80 google.com"

@@ -1,5 +1,5 @@
 {
-  "output-file": "~/Downloads/bulk-with-timeout.txt",
+  "output-file": "~/files/bulk-with-timeout.txt",
   "timeout": 42,
   "run": {
     "ping_google": "ping -c 1 google.com -t 10",

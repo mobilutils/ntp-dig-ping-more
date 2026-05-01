@@ -1,5 +1,5 @@
 {
-  "output-file": "~/Download/blkacts_multi_portscan_range_results.txt",
+  "output-file": "~/files/blkacts_multi_portscan_range_results.txt",
   "run": {
     "port-scan_google": "port-scan 80-82 google.com",
     "port-scan_phttp": "port-scan -p 80-443 phttp.com"

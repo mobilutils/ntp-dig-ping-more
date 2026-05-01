@@ -1,5 +1,5 @@
 {
-  "output-file": "~/Download/bulk-actions-full-example.txt",
+  "output-file": "~/files/bulk-actions-full-example.txt",
   "run": {
     "device_info": "device-info",
 

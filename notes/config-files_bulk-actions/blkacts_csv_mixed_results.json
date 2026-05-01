@@ -1,5 +1,5 @@
 {
-     "output-file": "~/Download/blkacts_csv_mixed_results.txt",
+     "output-file": "~/files/blkacts_csv_mixed_results.txt",
      "output-as-csv": "true",
      "run": {
          "ping_good": "ping -c 2 google.com",

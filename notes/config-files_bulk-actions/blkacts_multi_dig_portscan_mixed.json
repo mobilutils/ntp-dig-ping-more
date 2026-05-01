@@ -1,5 +1,5 @@
 {
-    "output-file": "~/Download/blkacts_multi_dig_portscan_mixed.txt",
+    "output-file": "~/files/blkacts_multi_dig_portscan_mixed.txt",
     "run": {
         "dig_google": "dig @8.8.8.8 google.com",
         "portscan_baddomain": "port-scan 80 nonexistent.invalid"

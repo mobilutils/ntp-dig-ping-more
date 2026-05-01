@@ -57,6 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -131,9 +132,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val configUri = intent?.data?.toString()
+        val autoRun = intent?.getBooleanExtra("auto_run", false) ?: false
         setContent {
             NtpDigPingMoreTheme {
-                AppRoot()
+                AppRoot(configUri = configUri, autoRun = autoRun)
             }
         }
     }
@@ -146,10 +149,23 @@ class MainActivity : ComponentActivity() {
 @Preview
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppRoot() {
+fun AppRoot(
+    configUri: String? = null,
+    autoRun: Boolean = false,
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDest = navBackStackEntry?.destination
+
+     // Navigate to BulkActions when intent extras are present (first launch only)
+    if (configUri != null) {
+        LaunchedEffect(configUri, autoRun) {
+            navController.navigate(AppScreen.BulkActions.route) {
+                popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
 
     // Derive the current screen for the top bar title
     val currentScreen = allAppScreens.firstOrNull { screen ->
@@ -264,7 +280,7 @@ fun AppRoot() {
                 )
             }
             composable(AppScreen.BulkActions.route) {
-                BulkActionsScreen()
+                BulkActionsScreen(configUri = configUri, autoRun = autoRun)
             }
         }
     }

@@ -1,5 +1,5 @@
 {
-    "output-file": "~/Download/blkacts_multi_ping_tracert_success.txt",
+    "output-file": "~/files/blkacts_multi_ping_tracert_success.txt",
     "run": {
         "ping_google": "ping -c 2 google.com",
         "tracert_google": "tracert -t 5 google.com"

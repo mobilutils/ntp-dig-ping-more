@@ -1,6 +1,6 @@
 "cmd7": "nmap -p 80,89,443-445 landing.phttp.com",
 {
-  "output-file": "~/Downloads/output-test-run.txt",
+  "output-file": "~/files/output-test-run.txt",
   "run": [
     {
       "cmd": "ping",

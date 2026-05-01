@@ -1,5 +1,5 @@
 {
-  "output-file": "~/Download/blkacts_full_example.txt",
+  "output-file": "~/files/blkacts_full_example.txt",
   "run": {
     "device_info": "device-info",
 

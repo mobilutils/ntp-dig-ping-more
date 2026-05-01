@@ -1,5 +1,5 @@
 {
-    "output-file": "/tmp/blkacts_edge_absolute_path.txt",
+    "output-file": "~/files/blkacts_edge_absolute_path.txt",
     "run": {
         "ping_google": "ping -c 2 google.com"
     }

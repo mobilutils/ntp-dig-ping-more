@@ -1,5 +1,5 @@
 {
-   "output-file": "~/Download/blkacts_single_devinfo_success.txt",
+   "output-file": "~/files/blkacts_single_devinfo_success.txt",
    "run": {
      "device_info": "device-info"
    }

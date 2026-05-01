@@ -1,5 +1,5 @@
 {
-  "output-file": "/sdcard/Download/bulk-with-devinfo-portscan-csvtrue.txt",
+  "output-file": "~/files/bulk-with-devinfo-portscan-csvtrue.txt",
   "output-as-csv": "true",
   "timeout": 42,
   "run": {
