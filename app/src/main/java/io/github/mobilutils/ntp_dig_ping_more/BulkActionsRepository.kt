@@ -5,6 +5,11 @@ import android.os.Environment
 import io.github.mobilutils.ntp_dig_ping_more.deviceinfo.SystemInfoRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
@@ -486,17 +491,34 @@ class BulkActionsRepository(
                 }
 
                 val openPorts = mutableListOf<Int>()
+                val mutex = Mutex()
 
-                ports.forEach { port ->
-                    try {
-                        val socket = Socket()
-                        socket.connect(InetSocketAddress(host, port), connectTimeout)
-                        socket.close()
-                        openPorts.add(port)
-                    } catch (_: Exception) {
-                        // Port closed/filtered
+                // Limit concurrency to prevent OutOfMemory and Too Many Open Files errors
+                val concurrencyLimit = 50
+                val chunks = ports.chunked(concurrencyLimit)
+
+                for (chunk in chunks) {
+                    val deferreds = chunk.map { port ->
+                        async {
+                            val isOpen = try {
+                                val socket = Socket()
+                                socket.connect(InetSocketAddress(host, port), connectTimeout)
+                                socket.close()
+                                true
+                            } catch (_: Exception) {
+                                false
+                            }
+
+                            mutex.withLock {
+                                if (isOpen) {
+                                    openPorts.add(port)
+                                }
+                            }
+                        }
                     }
+                    deferreds.awaitAll()
                 }
+                openPorts.sort()
 
                 val duration = System.currentTimeMillis() - t0
                 val lines = buildList {
