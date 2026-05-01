@@ -1,5 +1,5 @@
 {
-  "output-file": "~/Downloads/blkacts_multi_timeout.txt",
+  "output-file": "~/Download/blkacts_multi_timeout.txt",
   "timeout": 42,
   "run": {
     "ping_google": "ping -c 4 google.com -t 10",

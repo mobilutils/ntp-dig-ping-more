@@ -1,5 +1,5 @@
 {
-   "output-file": "~/Downloads/blkacts_single_dig_nxdomain.txt",
+   "output-file": "~/Download/blkacts_single_dig_nxdomain.txt",
    "run": {
      "dig_nxdomain": "dig @8.8.8.8 nonexistent.invalid"
    }

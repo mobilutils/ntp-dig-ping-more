@@ -1,5 +1,5 @@
 {
-   "output-file": "~/Downloads/blkacts_single_tracert_badhost.txt",
+   "output-file": "~/Download/blkacts_single_tracert_badhost.txt",
    "run": {
      "tracert_nxdomain": "tracert -t 5 nonexistent.invalid"
    }

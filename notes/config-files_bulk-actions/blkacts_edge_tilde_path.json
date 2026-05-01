@@ -1,5 +1,5 @@
 {
-    "output-file": "~/Downloads/blkacts_edge_tilde_path.txt",
+    "output-file": "~/Download/blkacts_edge_tilde_path.txt",
     "run": {
         "ping_google": "ping -c 2 google.com"
     }

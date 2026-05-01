@@ -1,5 +1,5 @@
 {
-    "output-file": "~/Downloads/blkacts_multi_ping_dig_success.txt",
+    "output-file": "~/Download/blkacts_multi_ping_dig_success.txt",
     "run": {
         "ping_google": "ping -c 2 google.com",
         "dig_google": "dig @8.8.8.8 google.com"

@@ -1,5 +1,5 @@
 {
-   "output-file": "~/Downloads/blkacts_single_dig_success.txt",
+   "output-file": "~/Download/blkacts_single_dig_success.txt",
    "run": {
      "dig_google": "dig @8.8.8.8 google.com"
    }

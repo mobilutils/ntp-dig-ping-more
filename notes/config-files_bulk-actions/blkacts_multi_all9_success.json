@@ -1,5 +1,5 @@
 {
-    "output-file": "~/Downloads/blkacts_multi_all9_success.txt",
+    "output-file": "~/Download/blkacts_multi_all9_success.txt",
     "timeout": 120,
     "run": {
         "1_ping": "ping -c 2 google.com",

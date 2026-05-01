@@ -1,6 +1,6 @@
 {
     "timeout": 1,
-    "output-file": "~/Downloads/blkacts_timeout_config_level.txt",
+    "output-file": "~/Download/blkacts_timeout_config_level.txt",
     "run": {
         "ping_slow": "ping -c 5 google.com",
         "dig_slow": "dig @8.8.8.8 example.com"

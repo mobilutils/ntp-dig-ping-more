@@ -150,7 +150,7 @@ These are the original files, renamed to `blkacts_` prefix and moved from their 
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `output-file` | string | No | File path for results. `~` is expanded to external storage dir. |
+| `output-file` | string | No | File path for results. `~` is expanded to external storage dir. Use `~/Download/` (not `~/Downloads/`) — Android devices have `~/Download/` as the correct tilde-expanded path. |
 | `output-as-csv` | string (`"true"` / `"false"`) | No | If `"true"`, output is CSV format instead of plain text. |
 | `timeout` | integer (seconds) | No | Default per-command timeout. Overridden by inline `-t N`. Zero or negative → defaults to 30 s. |
 | `run` | object | **Yes** | Map of command-name → command-string. Empty object is valid (zero commands). |

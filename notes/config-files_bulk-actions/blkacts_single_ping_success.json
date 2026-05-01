@@ -1,5 +1,5 @@
 {
-   "output-file": "~/Downloads/blkacts_single_ping_success.txt",
+   "output-file": "~/Download/blkacts_single_ping_success.txt",
    "run": {
      "ping_google": "ping -c 2 google.com"
    }

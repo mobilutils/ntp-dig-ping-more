@@ -1,5 +1,5 @@
 {
-   "output-file": "~/Downloads/blkacts_single_portscan_nxdomain.txt",
+   "output-file": "~/Download/blkacts_single_portscan_nxdomain.txt",
    "run": {
      "portscan_nxdomain": "port-scan 80 nonexistent.invalid"
    }

@@ -1,5 +1,5 @@
 {
-   "output-file": "~/Downloads/blkacts_single_portscan_closed.txt",
+   "output-file": "~/Download/blkacts_single_portscan_closed.txt",
    "run": {
      "portscan_loopback": "port-scan -p 1-10 127.0.0.1"
    }

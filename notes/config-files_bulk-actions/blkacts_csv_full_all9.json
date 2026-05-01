@@ -1,5 +1,5 @@
 {
-     "output-file": "~/Downloads/blkacts_csv_full_all9.txt",
+     "output-file": "~/Download/blkacts_csv_full_all9.txt",
      "output-as-csv": "true",
      "timeout": 120,
      "run": {

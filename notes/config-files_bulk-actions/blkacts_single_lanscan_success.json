@@ -1,5 +1,5 @@
 {
-   "output-file": "~/Downloads/blkacts_single_lanscan_success.txt",
+   "output-file": "~/Download/blkacts_single_lanscan_success.txt",
    "run": {
      "lan_scan": "lan-scan"
    }

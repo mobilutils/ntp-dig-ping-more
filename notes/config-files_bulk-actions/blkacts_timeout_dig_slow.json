@@ -1,5 +1,5 @@
 {
-    "output-file": "~/Downloads/blkacts_timeout_dig_slow.txt",
+    "output-file": "~/Download/blkacts_timeout_dig_slow.txt",
     "run": {
         "dig_slow": "dig @10.255.255.1 example.com -t 1"
     }
