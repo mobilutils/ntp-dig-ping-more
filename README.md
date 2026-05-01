@@ -143,29 +143,64 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 
 ### 🤖 ADB Automation (headless / CI)
 
-Bulk Actions supports fully automated execution via ADB intent extras — **no user interaction required**. Launch the app with a config URI and auto-run flag to bypass the file picker:
+Bulk Actions supports fully automated execution via ADB intent extras — **no user interaction required**.
+
+#### Working commands (API 33+)
+
+On Android 13+ (API 33), `READ_EXTERNAL_STORAGE` is no longer grantable and `file://` URIs pointing to `/sdcard/` always throw `EACCES`. The working approach uses the **app's private directory** and `run-as` for both push and pull:
 
 ```bash
-# Push config to device
-adb push notes/config-files_bulk-actions/blkacts_single_ping_success.json /sdcard/Download/
+APP_ID="io.github.mobilutils.ntp_dig_ping_more"
+PRIVATE_DIR="/data/user/0/$APP_ID/files/files"
 
-# Launch with auto-load + auto-run
+# 1. Push config (host-side pipe via run-as — avoids shell/sdcard permission issues)
+cat notes/config-files_bulk-actions/blkacts_single_ping_success.json \
+  | adb shell "run-as $APP_ID sh -c 'cat > $PRIVATE_DIR/blkacts_single_ping_success.json'"
+
+# 2. Launch with auto-load + auto-run
+#    IMPORTANT: use --ez (boolean), NOT --es (string) — --es silently fails
+adb shell am force-stop "$APP_ID"
 adb shell am start \
-    -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity \
-    -d "file:///sdcard/Download/blkacts_single_ping_success.json" \
-    --es auto_run true
+    -n "$APP_ID/.MainActivity" \
+    -d "file://$PRIVATE_DIR/blkacts_single_ping_success.json" \
+    --ez auto_run true
 
-# Wait for execution, then pull results
+# 3. Wait for execution to complete
 sleep 60
-adb pull /sdcard/Download/blkacts_single_ping_success.txt ./test-results/
+
+# 4. Pull results (adb pull cannot read private dir — use run-as cat instead)
+adb shell "run-as $APP_ID cat $PRIVATE_DIR/blkacts_single_ping_success.txt" \
+  > ./test-results/blkacts_single_ping_success.txt
 ```
 
-Or use the bundled script:
+#### Common pitfalls
+
+| Mistake | Symptom | Correct approach |
+|---------|---------|-----------------|
+| `--es auto_run true` | App loads config but never runs (Android logs: *"expected Boolean but value was String"*) | Use `--ez auto_run true` |
+| `adb push ... /sdcard/Download/` + `file:///sdcard/...` | `EACCES (Permission denied)` on SDK 33+ — `READ_EXTERNAL_STORAGE` is no longer grantable | Push to `$PRIVATE_DIR` via `run-as` pipe |
+| `adb pull /data/user/0/<pkg>/files/...` | `Permission denied` — `adb` runs as `shell` user | Use `adb shell "run-as <pkg> cat <file>"` and redirect to host |
+| `adb shell "run-as <pkg> cp <file> /sdcard/..."` | `Permission denied` — `run-as` cannot write to `/sdcard/` | Use the host-redirect pull approach above |
+
+#### Bundled script
+
 ```bash
-./BULKACTIONS-ADB-SCRIPT.sh blkacts_multi_all9_success.json Pixel_6_API_34
+# Single config (default emulator)
+./BULKACTIONS-ADB-SCRIPT.sh blkacts_single_ping_success.json
+
+# Specific emulator
+./BULKACTIONS-ADB-SCRIPT.sh blkacts_multi_all9_success.json Medium_Phone_API_35
+
+# Fully unattended — no interactive prompts at the end
+./BULKACTIONS-ADB-SCRIPT.sh blkacts_multi_all9_success.json "" --no-interact
+
+# Show emulator window during run
+./BULKACTIONS-ADB-SCRIPT.sh blkacts_single_ping_success.json "" --show-emulator
 ```
 
-See [notes/20260501_BulkActions-ADB-Automations.md](notes/20260501_BulkActions-ADB-Automations.md) for full documentation.
+The script handles emulator startup, push, launch, wait (estimated from `timeout × command_count`), and pull automatically.
+
+See [notes/20260501_BulkActions-ADB-Script-fixed.md](notes/20260501_BulkActions-ADB-Script-fixed.md) for the full root-cause analysis of every fix applied.
 
 ## Stack
 
