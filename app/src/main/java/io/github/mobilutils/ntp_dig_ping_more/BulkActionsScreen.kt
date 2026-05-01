@@ -39,7 +39,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -217,65 +216,40 @@ fun BulkActionsScreen() {
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(Modifier.height(4.dp))
-                    val timeoutText = uiState.configTimeoutMs?.let { " · ${it / 1000}s timeout" } ?: ""
                     Text(
-                        text = "${uiState.configFileName} — ${uiState.commandCount} command(s)$timeoutText",
+                        text = "${uiState.commandCount} command(s)",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = viewModel::validateConfig,
-                        enabled = !uiState.isExecuting,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Verified,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text("Validate Config", fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    val (outputIcon, outputFileMessage, outputFileColor) = when (uiState.validationMessage) {
+                        is BulkActionsViewModel.ValidationMessage.Success ->
+                            Triple(Icons.Filled.CheckCircle, "output-file: ${uiState.validatedOutputFile}", MaterialTheme.colorScheme.secondary)
+                        else ->
+                            Triple(Icons.Filled.Warning, "output-file: invalid (select one after run)", MaterialTheme.colorScheme.tertiary)
                     }
-                }
-            }
-        }
-
-        // ── Validation Message ──
-        AnimatedVisibility(
-            visible = uiState.validationMessage != null,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(200)),
-        ) {
-            uiState.validationMessage?.let { msg ->
-                val (icon, bgColor, textColor) = when (msg) {
-                    is BulkActionsViewModel.ValidationMessage.Info ->
-                        Triple(Icons.Filled.Info, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
-                    is BulkActionsViewModel.ValidationMessage.Success ->
-                        Triple(Icons.Filled.CheckCircle, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
-                    is BulkActionsViewModel.ValidationMessage.Error ->
-                        Triple(Icons.Filled.Warning, MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
-                }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = bgColor),
-                ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Icon(
-                            imageVector = icon,
+                            imageVector = outputIcon,
                             contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(20.dp),
+                            tint = outputFileColor,
+                            modifier = Modifier.size(16.dp),
                         )
                         Text(
-                            text = formatValidationMessage(msg),
+                            text = outputFileMessage,
                             style = MaterialTheme.typography.bodySmall,
-                            color = textColor,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                    uiState.configTimeoutMs?.let { timeoutMs ->
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "timeout: ${timeoutMs / 1000}s",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     }
                 }
