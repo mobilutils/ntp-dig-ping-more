@@ -131,9 +131,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val configUri = intent?.data?.toString()
+        val autoRun = intent?.getBooleanExtra("auto_run", false) ?: false
         setContent {
             NtpDigPingMoreTheme {
-                AppRoot()
+                AppRoot(configUri = configUri, autoRun = autoRun)
             }
         }
     }
@@ -146,7 +148,10 @@ class MainActivity : ComponentActivity() {
 @Preview
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppRoot() {
+fun AppRoot(
+    configUri: String? = null,
+    autoRun: Boolean = false,
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDest = navBackStackEntry?.destination
@@ -264,7 +269,7 @@ fun AppRoot() {
                 )
             }
             composable(AppScreen.BulkActions.route) {
-                BulkActionsScreen()
+                BulkActionsScreen(configUri = configUri, autoRun = autoRun)
             }
         }
     }

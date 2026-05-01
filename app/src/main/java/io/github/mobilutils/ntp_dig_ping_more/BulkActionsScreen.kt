@@ -78,12 +78,33 @@ import java.io.File
 // ────────────────────────────────────────────────────────────────────
 
 @Composable
-fun BulkActionsScreen() {
+fun BulkActionsScreen(
+    configUri: String? = null,
+    autoRun: Boolean = false,
+) {
     val context = LocalContext.current
     val viewModel: BulkActionsViewModel = viewModel(factory = BulkActionsViewModel.factory(context))
     val uiState by viewModel.uiState.collectAsState()
     val currentUiState by rememberUpdatedState(uiState)
     val csvOutputEnabled by viewModel.csvOutputEnabled.collectAsState()
+
+     // Auto-load config if URI provided via intent
+    LaunchedEffect(configUri) {
+        configUri?.let { uriStr ->
+            try {
+                val uri = android.net.Uri.parse(uriStr)
+                val fileName = uri.lastPathSegment ?: "config.json"
+                viewModel.onFileSelected(uri, fileName)
+                // Auto-run if requested
+                if (autoRun) {
+                    kotlinx.coroutines.delay(500) // brief pause for UI to settle
+                    viewModel.onRunClicked()
+                }
+            } catch (_: Exception) {
+                // Invalid URI — ignore, user can manually load
+            }
+        }
+    }
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
