@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
+import io.github.mobilutils.ntp_dig_ping_more.proxy.QuickJsEngine
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -175,12 +177,16 @@ class GoogleTimeSyncViewModel(
         fun factory(context: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    GoogleTimeSyncViewModel(
-                        repository   = GoogleTimeSyncRepository(),
-                        historyStore = GoogleTimeSyncHistoryStore(context.applicationContext),
-                        settingsRepository = SettingsRepository(context.applicationContext),
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    val appContext = context.applicationContext
+                    val settingsRepo = SettingsRepository(appContext)
+                    val proxyResolver = ProxyResolver(settingsRepo, QuickJsEngine())
+                    return GoogleTimeSyncViewModel(
+                        repository   = GoogleTimeSyncRepository(proxyResolver),
+                        historyStore = GoogleTimeSyncHistoryStore(appContext),
+                        settingsRepository = settingsRepo,
                     ) as T
+                }
             }
     }
 }
