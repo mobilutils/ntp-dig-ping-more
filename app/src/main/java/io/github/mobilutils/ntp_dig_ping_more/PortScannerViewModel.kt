@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetSocketAddress
@@ -38,6 +41,7 @@ data class PortScannerUiState(
 
 class PortScannerViewModel(
     private val historyStore: PortScannerHistoryStore,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PortScannerUiState())
@@ -85,52 +89,62 @@ class PortScannerViewModel(
         )
 
         scanJob = viewModelScope.launch(Dispatchers.IO) {
-            val totalPorts = endPort - startPort + 1
-            var scannedCount = 0
-            val discovered = mutableListOf<Int>()
-            val mutex = Mutex()
+            val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+            try {
+                withTimeout(timeoutMs) {
+                    val totalPorts = endPort - startPort + 1
+                    var scannedCount = 0
+                    val discovered = mutableListOf<Int>()
+                    val mutex = Mutex()
 
-            val portsToScan = (startPort..endPort).toList()
-            
-            // Limit concurrency to prevent OutOfMemory and Too Many Open Files errors
-            val concurrencyLimit = 50
-            val chunks = portsToScan.chunked(concurrencyLimit)
+                    val portsToScan = (startPort..endPort).toList()
 
-            for (chunk in chunks) {
-                if (!isActive) break
+                    // Limit concurrency to prevent OutOfMemory and Too Many Open Files errors
+                    val concurrencyLimit = 50
+                    val chunks = portsToScan.chunked(concurrencyLimit)
 
-                val deferreds = chunk.map { port ->
-                    async {
-                        val isOpen = if (protocol == PortScannerProtocol.TCP) {
-                            checkTcpPort(host, port)
-                        } else {
-                            checkUdpPort(host, port)
-                        }
+                    for (chunk in chunks) {
+                        if (!isActive) break
 
-                        mutex.withLock {
-                            scannedCount++
-                            if (isOpen) {
-                                discovered.add(port)
-                                discovered.sort()
+                        val deferreds = chunk.map { port ->
+                            async {
+                                val isOpen = if (protocol == PortScannerProtocol.TCP) {
+                                    checkTcpPort(host, port)
+                                } else {
+                                    checkUdpPort(host, port)
+                                }
+
+                                mutex.withLock {
+                                    scannedCount++
+                                    if (isOpen) {
+                                        discovered.add(port)
+                                        discovered.sort()
+                                    }
+
+                                    val currentProgress = scannedCount.toFloat() / totalPorts
+                                    withContext(Dispatchers.Main) {
+                                        _uiState.value = _uiState.value.copy(
+                                            progress = currentProgress,
+                                            discoveredPorts = discovered.toList()
+                                        )
+                                    }
+                                }
                             }
-                            
-                            val currentProgress = scannedCount.toFloat() / totalPorts
-                            withContext(Dispatchers.Main) {
-                                _uiState.value = _uiState.value.copy(
-                                    progress = currentProgress,
-                                    discoveredPorts = discovered.toList()
-                                )
-                            }
                         }
+                        deferreds.awaitAll()
+                    }
+
+                    // Once scan completes
+                    withContext(Dispatchers.Main) {
+                        _uiState.value = _uiState.value.copy(isRunning = false, progress = 1f)
+                        saveHistory(host, startPort.toString(), endPort.toString(), protocol)
                     }
                 }
-                deferreds.awaitAll()
-            }
-
-            // Once scan completes
-            withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(isRunning = false, progress = 1f)
-                saveHistory(host, startPort.toString(), endPort.toString(), protocol)
+            } catch (_: TimeoutCancellationException) {
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(isRunning = false)
+                    saveHistory(host, startPort.toString(), endPort.toString(), protocol)
+                }
             }
         }
     }
@@ -219,6 +233,7 @@ class PortScannerViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
                     PortScannerViewModel(
                         historyStore = PortScannerHistoryStore(context.applicationContext),
+                        settingsRepository = SettingsRepository(context.applicationContext),
                     ) as T
             }
     }

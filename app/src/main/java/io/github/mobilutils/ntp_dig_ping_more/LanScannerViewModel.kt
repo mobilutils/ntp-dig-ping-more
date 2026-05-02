@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicInteger
@@ -46,6 +49,7 @@ class LanScannerViewModel(
     private val repository: LanScannerRepository,
     private val historyStore: LanScannerHistoryStore,
     private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LanScannerUiState())
@@ -126,6 +130,7 @@ class LanScannerViewModel(
         )
 
         scanJob = viewModelScope.launch(ioDispatcher) {
+            val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
             val checkedCount = AtomicInteger(0)
             val total = ipsToScan.size
 
@@ -133,58 +138,67 @@ class LanScannerViewModel(
             val chunkSize = 20
             val chunks = ipsToScan.chunked(chunkSize)
 
-            for (chunk in chunks) {
-                if (!isActive) break // Canceled
+            try {
+                withTimeout(timeoutMs) {
+                    for (chunk in chunks) {
+                        if (!isActive) break // Canceled
 
-                val deferredResults = chunk.map { ip ->
-                    async {
-                        val pingTime = repository.ping(ip)
-                        if (pingTime != null) {
-                            // Device is alive. Fetch MAC and Hostname.
-                            val mac = repository.getMacFromArpTable(ip)
-                            val fqdn = repository.resolveHostname(ip)
+                        val deferredResults = chunk.map { ip ->
+                            async {
+                                val pingTime = repository.ping(ip)
+                                if (pingTime != null) {
+                                    // Device is alive. Fetch MAC and Hostname.
+                                    val mac = repository.getMacFromArpTable(ip)
+                                    val fqdn = repository.resolveHostname(ip)
 
-                            // Assume standard .1 is typically the router
-                            val routerIp = subnetInfo?.let { repository.longToIp(it.baseIp + 1) }
-                            
-                            val device = LanDevice(
-                                ip = ip,
-                                mac = mac,
-                                hostname = fqdn,
-                                isRouter = (ip == routerIp),
-                                pingMs = pingTime
-                            )
+                                    // Assume standard .1 is typically the router
+                                    val routerIp = subnetInfo?.let { repository.longToIp(it.baseIp + 1) }
 
-                            withContext(Dispatchers.Main) {
-                                // Add uniquely and sort by IP
-                                val currentList = _uiState.value.activeDevices.toMutableList()
-                                if (currentList.none { it.ip == ip }) {
-                                    currentList.add(device)
-                                    currentList.sortBy { _ -> // simpler to just re-convert to numeric for sorting later
-                                        val parts = ip.split(".")
-                                        if (parts.size == 4) parts[3].toIntOrNull() ?: 0 else 0
+                                    val device = LanDevice(
+                                        ip = ip,
+                                        mac = mac,
+                                        hostname = fqdn,
+                                        isRouter = (ip == routerIp),
+                                        pingMs = pingTime
+                                    )
+
+                                    withContext(Dispatchers.Main) {
+                                        // Add uniquely and sort by IP
+                                        val currentList = _uiState.value.activeDevices.toMutableList()
+                                        if (currentList.none { it.ip == ip }) {
+                                            currentList.add(device)
+                                            currentList.sortBy { _ -> // simpler to just re-convert to numeric for sorting later
+                                                val parts = ip.split(".")
+                                                if (parts.size == 4) parts[3].toIntOrNull() ?: 0 else 0
+                                            }
+                                            _uiState.value = _uiState.value.copy(activeDevices = currentList)
+                                        }
                                     }
-                                    _uiState.value = _uiState.value.copy(activeDevices = currentList)
+                                }
+
+                                val done = checkedCount.incrementAndGet()
+                                withContext(Dispatchers.Main) {
+                                    _uiState.value = _uiState.value.copy(
+                                        ipsChecked = done,
+                                        progress = done.toFloat() / total
+                                    )
                                 }
                             }
                         }
+                        deferredResults.awaitAll() // Wait for this batch to finish
+                    }
 
-                        val done = checkedCount.incrementAndGet()
-                        withContext(Dispatchers.Main) {
-                            _uiState.value = _uiState.value.copy(
-                                ipsChecked = done,
-                                progress = done.toFloat() / total
-                            )
-                        }
+                    // Cleanup when fully complete or canceled
+                    withContext(Dispatchers.Main) {
+                        _uiState.value = _uiState.value.copy(isScanning = false)
+                        saveHistory(isFullScan)
                     }
                 }
-                deferredResults.awaitAll() // Wait for this batch to finish
-            }
-
-            // Cleanup when fully complete or canceled
-            withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(isScanning = false)
-                saveHistory(isFullScan)
+            } catch (_: TimeoutCancellationException) {
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(isScanning = false)
+                    saveHistory(isFullScan)
+                }
             }
         }
     }
@@ -232,6 +246,7 @@ class LanScannerViewModel(
                     return LanScannerViewModel(
                         repository = LanScannerRepository(appContext),
                         historyStore = LanScannerHistoryStore(appContext),
+                        settingsRepository = SettingsRepository(appContext),
                     ) as T
                 }
             }
