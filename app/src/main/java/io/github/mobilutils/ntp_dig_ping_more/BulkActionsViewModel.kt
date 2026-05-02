@@ -67,6 +67,9 @@ class BulkActionsViewModel(
     private var executionJob: Job? = null
     private val cancellationToken = AtomicBoolean(false)
 
+    /** Path to a marker file in the app's private directory. Exists while bulk actions are running. */
+    private val runningFile = File(context.filesDir, ".running-tasks")
+
     /** CSV output preference loaded from DataStore. */
     private val csvDataStore: DataStore<Preferences> by lazy {
         context.bulkActionsCsvDataStore
@@ -230,6 +233,7 @@ class BulkActionsViewModel(
 
             // Now run the config (reuses the same execution logic as onRunClicked)
             cancellationToken.set(false)
+            createRunningFile()
             _uiState.value = _uiState.value.copy(
                 isExecuting = true,
                 results = emptyList(),
@@ -242,49 +246,53 @@ class BulkActionsViewModel(
             val defaultTimeoutMs = config.timeoutMs ?: 30_000L
             val allResults = mutableListOf<BulkCommandResult>()
 
-            commands.forEachIndexed { index, (name, cmd) ->
-                if (cancellationToken.get()) {
-                    allResults.add(BulkCommandError(name, cmd, "Cancelled"))
-                    return@forEachIndexed
+            try {
+                commands.forEachIndexed { index, (name, cmd) ->
+                    if (cancellationToken.get()) {
+                        allResults.add(BulkCommandError(name, cmd, "Cancelled"))
+                        return@forEachIndexed
+                    }
+
+                    _uiState.value = _uiState.value.copy(
+                        currentCommand = "$name: $cmd",
+                        progress = index.toFloat() / total,
+                    )
+
+                    val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
+
+                    val result = try {
+                        withTimeout(commandTimeoutMs) {
+                            repository.executeSingleCommand(name, cmd, commandTimeoutMs)
+                        }
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    val finalResult = result ?: BulkCommandTimeout(name, cmd)
+                    allResults.add(finalResult)
+                }
+
+                // Auto-save if output-file is defined
+                var autoSavedPath: String? = null
+                if (config.outputFile != null) {
+                    val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
+                    val saved = autoSaveResults(outputPath, allResults)
+                    if (saved) {
+                        autoSavedPath = outputPath
+                    }
                 }
 
                 _uiState.value = _uiState.value.copy(
-                    currentCommand = "$name: $cmd",
-                    progress = index.toFloat() / total,
+                    isExecuting = false,
+                    results = allResults,
+                    progress = 1f,
+                    currentCommand = null,
+                    autoSaved = autoSavedPath != null,
+                    autoSavedPath = autoSavedPath,
                 )
-
-                val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
-
-                val result = try {
-                    withTimeout(commandTimeoutMs) {
-                        repository.executeSingleCommand(name, cmd, commandTimeoutMs)
-                    }
-                } catch (e: Exception) {
-                    null
-                }
-
-                val finalResult = result ?: BulkCommandTimeout(name, cmd)
-                allResults.add(finalResult)
+            } finally {
+                deleteRunningFile()
             }
-
-            // Auto-save if output-file is defined
-            var autoSavedPath: String? = null
-            if (config.outputFile != null) {
-                val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
-                val saved = autoSaveResults(outputPath, allResults)
-                if (saved) {
-                    autoSavedPath = outputPath
-                }
-            }
-
-            _uiState.value = _uiState.value.copy(
-                isExecuting = false,
-                results = allResults,
-                progress = 1f,
-                currentCommand = null,
-                autoSaved = autoSavedPath != null,
-                autoSavedPath = autoSavedPath,
-            )
         }
     }
 
@@ -293,6 +301,7 @@ class BulkActionsViewModel(
         if (_uiState.value.isExecuting) return
 
         cancellationToken.set(false)
+        createRunningFile()
         _uiState.value = _uiState.value.copy(
             isExecuting = true,
             results = emptyList(),
@@ -301,67 +310,71 @@ class BulkActionsViewModel(
         )
 
         executionJob = viewModelScope.launch {
-            val configUriStr = _uiState.value.configUri
-            if (configUriStr == null) {
-                _uiState.value = _uiState.value.copy(isExecuting = false)
-                return@launch
-            }
-
-            val config = withContext(Dispatchers.IO) {
-                val json = context.contentResolver.openInputStream(android.net.Uri.parse(configUriStr))?.readBytes()?.decodeToString() ?: ""
-                BulkConfigParser.parse(json)
-            }
-
-            val commands = config.commands.toList()
-            val total = commands.size
-            val defaultTimeoutMs = config.timeoutMs ?: 30_000L
-            val allResults = mutableListOf<BulkCommandResult>()
-
-            commands.forEachIndexed { index, (name, cmd) ->
-                if (cancellationToken.get()) {
-                    allResults.add(BulkCommandError(name, cmd, "Cancelled"))
-                    return@forEachIndexed
+            try {
+                val configUriStr = _uiState.value.configUri
+                if (configUriStr == null) {
+                    _uiState.value = _uiState.value.copy(isExecuting = false)
+                    return@launch
                 }
 
-                // Update progress
-                _uiState.value = _uiState.value.copy(
-                    currentCommand = "$name: $cmd",
-                    progress = index.toFloat() / total,
-                )
+                val config = withContext(Dispatchers.IO) {
+                    val json = context.contentResolver.openInputStream(android.net.Uri.parse(configUriStr))?.readBytes()?.decodeToString() ?: ""
+                    BulkConfigParser.parse(json)
+                }
 
-                // Per-command `-t N` overrides config-level timeout
-                val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
+                val commands = config.commands.toList()
+                val total = commands.size
+                val defaultTimeoutMs = config.timeoutMs ?: 30_000L
+                val allResults = mutableListOf<BulkCommandResult>()
 
-                val result = try {
-                    withTimeout(commandTimeoutMs) {
-                        repository.executeSingleCommand(name, cmd, commandTimeoutMs)
+                commands.forEachIndexed { index, (name, cmd) ->
+                    if (cancellationToken.get()) {
+                        allResults.add(BulkCommandError(name, cmd, "Cancelled"))
+                        return@forEachIndexed
                     }
-                } catch (e: Exception) {
-                    null
+
+                    // Update progress
+                    _uiState.value = _uiState.value.copy(
+                        currentCommand = "$name: $cmd",
+                        progress = index.toFloat() / total,
+                    )
+
+                    // Per-command `-t N` overrides config-level timeout
+                    val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
+
+                    val result = try {
+                        withTimeout(commandTimeoutMs) {
+                            repository.executeSingleCommand(name, cmd, commandTimeoutMs)
+                        }
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    val finalResult = result ?: BulkCommandTimeout(name, cmd)
+                    allResults.add(finalResult)
                 }
 
-                val finalResult = result ?: BulkCommandTimeout(name, cmd)
-                allResults.add(finalResult)
-            }
-
-            // Auto-save if output-file is defined
-            var autoSavedPath: String? = null
-            if (config.outputFile != null) {
-                val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
-                val saved = autoSaveResults(outputPath, allResults)
-                if (saved) {
-                    autoSavedPath = outputPath
+                // Auto-save if output-file is defined
+                var autoSavedPath: String? = null
+                if (config.outputFile != null) {
+                    val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
+                    val saved = autoSaveResults(outputPath, allResults)
+                    if (saved) {
+                        autoSavedPath = outputPath
+                    }
                 }
-            }
 
-            _uiState.value = _uiState.value.copy(
-                isExecuting = false,
-                results = allResults,
-                progress = 1f,
-                currentCommand = null,
-                autoSaved = autoSavedPath != null,
-                autoSavedPath = autoSavedPath,
-            )
+                _uiState.value = _uiState.value.copy(
+                    isExecuting = false,
+                    results = allResults,
+                    progress = 1f,
+                    currentCommand = null,
+                    autoSaved = autoSavedPath != null,
+                    autoSavedPath = autoSavedPath,
+                )
+            } finally {
+                deleteRunningFile()
+            }
         }
     }
 
@@ -370,6 +383,7 @@ class BulkActionsViewModel(
         cancellationToken.set(true)
         executionJob?.cancel()
         _uiState.value = _uiState.value.copy(isExecuting = false)
+        deleteRunningFile()
     }
 
     /** Clears all results and progress. */
@@ -381,6 +395,7 @@ class BulkActionsViewModel(
             autoSaved = false,
             autoSavedPath = null,
         )
+        deleteRunningFile()
     }
 
     /** Generates the full output file content including a summary table at the end. */
@@ -619,6 +634,33 @@ class BulkActionsViewModel(
             val current = csvDataStore.data.first()[booleanPreferencesKey("csv_output_enabled")] ?: false
             csvDataStore.edit {
                 it[booleanPreferencesKey("csv_output_enabled")] = !current
+            }
+        }
+    }
+
+    // ── .running-tasks marker file management ───────────────────────
+
+    /** Creates the .running-tasks marker file in the app's private directory. */
+    private fun createRunningFile() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (runningFile.parentFile?.exists() != true) {
+                    runningFile.parentFile?.mkdirs()
+                }
+                runningFile.createNewFile()
+            } catch (_: Exception) {
+                // Silently ignore — the file is just a marker
+            }
+        }
+    }
+
+    /** Deletes the .running-tasks marker file in the app's private directory. */
+    private fun deleteRunningFile() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                runningFile.delete()
+            } catch (_: Exception) {
+                // Silently ignore
             }
         }
     }
