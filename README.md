@@ -183,6 +183,7 @@ adb shell "run-as $APP_ID cat $PRIVATE_DIR/blkacts_single_ping_success.txt" \
 | `adb shell "run-as <pkg> cp <file> /sdcard/..."` | `Permission denied` — `run-as` cannot write to `/sdcard/` | Use the host-redirect pull approach above |
 
 #### Bundled script
+##### Mac & Linux / Unix
 
 ```bash
 # Single config (default emulator)
@@ -198,7 +199,25 @@ adb shell "run-as $APP_ID cat $PRIVATE_DIR/blkacts_single_ping_success.txt" \
 ./BULKACTIONS-ADB-SCRIPT.sh blkacts_single_ping_success.json "" --show-emulator
 ```
 
-The script handles emulator startup, push, launch, wait (estimated from `timeout × command_count`), and pull automatically.
+The script handles emulator startup, push, launch, wait for marker file .running-tasks to be create, then to be removed, finaly pull the resulting file automatically.
+
+##### Windows
+###### /!\ This needs to be tests 
+```bat
+:: Single config (default emulator)
+BULKACTIONS-ADB-WINDOWS-SCRIPT.bat blkacts_single_ping_success.json
+
+:: Specific emulator
+BULKACTIONS-ADB-WINDOWS-SCRIPT.bat blkacts_multi_all9_success.json Medium_Phone_API_35
+
+:: Fully unattended — no interactive prompts at the end
+BULKACTIONS-ADB-WINDOWS-SCRIPT.bat blkacts_multi_all9_success.json "" --no-interact
+
+:: Show emulator window during run
+BULKACTIONS-ADB-WINDOWS-SCRIPT.bat blkacts_single_ping_success.json "" --show-emulator
+```
+
+The Windows script provides the same automation as the Unix version: emulator startup, config push, app launch with intent extras, polling for the `.running-tasks` marker file (creation then removal), and automatic results pull. It uses PowerShell for JSON field extraction and native CMD constructs throughout.
 
 See [notes/20260501_BulkActions-ADB-Script-fixed.md](notes/20260501_BulkActions-ADB-Script-fixed.md) for the full root-cause analysis of every fix applied.
 
