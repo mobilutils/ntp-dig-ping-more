@@ -80,6 +80,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import io.github.mobilutils.ntp_dig_ping_more.deviceinfo.DeviceInfoScreen
 import io.github.mobilutils.ntp_dig_ping_more.ui.theme.NtpDigPingMoreTheme
+import java.io.File
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Navigation destinations
@@ -131,6 +132,15 @@ private val bottomNavItems = listOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Clean up stale .running-tasks marker from a previous crash
+        try {
+            val runningFile = File(filesDir, ".running-tasks")
+            if (runningFile.exists()) {
+                runningFile.delete()
+            }
+        } catch (_: Exception) {
+            // Silently ignore - just ensure stale marker is cleared
+        }
         enableEdgeToEdge()
         val configUri = intent?.data?.toString()
         val autoRun = intent?.getBooleanExtra("auto_run", false) ?: false

@@ -1,10 +1,10 @@
 {
-  "output-file": "~/files/blkacts_full_example.txt",
+  "output-file": "/sdcard/Download/blkacts_full_example.txt",
   "run": {
     "device_info": "device-info",
 
-    "traceroute_google": "tracert google.com",
-    "traceroute_cloudflare": "tracert 1.1.1.1",
+    "traceroute_google": "tracert google.com -t 10",
+    "traceroute_cloudflare": "tracert 1.1.1.1 -5",
 
     "google_timesync": "google-timesync",
 

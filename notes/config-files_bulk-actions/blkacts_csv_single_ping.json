@@ -1,7 +1,7 @@
 {
-     "output-file": "~/files/blkacts_csv_single_ping.txt",
+     "output-file": "/sdcard/Download/blkacts_csv_single_ping.txt",
      "output-as-csv": "true",
      "run": {
-         "ping_google": "ping -c 2 google.com"
+         "ping_google": "ping -c 8 google.com"
      }
 }
