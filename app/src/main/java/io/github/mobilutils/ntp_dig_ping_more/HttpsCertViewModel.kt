@@ -121,14 +121,10 @@ class HttpsCertViewModel(
                     )
 
                 is HttpsCertResult.UntrustedChain ->
-                    if (result.info != null) {
-                        HttpsCertUiState.PartialSuccess(
-                            info           = result.info,
-                            warningMessage = "⚠️ Untrusted chain — ${result.reason}",
-                        )
-                    } else {
-                        HttpsCertUiState.Error("Untrusted certificate chain: ${result.reason}")
-                    }
+                    HttpsCertUiState.PartialSuccess(
+                        info             = result.info,
+                        warningMessage = "⚠️ Untrusted chain — ${result.reason}",
+                    )
 
                 is HttpsCertResult.NoNetwork ->
                     HttpsCertUiState.Error("No network connection")
