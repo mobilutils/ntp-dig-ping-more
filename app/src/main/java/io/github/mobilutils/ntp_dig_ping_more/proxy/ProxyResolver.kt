@@ -44,10 +44,15 @@ data class ProxyTestResult(
  *
  * @param settingsRepository  Source of the persisted [ProxyConfig].
  * @param jsEngine            JS engine used to evaluate `FindProxyForURL`.
+ * @param staticPacUrl        Optional PAC URL override. When non-null, the resolver
+ *                            uses this URL directly instead of reading from
+ *                            [settingsRepository]. Used by BulkActions for
+ *                            config-level `url-proxypac` without touching persisted settings.
  */
 class ProxyResolver(
     private val settingsRepository: SettingsRepository,
     private val jsEngine: JsEngine,
+    private val staticPacUrl: String? = null,
 ) {
 
     companion object {
@@ -59,6 +64,27 @@ class ProxyResolver(
 
         private const val CONNECT_TIMEOUT_MS = 10_000
         private const val READ_TIMEOUT_MS    = 10_000
+
+        /**
+         * Creates a [ProxyResolver] that uses a static PAC URL directly,
+         * without reading from or writing to [SettingsRepository].
+         *
+         * Intended for BulkActions where the PAC URL comes from the JSON config
+         * and should not affect the user's persisted proxy settings.
+         *
+         * @param pacUrl    PAC script URL (e.g. `http://proxy.corp.com/proxy.pac`).
+         * @param context   Application context (needed by [SettingsRepository] internally).
+         * @param jsEngine  JS engine for PAC evaluation (default: [QuickJsEngine]).
+         */
+        fun forStaticPacUrl(
+            pacUrl: String,
+            context: android.content.Context,
+            jsEngine: JsEngine = QuickJsEngine(),
+        ): ProxyResolver = ProxyResolver(
+            settingsRepository = SettingsRepository(context),
+            jsEngine = jsEngine,
+            staticPacUrl = pacUrl,
+        )
     }
 
     // ── PAC script cache ─────────────────────────────────────────────────────
@@ -83,8 +109,14 @@ class ProxyResolver(
      */
     suspend fun resolveProxy(targetUrl: String): Proxy? = withContext(Dispatchers.IO) {
         try {
-            val config = settingsRepository.proxyConfigFlow.first()
-            if (!config.enabled || config.pacUrl.isBlank()) return@withContext null
+            // Determine the effective PAC URL: static override or persisted config
+            val effectivePacUrl = if (staticPacUrl != null) {
+                staticPacUrl
+            } else {
+                val config = settingsRepository.proxyConfigFlow.first()
+                if (!config.enabled || config.pacUrl.isBlank()) return@withContext null
+                config.pacUrl
+            }
 
             val host = extractHost(targetUrl) ?: return@withContext null
 
@@ -99,7 +131,7 @@ class ProxyResolver(
             }
 
             // Fetch (or use cached) PAC script
-            val pacScript = fetchPacScript(config.pacUrl) ?: return@withContext null
+            val pacScript = fetchPacScript(effectivePacUrl) ?: return@withContext null
 
             // Evaluate FindProxyForURL
             val pacResult = try {

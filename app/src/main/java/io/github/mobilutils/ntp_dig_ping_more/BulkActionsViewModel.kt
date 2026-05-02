@@ -248,6 +248,9 @@ class BulkActionsViewModel(
             val defaultTimeoutMs = config.timeoutMs ?: 30_000L
             val allResults = mutableListOf<BulkCommandResult>()
 
+            // Set up proxy resolver from config-level PAC URL (if any)
+            repository.setupProxyResolver(config.urlProxyPac)
+
             try {
                 commands.forEachIndexed { index, (name, cmd) ->
                     if (cancellationToken.get()) {
@@ -293,6 +296,7 @@ class BulkActionsViewModel(
                     autoSavedPath = autoSavedPath,
                 )
             } finally {
+                repository.clearProxyResolver()
                 deleteRunningFile()
             }
         }
@@ -328,6 +332,9 @@ class BulkActionsViewModel(
                 val total = commands.size
                 val defaultTimeoutMs = config.timeoutMs ?: 30_000L
                 val allResults = mutableListOf<BulkCommandResult>()
+
+                // Set up proxy resolver from config-level PAC URL (if any)
+                repository.setupProxyResolver(config.urlProxyPac)
 
                 commands.forEachIndexed { index, (name, cmd) ->
                     if (cancellationToken.get()) {
@@ -375,6 +382,7 @@ class BulkActionsViewModel(
                     autoSavedPath = autoSavedPath,
                 )
             } finally {
+                repository.clearProxyResolver()
                 deleteRunningFile()
             }
         }
