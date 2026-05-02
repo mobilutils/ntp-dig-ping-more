@@ -4,12 +4,15 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -49,6 +52,7 @@ data class NtpUiState(
 class SimpleNtpViewModel(
     private val repository: NtpRepository = NtpRepository(),
     private val historyStore: NtpHistoryStore,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NtpUiState())
@@ -93,7 +97,14 @@ class SimpleNtpViewModel(
         _uiState.value = _uiState.value.copy(isLoading = true, result = null)
 
         checkJob = viewModelScope.launch {
-            val result = repository.query(host, port)
+            val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+            val result = try {
+                withTimeout(timeoutMs) {
+                    repository.query(host, port)
+                }
+            } catch (_: TimeoutCancellationException) {
+                NtpResult.Timeout(host)
+            }
 
             // Record history AFTER the result is known so we can stamp success/failure.
             val timestamp = LocalDateTime.now()
@@ -140,6 +151,7 @@ class SimpleNtpViewModel(
                     SimpleNtpViewModel(
                         repository = NtpRepository(),
                         historyStore = NtpHistoryStore(context.applicationContext),
+                        settingsRepository = SettingsRepository(context.applicationContext),
                     ) as T
             }
     }

@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -46,6 +49,7 @@ data class TracerouteUiState(
  */
 class TracerouteViewModel(
     private val historyStore: TracerouteHistoryStore,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TracerouteUiState())
@@ -83,20 +87,27 @@ class TracerouteViewModel(
         traceJob = viewModelScope.launch {
             appendLine("traceroute to $host, 30 hops max")
 
+            val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
             var reachableHops = 0
             var destinationReached = false
 
-            for (ttl in 1..30) {
-                if (!isActive) break
+            try {
+                withTimeout(timeoutMs) {
+                    for (ttl in 1..30) {
+                        if (!isActive) break
 
-                val hopResult = withContext(Dispatchers.IO) { probeHop(host, ttl) }
-                appendLine(hopResult.displayLine)
+                        val hopResult = withContext(Dispatchers.IO) { probeHop(host, ttl) }
+                        appendLine(hopResult.displayLine)
 
-                if (hopResult.isReachable) reachableHops++
-                if (hopResult.isDestination) {
-                    destinationReached = true
-                    break
+                        if (hopResult.isReachable) reachableHops++
+                        if (hopResult.isDestination) {
+                            destinationReached = true
+                            break
+                        }
+                    }
                 }
+            } catch (_: TimeoutCancellationException) {
+                appendLine("--- Timed out after ${timeoutMs / 1000}s ---")
             }
 
             val status = when {
@@ -226,6 +237,7 @@ class TracerouteViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
                     TracerouteViewModel(
                         historyStore = TracerouteHistoryStore(context.applicationContext),
+                        settingsRepository = SettingsRepository(context.applicationContext),
                     ) as T
             }
     }

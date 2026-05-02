@@ -4,12 +4,15 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -31,6 +34,7 @@ data class DigUiState(
 class DigViewModel(
     private val repository: DigRepository = DigRepository(),
     private val historyStore: DigHistoryStore,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DigUiState())
@@ -66,7 +70,14 @@ class DigViewModel(
         _uiState.value = _uiState.value.copy(isLoading = true, result = null)
 
         queryJob = viewModelScope.launch {
-            val result = repository.resolve(server, fqdn)
+            val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+            val result = try {
+                withTimeout(timeoutMs) {
+                    repository.resolve(server, fqdn)
+                }
+            } catch (_: TimeoutCancellationException) {
+                DigResult.Error("Operation timed out")
+            }
             _uiState.value = _uiState.value.copy(isLoading = false, result = result)
             saveHistory(server, fqdn, result)
         }
@@ -110,6 +121,7 @@ class DigViewModel(
                     DigViewModel(
                         repository   = DigRepository(),
                         historyStore = DigHistoryStore(context.applicationContext),
+                        settingsRepository = SettingsRepository(context.applicationContext),
                     ) as T
             }
     }

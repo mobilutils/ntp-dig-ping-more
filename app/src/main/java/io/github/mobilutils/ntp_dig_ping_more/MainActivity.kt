@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.WifiFind
 import androidx.compose.material.icons.filled.WifiOff
@@ -101,6 +102,7 @@ sealed class AppScreen(
     object HttpsCert      : AppScreen("https_cert",       "HTTPS Cert",       Icons.Filled.Lock)
     object DeviceInfo     : AppScreen("device_info",      "Device Info",      Icons.Filled.Info)
     object BulkActions    : AppScreen("bulk_actions",     "Bulk Actions",     Icons.Filled.Dns)
+    object Settings       : AppScreen("settings",         "Settings",         Icons.Filled.Settings)
     object MoreTools      : AppScreen("more_tools",       "More",             Icons.Filled.MoreHoriz)
 }
 
@@ -115,6 +117,7 @@ private val allAppScreens = listOf(
     AppScreen.HttpsCert,
     AppScreen.DeviceInfo,
     AppScreen.BulkActions,
+    AppScreen.Settings,
     AppScreen.MoreTools,
 )
 
@@ -212,6 +215,7 @@ fun AppRoot(
                         AppScreen.GoogleTimeSync.route,
                         AppScreen.HttpsCert.route,
                         AppScreen.DeviceInfo.route,
+                        AppScreen.Settings.route,
                         AppScreen.MoreTools.route
                     )
                     val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true || isMoreToolsSelected
@@ -275,6 +279,9 @@ fun AppRoot(
             }
             composable(AppScreen.DeviceInfo.route) {
                 DeviceInfoScreen()
+            }
+            composable(AppScreen.Settings.route) {
+                SettingsScreen()
             }
             composable(AppScreen.MoreTools.route) {
                 MoreToolsScreen(
