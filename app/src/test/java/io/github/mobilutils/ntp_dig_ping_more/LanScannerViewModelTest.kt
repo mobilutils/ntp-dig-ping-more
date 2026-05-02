@@ -4,6 +4,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -31,6 +32,10 @@ class LanScannerViewModelTest {
         numHosts = 254
     )
 
+    private fun fakeSettingsRepository(): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
+        coEvery { it.timeoutSecondsFlow } returns flowOf(5)
+    }
+
     private fun createViewModel(
         repository: LanScannerRepository = mockk(relaxed = true),
         historyStore: LanScannerHistoryStore = mockk(relaxed = true),
@@ -48,7 +53,7 @@ class LanScannerViewModelTest {
         }
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
-        return LanScannerViewModel(repository, historyStore, testDispatcher)
+        return LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
     }
 
     @Test
@@ -83,7 +88,7 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         advanceUntilIdle()
 
         assertNotNull(newViewModel.uiState.value.subnetInfo)
@@ -100,7 +105,7 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         advanceUntilIdle()
 
         assertEquals("No WiFi / Ethernet connection detected.", newViewModel.uiState.value.errorMsg)
@@ -125,7 +130,7 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.refreshSubnetInfo()
 
         val state = viewModel.uiState.value
@@ -144,7 +149,7 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.refreshSubnetInfo()
 
         val state = viewModel.uiState.value
@@ -243,7 +248,7 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.10")
 
@@ -267,7 +272,7 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.10")
 
@@ -292,7 +297,7 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.10")
 
@@ -317,7 +322,7 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.254")
 
@@ -352,7 +357,7 @@ class LanScannerViewModelTest {
             "${(ipLong shr 24) and 0xff}.${(ipLong shr 16) and 0xff}.${(ipLong shr 8) and 0xff}.${ipLong and 0xff}"
         }
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.10")
 
@@ -376,7 +381,7 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.5")
 
@@ -412,7 +417,7 @@ class LanScannerViewModelTest {
 
         coEvery { historyStore.historyFlow } returns flowOf(savedHistory)
 
-        val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         advanceUntilIdle()
 
         assertEquals(1, newViewModel.uiState.value.history.size)
@@ -441,7 +446,7 @@ class LanScannerViewModelTest {
 
         coEvery { historyStore.historyFlow } returns flowOf(largeHistory)
 
-        val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val newViewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         advanceUntilIdle()
 
         // HistoryStore should already have capped at 10
@@ -458,7 +463,7 @@ class LanScannerViewModelTest {
         every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.5")
 
@@ -480,7 +485,7 @@ class LanScannerViewModelTest {
         every { repository.getLocalSubnetInfo() } returns sampleSubnetInfo
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.20")
 
@@ -505,7 +510,7 @@ class LanScannerViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.254")
 
@@ -540,7 +545,7 @@ class LanScannerViewModelTest {
             "${(ipLong shr 24) and 0xff}.${(ipLong shr 16) and 0xff}.${(ipLong shr 8) and 0xff}.${ipLong and 0xff}"
         }
 
-        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher)
+        val viewModel = LanScannerViewModel(repository, historyStore, testDispatcher, fakeSettingsRepository())
         viewModel.onStartIpChange("192.168.1.1")
         viewModel.onEndIpChange("192.168.1.2")
 
