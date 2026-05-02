@@ -170,6 +170,19 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 
 **Timeout precedence:** per-command `-t` > config-level `"timeout"` > default 30s.
 
+**Proxy PAC override (`url-proxypac`):** An optional global field that specifies a PAC script URL for proxy routing. When set, the HTTP-based pseudo-commands `checkcert` and `google-timesync` route traffic through the proxy resolved by the PAC script. This is independent of the app's Settings proxy configuration and does not modify persisted settings.
+
+```json
+{
+  "url-proxypac": "http://proxy.corp.com/proxy.pac",
+  "output-file": "~/files/results.txt",
+  "run": {
+    "cert_google": "checkcert -p 443 google.com",
+    "timesync":    "google-timesync"
+  }
+}
+```
+
 ### 🤖 ADB Automation (headless / CI)
 
 Bulk Actions supports fully automated execution via ADB intent extras — **no user interaction required**.

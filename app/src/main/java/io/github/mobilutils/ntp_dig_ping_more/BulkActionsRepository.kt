@@ -3,6 +3,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 import android.content.Context
 import android.os.Environment
 import io.github.mobilutils.ntp_dig_ping_more.deviceinfo.SystemInfoRepository
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -34,12 +35,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  * @param commands    Ordered command map (key = command name, value = command string).
  * @param timeoutMs   Optional per-command timeout in milliseconds (null = use default 30s).
  * @param outputAsCsv Optional flag to output results as CSV (default false).
+ * @param urlProxyPac Optional PAC script URL. When set, HTTP-based pseudo-commands
+ *                    (checkcert, google-timesync) will route traffic through the
+ *                    proxy resolved by this PAC script.
  */
 data class BulkConfig(
     val outputFile: String?,
     val commands: Map<String, String>,
     val timeoutMs: Long? = null,
     val outputAsCsv: Boolean = false,
+    val urlProxyPac: String? = null,
 )
 
 /**
@@ -153,6 +158,11 @@ object BulkConfigParser {
             root.optBoolean("outputAsCsv", false)
         }.getOrDefault(false)
 
+        val urlProxyPac = runCatching {
+            val url = root.optString("url-proxypac", "")
+            if (url.isNullOrBlank()) null else url.trim()
+        }.getOrNull()
+
         val runObj = root.optJSONObject("run")
             ?: throw IllegalArgumentException("Missing required 'run' object in configuration")
 
@@ -166,7 +176,7 @@ object BulkConfigParser {
             }
         }
 
-        return BulkConfig(outputFile, commands, timeoutMs, outputAsCsv)
+        return BulkConfig(outputFile, commands, timeoutMs, outputAsCsv, urlProxyPac)
     }
 
     /** Expands `~` to the app's private files directory (no permissions needed on SDK 33+). */
@@ -249,6 +259,43 @@ class BulkActionsRepository(
     private val timestampFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     /**
+     * Lazily built [ProxyResolver] for the current bulk execution.
+     * Set by [executeCommands] when [BulkConfig.urlProxyPac] is non-null;
+     * reset to null at the start of every execution.
+     */
+    @Volatile
+    private var bulkProxyResolver: ProxyResolver? = null
+
+    /**
+     * Creates a [ProxyResolver] backed by the given PAC URL.
+     *
+     * Uses [ProxyResolver.forStaticPacUrl] to create a resolver that evaluates
+     * the PAC script directly without reading from or writing to the user's
+     * persisted proxy settings.
+     */
+    private fun buildProxyResolver(pacUrl: String): ProxyResolver =
+        ProxyResolver.forStaticPacUrl(pacUrl, context)
+
+    /**
+     * Sets up the proxy resolver for commands that support proxy routing
+     * (`checkcert`, `google-timesync`).
+     *
+     * Call this before [executeSingleCommand] when a `url-proxypac` is defined
+     * in the config. The resolver is used for the lifetime of the bulk execution
+     * and should be cleared via [clearProxyResolver] when execution completes.
+     */
+    fun setupProxyResolver(pacUrl: String?) {
+        bulkProxyResolver = pacUrl?.let { buildProxyResolver(it) }
+    }
+
+    /**
+     * Clears the proxy resolver. Call after bulk execution completes.
+     */
+    fun clearProxyResolver() {
+        bulkProxyResolver = null
+    }
+
+    /**
      * Parses a per-command `-t N` timeout from the command string.
      * Returns the timeout in milliseconds, or null if not present.
      * Example: "ping -c 4 -t 10 google.com" → 10_000L
@@ -270,28 +317,35 @@ class BulkActionsRepository(
         cancellationToken: AtomicBoolean = AtomicBoolean(false),
         onProgress: ((BulkProgress) -> Unit)? = null,
     ): List<BulkCommandResult> {
+        // Set up proxy resolver from config-level PAC URL (if any)
+        bulkProxyResolver = config.urlProxyPac?.let { buildProxyResolver(it) }
+
         val results = mutableListOf<BulkCommandResult>()
         val commands = config.commands.toList()
         val total = commands.size
         val defaultTimeoutMs = config.timeoutMs ?: 30_000L
 
-        commands.forEachIndexed { index, (name, cmd) ->
-            if (cancellationToken.get()) {
-                results.add(BulkCommandTimeout(name, cmd))
-                return@forEachIndexed
+        try {
+            commands.forEachIndexed { index, (name, cmd) ->
+                if (cancellationToken.get()) {
+                    results.add(BulkCommandTimeout(name, cmd))
+                    return@forEachIndexed
+                }
+
+                onProgress?.invoke(BulkProgress(index, total, name, cmd))
+
+                // Per-command `-t N` overrides config-level timeout
+                val commandTimeoutMs = extractCommandTimeout(cmd) ?: defaultTimeoutMs
+
+                val result = withTimeoutOrNull(commandTimeoutMs) {
+                    executeSingleCommand(name, cmd, commandTimeoutMs)
+                }
+
+                val finalResult = result ?: BulkCommandTimeout(name, cmd)
+                results.add(finalResult)
             }
-
-            onProgress?.invoke(BulkProgress(index, total, name, cmd))
-
-            // Per-command `-t N` overrides config-level timeout
-            val commandTimeoutMs = extractCommandTimeout(cmd) ?: defaultTimeoutMs
-
-            val result = withTimeoutOrNull(commandTimeoutMs) {
-                executeSingleCommand(name, cmd, commandTimeoutMs)
-            }
-
-            val finalResult = result ?: BulkCommandTimeout(name, cmd)
-            results.add(finalResult)
+        } finally {
+            bulkProxyResolver = null
         }
 
         return results
@@ -578,7 +632,9 @@ class BulkActionsRepository(
                     parts.getOrNull(portIdx + 2) ?: parts.last()
                 }
 
-                val result = certRepo.fetchCertificate(host, port)
+                // Use proxy-aware repo if bulk config provides a PAC URL
+                val repo = bulkProxyResolver?.let { HttpsCertRepository(proxyResolver = it) } ?: certRepo
+                val result = repo.fetchCertificate(host, port)
                 val duration = System.currentTimeMillis() - t0
 
                 val lines = mutableListOf<String>()
@@ -751,7 +807,8 @@ class BulkActionsRepository(
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
-                val repo = GoogleTimeSyncRepository()
+                // Use proxy-aware repo if bulk config provides a PAC URL
+                val repo = GoogleTimeSyncRepository(proxyResolver = bulkProxyResolver)
                 val result = repo.fetchGoogleTime()
                 val dur = System.currentTimeMillis() - t0
 
