@@ -615,6 +615,8 @@ private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null)
             Triple(Icons.Filled.Close, "TIMEOUT", MaterialTheme.colorScheme.tertiary)
         is BulkCommandClosed ->
             Triple(Icons.Filled.Warning, "CLOSED", MaterialTheme.colorScheme.error)
+        is BulkCommandWarning ->
+            Triple(Icons.Filled.Warning, "WARNING", MaterialTheme.colorScheme.tertiary)
     }
 
     Card(

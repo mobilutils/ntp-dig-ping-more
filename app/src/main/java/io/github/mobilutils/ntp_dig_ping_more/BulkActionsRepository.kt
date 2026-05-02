@@ -75,6 +75,18 @@ data class BulkCommandClosed(
     val durationMs: Long,
 ) : BulkCommandResult()
 
+
+/**
+ * Result for commands that completed but surfaced a warning (e.g. expired or untrusted certificate).
+ * The command itself succeeded — the warning is about the certificate's trust status.
+ */
+data class BulkCommandWarning(
+    override val commandName: String,
+    override val command: String,
+    val outputLines: List<String>,
+    val durationMs: Long,
+) : BulkCommandResult()
+
 /** Progress callback emitted during bulk execution. */
 data class BulkProgress(
     val currentIndex: Int,
@@ -569,39 +581,42 @@ class BulkActionsRepository(
                 val result = certRepo.fetchCertificate(host, port)
                 val duration = System.currentTimeMillis() - t0
 
-                val lines = buildList {
-                    add("[${timestampFmt.format(LocalDateTime.now())}] $cmd")
-                    when (result) {
-                        is HttpsCertResult.Success -> {
-                            add("[${timestampFmt.format(LocalDateTime.now())}] Status: SUCCESS (${duration}ms)")
-                            add("  Subject: CN=${result.info.subject.cn}")
-                            add("  Issuer: CN=${result.info.issuer.cn}")
-                            add("  Valid: ${result.info.notBefore} to ${result.info.notAfter}")
-                            add("  Days until expiry: ${result.info.daysUntilExpiry}")
-                            add("  Serial: ${result.info.serialNumber}")
-                            add("  SHA256: ${result.info.sha256Fingerprint}")
+                val lines = mutableListOf<String>()
+                var warningResult: BulkCommandWarning? = null
+                lines.add("[${timestampFmt.format(LocalDateTime.now())}] $cmd")
+                when (result) {
+                    is HttpsCertResult.Success -> {
+                        lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: SUCCESS (${duration}ms)")
+                        lines.add("  Subject: CN=${result.info.subject.cn}")
+                        lines.add("  Issuer: CN=${result.info.issuer.cn}")
+                        lines.add("  Valid: ${result.info.notBefore} to ${result.info.notAfter}")
+                        lines.add("  Days until expiry: ${result.info.daysUntilExpiry}")
+                        lines.add("  Serial: ${result.info.serialNumber}")
+                        lines.add("  SHA256: ${result.info.sha256Fingerprint}")
                         }
-                        is HttpsCertResult.NoNetwork ->
-                            add("[${timestampFmt.format(LocalDateTime.now())}] Status: NO NETWORK (${duration}ms)")
-                        is HttpsCertResult.HostnameUnresolved ->
-                            add("[${timestampFmt.format(LocalDateTime.now())}] Status: HOST UNRESOLVED - ${result.host} (${duration}ms)")
-                        is HttpsCertResult.Timeout ->
-                            add("[${timestampFmt.format(LocalDateTime.now())}] Status: TIMEOUT - ${result.host} (${duration}ms)")
-                        is HttpsCertResult.CertExpired -> {
-                            add("[${timestampFmt.format(LocalDateTime.now())}] Status: CERT EXPIRED (${duration}ms)")
-                            result.info?.let {
-                                add("  Subject: CN=${it.subject.cn}")
-                                add("  Expired: ${it.notAfter}")
+                    is HttpsCertResult.NoNetwork ->
+                        lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: NO NETWORK (${duration}ms)")
+                    is HttpsCertResult.HostnameUnresolved ->
+                        lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: HOST UNRESOLVED - ${result.host} (${duration}ms)")
+                    is HttpsCertResult.Timeout ->
+                        lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: TIMEOUT - ${result.host} (${duration}ms)")
+                    is HttpsCertResult.CertExpired -> {
+                        lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: CERT EXPIRED (${duration}ms)")
+                        result.info?.let {
+                            lines.add("  Subject: CN=${it.subject.cn}")
+                            lines.add("  Expired: ${it.notAfter}")
                             }
+                        warningResult = BulkCommandWarning(name, cmd, lines, duration)
                         }
-                        is HttpsCertResult.UntrustedChain ->
-                            add("[${timestampFmt.format(LocalDateTime.now())}] Status: UNTRUSTED - ${result.reason} (${duration}ms)")
-                        is HttpsCertResult.Error ->
-                            add("[${timestampFmt.format(LocalDateTime.now())}] Status: ERROR - ${result.message} (${duration}ms)")
+                    is HttpsCertResult.UntrustedChain -> {
+                        lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: UNTRUSTED - ${result.reason} (${duration}ms)")
+                        warningResult = BulkCommandWarning(name, cmd, lines, duration)
+                        }
+                    is HttpsCertResult.Error ->
+                        lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: ERROR - ${result.message} (${duration}ms)")
                     }
-                }
-                BulkCommandSuccess(name, cmd, lines, duration)
-            } catch (e: Exception) {
+                warningResult ?: BulkCommandSuccess(name, cmd, lines, duration)
+             } catch (e: Exception) {
                 BulkCommandError(name, cmd, e.message ?: "Unknown error")
             }
         }
