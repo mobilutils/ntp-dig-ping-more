@@ -1,0 +1,10 @@
+{
+  "output-file": "~/blkacts_https_cert.txt",
+  "run": {
+    "checkcert_google": "checkcert -p 443 google.com",
+    "checkcert_example": "checkcert -p 443 example.com",
+    "checkcert_expired": "checkcert -p 443 expired.badssl.com",
+    "checkcert_self_signed": "checkcert -p 443 self-signed.badssl.com",
+    "checkcert_untrusted_root": "checkcert -p 443 untrusted-root.badssl.com"
+  }
+}

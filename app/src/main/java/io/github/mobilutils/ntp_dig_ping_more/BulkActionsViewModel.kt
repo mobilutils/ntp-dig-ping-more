@@ -405,6 +405,7 @@ class BulkActionsViewModel(
         val errorCount = results.count { it is BulkCommandError }
         val timeoutCount = results.count { it is BulkCommandTimeout }
         val closedCount = results.count { it is BulkCommandClosed }
+        val warningCount = results.count { it is BulkCommandWarning }
         val totalDurationMs = results
                 .filterIsInstance<BulkCommandSuccess>().sumOf { it.durationMs }
                 .plus(results.filterIsInstance<BulkCommandClosed>().sumOf { it.durationMs })
@@ -443,7 +444,13 @@ class BulkActionsViewModel(
                     lines.add("    Status: CLOSED (${result.durationMs}ms)")
                     result.outputLines.forEach { line -> lines.add("        $line") }
                 }
+                is BulkCommandWarning -> {
+                    lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
+                    lines.add("    Status: WARNING (${result.durationMs}ms)")
+                    result.outputLines.forEach { line -> lines.add("         $line") }
+                }
             }
+
             lines.add("")
         }
 
@@ -452,6 +459,7 @@ class BulkActionsViewModel(
         val errorPct = if (total > 0) String.format("%5.1f%%", errorCount.toFloat() / total * 100) else "    0.0%"
         val timeoutPct = if (total > 0) String.format("%5.1f%%", timeoutCount.toFloat() / total * 100) else "    0.0%"
         val closedPct = if (total > 0) String.format("%5.1f%%", closedCount.toFloat() / total * 100) else "     0.0%"
+        val warningPct = if (total > 0) String.format("%5.1f%%", warningCount.toFloat() / total * 100) else "     0.0%"
         val successBar = "█".repeat(successCount) + "░".repeat(total - successCount)
 
         lines.add("── SUMMARY ──────────────────────────────────────────")
@@ -465,6 +473,7 @@ class BulkActionsViewModel(
         lines.add("    │ ✗ ERROR                 │ ${errorCount.toString().padStart(6)} │ ${errorPct.padStart(7)} │")
         lines.add("    │ ⏱ TIMEOUT               │ ${timeoutCount.toString().padStart(6)} │ ${timeoutPct.padStart(7)} │")
         lines.add("     │ ✗ CLOSED                  │ ${closedCount.toString().padStart(6)} │ ${closedPct.padStart(7)} │")
+        lines.add("    │ ⚠️ WARNING                │ ${warningCount.toString().padStart(6)} │ ${warningPct.padStart(7)} │")
         lines.add("    ├───────────────────────┼──────────┼─────────────┤")
         lines.add("    │ Total duration          │ ${String.format("%8d", totalDurationMs)} ms    │               │")
         lines.add("    └───────────────────────┴──────────┴─────────────┘")
@@ -500,6 +509,11 @@ class BulkActionsViewModel(
                     val resultText = result.outputLines.joinToString("; ")
                     lines.add("${result.commandName},${result.command},${time},${resultText}")
                 }
+                is BulkCommandWarning -> {
+                    val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                    val resultText = result.outputLines.joinToString("; ")
+                    lines.add("${result.commandName},${result.command},${time},WARNING")
+                  }
             }
         }
         return lines.joinToString("\n")

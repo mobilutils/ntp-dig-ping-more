@@ -18,9 +18,9 @@ Added a **Bulk Actions** screen accessible from the MORE overflow menu. Users se
 
 | File | Purpose |
 |---|---|
-| `BulkActionsRepository.kt` | JSON config parsing (`BulkConfigParser`), command mapping (ping/dig/ntp/nmap/checkcert → app tools or raw shell), sequential execution with 30s timeout per command, output-file writability validation (`validateOutputFile`) |
-| `BulkActionsViewModel.kt` | UI state (`BulkUiState`), file loading, run/stop/clear/export logic, validation message support, validated output-file tracking |
-| `BulkActionsScreen.kt` | File picker (JSON filter), config summary, progress bar, terminal-style result output (color-coded by status), validation message display, write-to-file button (always uses SAF picker) |
+| `BulkActionsRepository.kt` | JSON config parsing (`BulkConfigParser`), command mapping (ping/dig/ntp/port-scan/checkcert → app tools or raw shell), sequential execution with 30s timeout per command, output-file writability validation (`validateOutputFile`). Returns `BulkCommandWarning` for expired or untrusted certificates. |
+| `BulkActionsViewModel.kt` | UI state (`BulkUiState`), file loading, run/stop/clear/export logic, validation message support, validated output-file tracking, summary table with warning count |
+| `BulkActionsScreen.kt` | File picker (JSON filter), config summary, progress bar, terminal-style result output (color-coded by status including WARNING), validation message display, write-to-file button (always uses SAF picker) |
 | `BulkActionsHistoryStore.kt` | DataStore persistence of last 5 loaded config URIs |
 | `BulkConfigParserTest.kt` | 9 unit tests for parsing logic (valid config, tilde expansion, missing run key, empty commands, blank command filtering, etc.) |
 | `BulkActionsViewModelTest.kt` | 5 unit tests for ViewModel state management |
@@ -56,7 +56,7 @@ Added a **Bulk Actions** screen accessible from the MORE overflow menu. Users se
 
 The implementation follows the same error-handling pattern established across the app:
 
-1. **Sealed result classes** — Each command produces one of three outcomes: `BulkCommandSuccess`, `BulkCommandError`, or `BulkCommandTimeout`. This gives the UI type-safe, exhaustive-match rendering without null checks.
+1. **Sealed result classes** — Each command produces one of four outcomes: `BulkCommandSuccess`, `BulkCommandError`, `BulkCommandTimeout`, or `BulkCommandWarning`. `BulkCommandWarning` is returned for expired or untrusted certificates — the command itself succeeds, but the certificate's trust status is flagged. This gives the UI type-safe, exhaustive-match rendering without null checks.
 
 2. **Per-command timeouts** — Each command has a 30-second timeout. If it exceeds that, the command is marked as `Timeout` and execution continues to the next command. No single slow command blocks the entire batch. For `port-scan`, each individual port probe also has a per-port timeout (2000ms default, configurable via `-t` flag) and scans are executed concurrently in chunks of 50 to prevent the scan from hanging.
 
@@ -156,6 +156,43 @@ The suggested path (`/storage/emulated/0/BulkActions/`) is used automatically fo
 The **"Write to File"** button always launches an SAF `CreateDocument` picker, letting the user choose any location. This works as a manual override regardless of whether the config has an `"output-file"` field.
 
 This three-tier strategy handles scoped storage on Android 10+ gracefully: auto-save provides a no-prompt path for configs that specify a target, validation warns the user when the target is unwritable with a suggested alternative, and SAF provides a universal fallback.
+
+---
+
+## Certificate Warning Status
+
+When `checkcert` encounters an expired or untrusted certificate, the command returns `BulkCommandWarning` instead of `BulkCommandSuccess`. The output reflects this in two places:
+
+- **Individual result:** Shows `Status: WARNING` (with a ⚠ icon and tertiary color) instead of `SUCCESS`.
+- **Summary table:** Includes a `⚠ WARNING` row with count and percentage (e.g., `3 warnings / 5 commands = 60.0%`).
+
+Example output for an expired cert:
+
+```
+[3] checkcert_expired: checkcert -p 443 expired.badssl.com
+    Status: WARNING (1519ms)
+      [2026-05-02 16:53:57] checkcert -p 443 expired.badssl.com
+       Subject: CN=*.badssl.com
+       Expired: 2015-04-12 23:59:59 UTC
+```
+
+Example summary table:
+
+```
+     ┌───────────────────────┬──────────┬─────────────┐
+     │ Metric                   │ Count       │ Percentage     │
+     ├───────────────────────┼──────────┼─────────────┤
+     │ Total commands           │       5 │  100.0% │
+     ├───────────────────────┼──────────┼─────────────┤
+     │ ✓ SUCCESS                │       2 │    40.0% │
+     │ ✗ ERROR                  │       0 │     0.0% │
+     │ ⏱ TIMEOUT                │       0 │     0.0% │
+      │ ✗ CLOSED                   │       0 │     0.0% │
+     │ ⚠ WARNING                 │       3 │    60.0% │
+     ├───────────────────────┼──────────┼─────────────┤
+     │ Total duration           │      6154 ms     │                │
+     └───────────────────────┴──────────┴─────────────┘
+```
 
 ---
 

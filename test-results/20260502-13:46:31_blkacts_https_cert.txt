@@ -1,0 +1,65 @@
+══════════════════════════════════════════════════════
+  BULK ACTIONS — OUTPUT REPORT
+══════════════════════════════════════════════════════
+  Generated: 2026-05-02 13:46:30
+══════════════════════════════════════════════════════
+
+── COMMAND RESULTS ──────────────────────────────────
+
+[1] checkcert_google: checkcert -p 443 google.com
+    Status: SUCCESS (167ms)
+     [2026-05-02 13:46:28] checkcert -p 443 google.com
+     [2026-05-02 13:46:28] Status: SUCCESS (167ms)
+       Subject: CN=*.google.com
+       Issuer: CN=WR2
+       Valid: 2026-04-08 05:17:21 UTC to 2026-07-01 05:17:20 UTC
+       Days until expiry: 59
+       Serial: 8C78B97297B9873512884E97C50DFF04
+       SHA256: BE:DC:F0:E9:A5:84:8F:67:24:9D:57:FE:79:42:FA:AA:A7:F8:1D:5F:B1:EB:36:BF:36:EE:24:98:71:31:97:4A
+
+[2] checkcert_example: checkcert -p 443 example.com
+    Status: SUCCESS (161ms)
+     [2026-05-02 13:46:29] checkcert -p 443 example.com
+     [2026-05-02 13:46:29] Status: SUCCESS (161ms)
+       Subject: CN=example.com
+       Issuer: CN=Cloudflare TLS Issuing ECC CA 1
+       Valid: 2026-04-02 21:18:57 UTC to 2026-07-01 21:24:46 UTC
+       Days until expiry: 60
+       Serial: 6520589EF17EB55C664433F29F2E684A
+       SHA256: 1A:F6:27:C6:C2:AC:99:2E:3C:91:02:43:8F:46:7C:4C:23:8D:31:12:32:5A:C7:CF:90:03:D7:7F:75:EF:FF:BA
+
+[3] checkcert_expired: checkcert -p 443 expired.badssl.com
+    Status: SUCCESS (440ms)
+     [2026-05-02 13:46:29] checkcert -p 443 expired.badssl.com
+     [2026-05-02 13:46:29] Status: CERT EXPIRED (440ms)
+       Subject: CN=*.badssl.com
+       Expired: 2015-04-12 23:59:59 UTC
+
+[4] checkcert_self_signed: checkcert -p 443 self-signed.badssl.com
+    Status: SUCCESS (360ms)
+     [2026-05-02 13:46:29] checkcert -p 443 self-signed.badssl.com
+     [2026-05-02 13:46:29] Status: UNTRUSTED - java.security.cert.CertPathValidatorException: Trust anchor for certification path not found. (360ms)
+
+[5] checkcert_untrusted_root: checkcert -p 443 untrusted-root.badssl.com
+    Status: SUCCESS (339ms)
+     [2026-05-02 13:46:30] checkcert -p 443 untrusted-root.badssl.com
+     [2026-05-02 13:46:30] Status: UNTRUSTED - java.security.cert.CertPathValidatorException: Trust anchor for certification path not found. (339ms)
+
+── SUMMARY ──────────────────────────────────────────
+
+    ┌───────────────────────┬──────────┬─────────────┐
+    │ Metric                  │ Count      │ Percentage    │
+    ├───────────────────────┼──────────┼─────────────┤
+    │ Total commands          │      5 │  100.0% │
+    ├───────────────────────┼──────────┼─────────────┤
+    │ ✓ SUCCESS               │      5 │  100,0% │
+    │ ✗ ERROR                 │      0 │    0,0% │
+    │ ⏱ TIMEOUT               │      0 │    0,0% │
+     │ ✗ CLOSED                  │      0 │    0,0% │
+    ├───────────────────────┼──────────┼─────────────┤
+    │ Total duration          │     1467 ms    │               │
+    └───────────────────────┴──────────┴─────────────┘
+
+  Progress: [█████] 5/5
+
+══════════════════════════════════════════════════════
