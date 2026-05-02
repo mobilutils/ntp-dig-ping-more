@@ -3,6 +3,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -21,6 +22,10 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class DigViewModelTest {
 
+    private fun fakeSettingsRepository(): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
+        coEvery { it.timeoutSecondsFlow } returns flowOf(5)
+    }
+
     private fun createViewModel(
         repository: DigRepository = mockk(relaxed = true),
         historyStore: DigHistoryStore = mockk(relaxed = true),
@@ -28,7 +33,7 @@ class DigViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
         coEvery { repository.resolve(any(), any()) } returns DigResult.NoNetwork
-        return DigViewModel(repository, historyStore)
+        return DigViewModel(repository, historyStore, fakeSettingsRepository())
     }
 
     @Test
@@ -83,7 +88,7 @@ class DigViewModelTest {
         coEvery { historyStore.save(any()) } coAnswers { }
         coEvery { repository.resolve(any(), any()) } returns DigResult.NoNetwork
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onFqdnChange("")
         viewModel.runDigQuery()
 
@@ -101,7 +106,7 @@ class DigViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onDnsServerChange("8.8.8.8")
         viewModel.onFqdnChange("example.com")
 
@@ -133,7 +138,7 @@ class DigViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onFqdnChange("nonexistent.invalid")
 
         coEvery { repository.resolve(any(), any()) } returns
@@ -156,7 +161,7 @@ class DigViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onDnsServerChange("bad.server")
         viewModel.onFqdnChange("example.com")
 
@@ -179,7 +184,7 @@ class DigViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onFqdnChange("example.com")
 
         coEvery { repository.resolve(any(), any()) } returns DigResult.NoNetwork
@@ -199,7 +204,7 @@ class DigViewModelTest {
         val historyStore = mockk<DigHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onDnsServerChange("8.8.8.8")
         viewModel.onFqdnChange("example.com")
 
@@ -226,7 +231,7 @@ class DigViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
         val entry = DigHistoryEntry(
             timestamp = "2024/01/15 10:30:00",
             dnsServer = "1.1.1.1",
@@ -260,7 +265,7 @@ class DigViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onDnsServerChange("8.8.8.8")
         viewModel.onFqdnChange("example.com")
 
@@ -296,7 +301,7 @@ class DigViewModelTest {
                 dnsServer = "8.8.8.8"
             )
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
 
         // Run 6 different queries
         for (i in 1..6) {
@@ -319,7 +324,7 @@ class DigViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onFqdnChange("example.com")
 
         coEvery { repository.resolve(any(), any()) } returns
@@ -345,7 +350,7 @@ class DigViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
         coEvery { historyStore.save(any()) } coAnswers { }
 
-        val viewModel = DigViewModel(repository, historyStore)
+        val viewModel = DigViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onFqdnChange("nonexistent.invalid")
 
         coEvery { repository.resolve(any(), any()) } returns

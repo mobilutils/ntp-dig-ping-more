@@ -3,6 +3,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -15,12 +16,16 @@ import org.junit.Test
  */
 class GoogleTimeSyncViewModelTest {
 
+    private fun fakeSettingsRepository(): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
+        coEvery { it.timeoutSecondsFlow } returns flowOf(5)
+    }
+
     private fun createViewModel(
         repository: GoogleTimeSyncRepository = mockk(relaxed = true),
         historyStore: GoogleTimeSyncHistoryStore = mockk(relaxed = true),
     ): GoogleTimeSyncViewModel {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        return GoogleTimeSyncViewModel(repository, historyStore)
+        return GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
     }
 
     @Test
@@ -50,7 +55,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(GoogleTimeSyncRepository.DEFAULT_URL) } returns
             GoogleTimeSyncResult.Success(defaultTimeResult)
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.syncTime("")
         advanceUntilIdle()
 
@@ -76,7 +81,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(GoogleTimeSyncRepository.DEFAULT_URL) } returns
             GoogleTimeSyncResult.Success(defaultTimeResult)
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.syncTime(url)
         advanceUntilIdle()
 
@@ -101,7 +106,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.Success(timeResult)
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.syncTime("http://clients2.google.com/time/1/current")
         advanceUntilIdle()
 
@@ -121,7 +126,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.NoNetwork
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.syncTime("http://clients2.google.com/time/1/current")
         advanceUntilIdle()
 
@@ -140,7 +145,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.Timeout("http://clients2.google.com/time/1/current")
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.syncTime("http://clients2.google.com/time/1/current")
         advanceUntilIdle()
 
@@ -159,7 +164,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.HttpError(500, "http://clients2.google.com/time/1/current")
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.syncTime("http://clients2.google.com/time/1/current")
         advanceUntilIdle()
 
@@ -178,7 +183,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.ParseError("Missing field: current_time_millis")
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.syncTime("http://clients2.google.com/time/1/current")
         advanceUntilIdle()
 
@@ -197,7 +202,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.Error("Connection refused")
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.syncTime("http://clients2.google.com/time/1/current")
         advanceUntilIdle()
 
@@ -225,7 +230,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.Success(timeResult)
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.syncTime("http://clients2.google.com/time/1/current")
         advanceUntilIdle()
 
@@ -250,7 +255,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.Success(timeResult)
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
 
         // Start a sync operation
         viewModel.syncTime("http://clients2.google.com/time/1/current")
@@ -293,7 +298,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.Success(timeResult)
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.selectHistoryEntry(entry) { url ->
             callbackUrl = url
         }
@@ -321,7 +326,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.Success(timeResult)
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
 
         // Run the same URL twice
         viewModel.syncTime("http://clients2.google.com/time/1/current")
@@ -353,7 +358,7 @@ class GoogleTimeSyncViewModelTest {
         coEvery { repository.fetchGoogleTime(any()) } returns
             GoogleTimeSyncResult.Success(timeResult)
 
-        val viewModel = GoogleTimeSyncViewModel(repository, historyStore)
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository())
 
         // Run 6 different queries
         for (i in 1..6) {

@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.time.LocalDateTime
@@ -49,6 +52,7 @@ data class PingUiState(
  */
 class PingViewModel(
     private val historyStore: PingHistoryStore,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PingUiState())
@@ -82,25 +86,34 @@ class PingViewModel(
         )
 
         pingJob = viewModelScope.launch {
+            val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
             try {
-                val process = withContext(Dispatchers.IO) {
-                    Runtime.getRuntime().exec(arrayOf("ping", "-c", "100", host))
-                }
-                pingProcess = process
+                withTimeout(timeoutMs) {
+                    val process = withContext(Dispatchers.IO) {
+                        Runtime.getRuntime().exec(arrayOf("ping", "-c", "100", host))
+                    }
+                    pingProcess = process
 
-                val reader = BufferedReader(InputStreamReader(process.inputStream))
-                withContext(Dispatchers.IO) {
-                    var line: String? = null
-                    while (isActive && reader.readLine().also { line = it } != null) {
-                        val trimmed = line!!
-                        withContext(Dispatchers.Main) {
-                            _uiState.value = _uiState.value.copy(
-                                outputLines = _uiState.value.outputLines + trimmed,
-                            )
+                    val reader = BufferedReader(InputStreamReader(process.inputStream))
+                    withContext(Dispatchers.IO) {
+                        var line: String? = null
+                        while (isActive && reader.readLine().also { line = it } != null) {
+                            val trimmed = line!!
+                            withContext(Dispatchers.Main) {
+                                _uiState.value = _uiState.value.copy(
+                                    outputLines = _uiState.value.outputLines + trimmed,
+                                )
+                            }
                         }
                     }
+                    process.waitFor()
                 }
-                process.waitFor()
+            } catch (_: TimeoutCancellationException) {
+                // Append a visible timeout marker before the finally block cleans up.
+                _uiState.value = _uiState.value.copy(
+                    outputLines = _uiState.value.outputLines +
+                        "--- Timed out after ${timeoutMs / 1000}s ---",
+                )
             } catch (_: Exception) {
                 // Interrupted or cancelled – treat as stopped
             } finally {
@@ -192,6 +205,7 @@ class PingViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
                     PingViewModel(
                         historyStore = PingHistoryStore(context.applicationContext),
+                        settingsRepository = SettingsRepository(context.applicationContext),
                     ) as T
             }
     }
