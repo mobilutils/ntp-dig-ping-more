@@ -1,272 +1,135 @@
-# Project Context: NTP DIG PING MORE
+# Qwen Code Context — NTP DIG PING MORE
 
-## Overview
+## Project Overview
 
-A modern Android app (min SDK 26, target SDK 36) providing **network diagnostics tools**: NTP Check, DNS Lookup (DIG), Ping, Traceroute, Port Scanner, LAN Scanner, Google Time Sync, Device Info, and **Bulk Actions** (batch execute commands from a JSON config). Built with **Kotlin**, **Jetpack Compose (Material 3)**, **MVVM architecture**, and **Kotlin Coroutines**.
+**NTP DIG PING MORE** is a professional-grade Android network diagnostics toolkit built with Kotlin and Jetpack Compose (Material 3). It provides a suite of network troubleshooting tools in a single app with a bottom navigation bar and an overflow "More" screen.
 
-The app is packaged under `io.github.mobilutils.ntp_dig_ping_more` (version 2.4, versionCode 6).
+**Core Features:**
+- **NTP Check** — NTP server reachability, server time, clock offset, round-trip delay (via Apache Commons Net `NTPUDPClient`)
+- **DIG Test** — DNS resolution to custom servers with full CNAME chain support (via dnsjava `SimpleResolver`)
+- **Ping** — Live ICMP ping with streaming terminal output (up to 100 packets)
+- **Traceroute** — TTL-probing hop discovery via `ping -c 1 -t <TTL>` (no external binary needed)
+- **Port Scanner** — Concurrent TCP/UDP port range scanning with live progress
+- **LAN Scanner** — Subnet device discovery (IP, hostname, MAC, latency)
+- **Google Time Sync** — HTTP-based time sync with RTT/offset computation
+- **Device Info** — Read-only device identity, network, battery, storage, MDM status, CA certs
+- **Bulk Actions** — Batch execution of diagnostic commands from a JSON config, with ADB automation support for headless/CI workflows
 
----
+## Architecture
+
+| Layer | Technology |
+|---|---|
+| Language | Kotlin 2.2.10 |
+| UI | Jetpack Compose + Material 3 (BOM 2025.01.00) |
+| Architecture | MVVM (ViewModel + StateFlow) |
+| Navigation | Jetpack Navigation Compose 2.8.9 |
+| Concurrency | Kotlin Coroutines (`Dispatchers.IO`) |
+| Persistence | AndroidX DataStore Preferences (query history) |
+| Build | Gradle Kotlin DSL, AGP 9.2.0 |
+| Min SDK | 26 (Android 8.0) |
+| Compile SDK | 37 |
+| Target SDK | 35 (inferred from `defaultTargetSdkVersion`) |
+
+### Key Dependencies
+- `commons-net:3.11.1` — NTP UDP client
+- `dnsjava:3.6.2` — DNS resolution
+- `androidx.datastore:preferences:1.1.1` — History persistence
+- `androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7` — ViewModel integration
+- `junit:4.13.2`, `mockk:1.13.12`, `kotlinx-coroutines-test:1.8.1` — Testing
 
 ## Project Structure
 
 ```
 app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
-├── MainActivity.kt              # NavHost + bottom navigation bar
-├── NtpScreen.kt                 # NTP check screen
-├── NtpRepository.kt             # NTPUDPClient I/O
-├── NtpViewModel.kt              # NTP UI state (StateFlow)
-├── NtpHistoryStore.kt           # DataStore persistence (last 5 queries)
-├── DigScreen.kt                 # DIG / DNS lookup screen
-├── DigRepository.kt             # dnsjava SimpleResolver I/O
-├── DigViewModel.kt              # DIG UI state
-├── DigHistoryStore.kt           # DataStore persistence
-├── PingScreen.kt                # Ping screen
-├── PingViewModel.kt             # Ping UI state, process lifecycle
-├── PingHistoryStore.kt          # DataStore persistence
-├── TracerouteScreen.kt          # Traceroute screen (TTL-probing ICMP)
-├── TracerouteViewModel.kt       # Traceroute UI state
-├── TracerouteHistoryStore.kt    # DataStore persistence
-├── PortScannerScreen.kt         # Port Scanner screen
-├── PortScannerViewModel.kt      # Concurrent TCP/UDP scanning
-├── PortScannerHistoryStore.kt   # DataStore persistence
-├── LanScannerScreen.kt          # LAN Scanner screen
-├── LanScannerViewModel.kt       # Subnet sweep, concurrent pings
-├── LanScannerRepository.kt      # Subnet detection, ARP parsing
-├── LanScannerHistoryStore.kt    # DataStore persistence
-├── GoogleTimeSyncScreen.kt      # Google Time Sync screen
-├── GoogleTimeSyncViewModel.kt   # Idle/Loading/Success/Error StateFlow
-├── GoogleTimeSyncRepository.kt  # HTTP fetch, XSSI strip, offset calc
-├── GoogleTimeSyncHistoryStore.kt # DataStore persistence
-├── HttpsCertScreen.kt           # HTTPS certificate checker
-├── HttpsCertViewModel.kt        # HTTPS cert UI state
-├── HttpsCertRepository.kt       # HTTPS cert I/O
-├── HttpsCertHistoryStore.kt     # DataStore persistence
-├── BulkActionsRepository.kt     # JSON config parsing, command mapping (9 pseudo-commands), sequential execution
-├── BulkActionsViewModel.kt      # UI state, file loading, run/stop/clear/export
-├── BulkActionsScreen.kt         # File picker, config summary, progress bar, terminal output
-├── BulkActionsHistoryStore.kt   # DataStore persistence of last 5 config URIs
-├── BulkConfigParserTest.kt      # 9 unit tests for parsing logic
-├── BulkActionsViewModelTest.kt  # 5 unit tests for ViewModel state management
-├── deviceinfo/
-│   ├── DeviceInfoModels.kt      # Data models (DeviceInfo, CertificateInfo)
-│   ├── SystemInfoRepository.kt  # Identity, network, battery, storage, certs
-│   ├── DeviceInfoViewModel.kt   # StateFlow<DeviceInfoState>, periodic updates
-│   └── DeviceInfoScreen.kt      # Compose UI: Scaffold, LazyColumn, Cards
-└── ui/theme/
-    ├── Color.kt                 # Material 3 color palette
-    ├── Theme.kt                 # AppTheme, dark mode support
-    └── Type.kt                  # Typography
+├── MainActivity.kt               # NavHost, bottom navigation
+├── NtpScreen.kt, NtpViewModel.kt, NtpRepository.kt, NtpHistoryStore.kt
+├── DigScreen.kt, DigViewModel.kt, DigRepository.kt
+├── PingScreen.kt, PingViewModel.kt, PingHistoryStore.kt
+├── TracerouteScreen.kt, TracerouteViewModel.kt, TracerouteHistoryStore.kt
+├── PortScannerScreen.kt, PortScannerViewModel.kt, PortScannerHistoryStore.kt
+├── LanScannerScreen.kt, LanScannerViewModel.kt, LanScannerRepository.kt, LanScannerHistoryStore.kt
+├── GoogleTimeSyncScreen.kt, GoogleTimeSyncViewModel.kt, GoogleTimeSyncRepository.kt
+├── DeviceInfo/
+│    ├── DeviceInfoScreen.kt
+│    ├── DeviceInfoViewModel.kt
+│    ├── DeviceInfoModels.kt
+│    └── SystemInfoRepository.kt
+├── MoreToolsScreen.kt            # Overflow: Traceroute, Port Scanner, LAN Scanner, Google Time Sync, Device Info
+├── HttpsCertScreen.kt, HttpsCertViewModel.kt, HttpsCertHistoryStore.kt
+└── ui/theme/                     # Material 3 colors, typography, theme
+
+app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/
+├── NtpViewModelTest.kt           (14 tests)
+├── DigViewModelTest.kt           (14 tests)
+├── PingViewModelTest.kt          (pending)
+├── TracerouteViewModelTest.kt    (16 tests)
+├── PortScannerViewModelTest.kt   (12 tests)
+├── LanScannerViewModelTest.kt    (21 tests)
+├── LanScannerRepositoryTest.kt   (18 tests)
+├── GoogleTimeSyncViewModelTest.kt (14 tests)
+├── HttpsCertViewModelTest.kt     (28 tests)
+├── deviceinfo/DeviceInfoViewModelTest.kt (13 tests)
+└── HistoryStoreParsingTest.kt    (30+ tests)
 ```
-
-**43 Kotlin source files** total across the main source set (includes Bulk Actions).
-
----
-
-## Bulk Actions
-
-The **Bulk Actions** feature lets users execute multiple diagnostic commands from a JSON config file.
-
-### Supported Pseudo-Commands
-
-| Command | Syntax | Description |
-|---|---|-:--|
-| `ping` | `ping -c N host` | ICMP ping (N packets) |
-| `dig` | `dig @server fqdn` | DNS lookup |
-| `ntp` | `ntp pool` | NTP query |
-| `port-scan` | `port-scan -p ports host` | TCP port scan (renamed from `nmap`) |
-| `checkcert` | `checkcert -p port host` | HTTPS certificate check |
-| `device-info` | `device-info` | Device identity, network, battery, storage |
-| `tracert` | `tracert <host>` | TTL-probing traceroute |
-| `google-timesync` | `google-timesync` | Google time sync (server time, RTT, offset) |
-| `lan-scan` | `lan-scan` | LAN subnet device discovery |
-
-**Breaking change:** `nmap` prefix is no longer recognized. Use `port-scan` instead.
-
-### Architecture
-
-- `BulkConfigParser` — Pure JSON parsing (no Android API dependencies in JVM tests)
-- `BulkActionsRepository` — Command mapping, sequential execution with 30s timeout per command, Context-injected for `SystemInfoRepository`, `GoogleTimeSyncRepository`, `LanScannerRepository`
-- `BulkActionsViewModel` — UI state (`BulkUiState`), file loading, run/stop/clear/export
-- `BulkActionsHistoryStore` — DataStore persistence of last 5 config URIs
-- Example configs in `notes/config-files_bulk-actions/`
-
-### Traceroute Note
-
-Traceroute uses `ping -c 1 -t <TTL>` which requires `CAP_NET_RAW` (root or specific capabilities). On non-rooted Android devices, TTL probes may always show `* * *` — this is expected behavior.
-
----
-
-## Versioning
-
-- `defaultVersionName = "2.3"` (root `build.gradle.kts`)
-- `defaultVersionCode = 6`
-- `debug` build type appends `-dev` suffix → version name `2.3-dev`
-- `release` build type has no suffix → version name `2.3`
-
----
-
-## CI/CD
-
-### Workflows
-
-| Workflow | Trigger | Output |
-|---|---|---|
-| `build.yml` | Every push/PR | Debug APK as workflow artifact (login required) |
-| `android-signed-apk.yml` | Tags matching `v*` | Signed APK as GitHub Release (public, no login) |
-
-### GitHub Release Workflow
-
-The `android-signed-apk.yml` workflow:
-1. Builds release APK (`./gradlew assembleRelease`)
-2. Signs it with `r0adkll/sign-android-release@v1` using keystore secrets
-3. Publishes as a GitHub Release via `softprops/action-gh-release@v2`
-
-**Required repo setting:** Settings > Actions > General > Workflow permissions → **"Read and write permissions"**. Without this, the release upload fails with 403.
-
-**Signing secrets:**
-| Secret | Content |
-|---|---|
-| `KEYSTORE_BASE64` | Base64-encoded `.keystore` file |
-| `KEY_ALIAS` | Key alias name (e.g., `my-release-key`) |
-| `KEY_STORE_PASSWORD` | Password for the keystore file |
-| `KEY_PASSWORD` | Password for the key entry (may be empty) |
-
-**Releasing:**
-```bash
-git tag -a v2.5 -m "Release 2.5"
-git push origin v2.5
-```
-
-### Keystore
-
-Stored in `.keystore/` directory. Create with:
-```bash
-keytool -genkeypair -v \
-  -keystore .keystore/my-release.keystore \
-  -alias my-release-key \
-  -keyalg RSA -keysize 2048 -validity 10000
-```
-
-Full documentation: `notes/20260421_Sign-android-release_workflow.md`
-
----
 
 ## Building and Running
-
-### Prerequisites
-- Android Studio Hedgehog (2023.1.1) or newer
-- Android SDK 36 installed
-- Java 11+ (compileOptions sourceCompatibility/targetCompatibility)
-
-### Commands
 
 ```bash
 # Build debug APK
 ./gradlew assembleDebug
 
-# Install debug APK on connected device
+# Install on connected device/emulator
 ./gradlew installDebug
 
 # Run all unit tests
 ./gradlew test
 
-# Run Android instrumentation tests
-./gradlew connectedAndroidTest
+# Run a specific test class
+./gradlew test --tests "NtpViewModelTest"
 
-# Launch on connected device
-adb shell am start -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
+# Run with JaCoCo coverage report
+./gradlew jacocoUnitTestReport
+
+# Full build (includes tests)
+./gradlew build
 ```
 
----
+In Android Studio: open the project root → wait for Gradle sync → connect device/emulator → press **▶ Run**.
 
-## Key Dependencies
+## Testing Conventions
 
-| Dependency | Purpose |
-|---|---|
-| `commons-net` (Apache Commons Net 3.11.1) | NTP UDP packet exchange |
-| `dnsjava` 3.6.2 | DNS resolution (SimpleResolver, CNAME chains) |
-| `androidx.datastore.preferences` | Persistent query history |
-| `androidx.navigation.compose` | Bottom navigation + screen routing |
-| `androidx.lifecycle.viewmodel.compose` | ViewModel integration with Compose |
-| `org.json` (platform) | Google Time Sync JSON parsing |
-| `java.net.HttpURLConnection` | Google Time Sync HTTP request |
+- **70+ unit tests** covering ViewModels (with MockK), pure functions (IP conversion, parsing), and history store serialization.
+- All ViewModel tests use `StandardTestDispatcher` + `advanceUntilIdle()` for coroutine control.
+- Tests live in `app/src/test/java/...` following the same package as the source code.
+- Test template: use `@RunWith(JUnit4::class)`, `@OptIn(ExperimentalCoroutinesApi::class)`, `runTest` scope, MockK `coEvery`/`coVerify`.
+- **Pending coverage:** `PingViewModel` (Runtime.exec mocking), Compose UI tests in `androidTest/`.
+- JaCoCo is enabled for debug builds (`enableUnitTestCoverage = true`).
 
-### Test Dependencies
-- JUnit 4, MockK 1.13, Kotlin Coroutines Test (70+ unit tests)
+## Development Notes
 
----
+- **MVVM pattern:** Each feature has a `*Screen.kt` (Compose UI), `*ViewModel.kt` (StateFlow state), and optionally `*Repository.kt` (network I/O) and `*HistoryStore.kt` (DataStore).
+- **Coroutine concurrency:** All network operations run on `Dispatchers.IO` via coroutines. Timeouts are applied per-operation.
+- **History persistence:** Each tool keeps the last 5 (or 10 for LAN scanner) entries in DataStore, persisted across app restarts.
+- **Runtime permissions:** Location (`ACCESS_COARSE/FINE_LOCATION`) and phone state (`READ_PHONE_STATE`) are requested at runtime via `ActivityResultContracts`.
+- **Cleartext traffic:** `android:usesCleartextTraffic="true"` is set in `AndroidManifest.xml` for the Google Time Sync HTTP endpoint.
+- **Android 13+ (API 33):** `READ_EXTERNAL_STORAGE` is no longer grantable; Bulk Actions ADB automation pushes configs via `run-as` pipe and pulls results the same way.
+- **Build config:** Keystore is at `.keystore/my-release.keystore` (debug builds don't require it). ProGuard is disabled for release (`isMinifyEnabled = false`).
+- **Version catalog:** All dependency versions are in `gradle/libs.versions.toml`.
 
-## Architecture Patterns
+## Bulk Actions / ADB Automation
 
-- **MVVM**: Each tool has a `*Screen.kt` (Compose UI), `*ViewModel.kt` (StateFlow-based UI state), and `*Repository.kt` (network I/O).
-- **StateFlow**: All ViewModels expose `StateFlow<UiState>` for declarative UI updates.
-- **Coroutines**: All network I/O runs on `Dispatchers.IO`.
-- **Persistence**: Each tool has a corresponding `*HistoryStore.kt` using DataStore to persist the last 5 queries.
-- **Sealed Classes**: Repository results use sealed classes (e.g., `NtpResult`) for typed error handling.
-- **Navigation**: Jetpack Navigation Compose with a bottom navigation bar for primary tools; a "MORE" overflow menu for secondary tools.
+The app supports headless batch execution via ADB intent extras (`--ez auto_run true`). See `README.md` for full ADB script documentation and common pitfalls. Bundled scripts:
+- `BULKACTIONS-ADB-SCRIPT.sh` — Mac/Linux/Unix
+- `BULKACTIONS-ADB-WINDOWS-SCRIPT.bat` — Windows (needs testing)
 
----
+## Permissions Required
 
-## Permissions
+```xml
+INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE  (normal — auto-granted)
+ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION        (dangerous — runtime request)
+READ_PHONE_STATE                                    (dangerous — runtime request)
+```
 
-**Normal (auto-granted):**
-- `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE`
+## License
 
-**Dangerous (runtime via ActivityResultContracts):**
-- `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION`, `READ_PHONE_STATE`
-- Needed for Wi-Fi SSID, carrier name, IMEI, ICCID, serial number.
-
-**Note:** `android:usesCleartextTraffic="true"` is set in `AndroidManifest.xml` for the Google Time Sync HTTP endpoint.
-
----
-
-## Error Handling
-
-All tools use sealed result classes to represent success/failure states:
-
-| Error | Cause |
-|---|---|
-| DNS Failure / NXDOMAIN | Hostname unresolvable or doesn't exist |
-| Timeout | Server didn't respond within timeout window |
-| No Network | No active internet connection |
-| HTTP Error | Non-200 response from Google Time endpoint |
-| Parse Error | Invalid response format (XSSI prefix / JSON) |
-| General Error | Unexpected exception |
-
----
-
-## Coding Conventions (Inferred)
-
-- **Kotlin code style**: `official` (per `gradle.properties`)
-- **JVM target**: 11
-- **AndroidX**: Enabled (`android.useAndroidX=true`)
-- **Non-transitive R classes**: Enabled (`android.nonTransitiveRClass=true`)
-- **ProGuard/R8**: Enabled for release builds (minify enabled)
-- **Packaging exclusions**: META-INF license/notice files from commons-net, dnsjava, netty excluded to avoid APK merge conflicts
-- **Naming**: `*Screen.kt` (Compose), `*ViewModel.kt` (AndroidX ViewModel), `*Repository.kt` (I/O), `*HistoryStore.kt` (DataStore)
-- **Package**: `io.github.mobilutils.ntp_dig_ping_more` (with subpackage `deviceinfo` and `ui.theme`)
-
----
-
-## Testing
-
-- 70+ unit tests covering ViewModels, repositories, and data parsing
-- Tests run on JVM (no Android instrumentation needed for business logic)
-- MockK used for mocking Android APIs and coroutines
-- Test files live in `app/src/test/java/`
-
----
-
-## Notes for Development
-
-1. **Target SDK**: `defaultTargetSdkVersion` is set to 36 in the root `build.gradle.kts` via `extra`. The app module reads this with `targetSdk { version = release(rootProject.extra["defaultTargetSdkVersion"] as Int) }`.
-2. **Google Time Sync**: Uses plain HTTP (not HTTPS). The `)]}'` XSSI prefix must be stripped before parsing the JSON body.
-3. **Traceroute**: Implemented via `ping -c 1 -t <TTL>` probing (no `traceroute` binary needed). Probes up to 30 hops.
-4. **LAN Scanner**: Uses concurrent ping/ARP sweep for device discovery.
-5. **Android 10+ restrictions**: IMEI, serial number, and other sensitive APIs are restricted; clear fallback messages are shown.
-6. **`android.builtInKotlin=false`** and other AGP 9.0 compatibility flags are set in `gradle.properties`.
-7. **Bulk Actions Context injection**: `BulkActionsRepository` requires `Context` (for `SystemInfoRepository`, `LanScannerRepository`). Always pass `context.applicationContext` from the ViewModel factory to avoid memory leaks.
-
-## Qwen Added Memories
-- Project: android-ntp_dig_ping_more Android app (Kotlin, Compose, MVVM). Test fixing progress: 31 failures → 8 failures. Fixed: HttpsCertViewModelTest (7 tests via explicit result stubs), LanScannerViewModelTest initial state assertion, TracerouteViewModel history cap, DeviceInfoViewModel stopPeriodicUpdates. Remaining 8 failures: DigViewModelTest (1), LanScannerViewModelTest (history saved, activeDevices), DeviceInfoViewModelTest (4 periodic update/permission tests). Source changes: LanScannerViewModel.kt +.take(10) cap, TracerouteViewModel.kt +.take(5) cap, DeviceInfoViewModel.kt +stopPeriodicUpdates().
+MIT
