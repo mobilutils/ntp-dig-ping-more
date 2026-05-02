@@ -264,7 +264,7 @@ private fun CertResultContent(
         }
 
         // ── Validity status chip ───────────────────────────────────────
-        ValidityChip(info = info)
+        ValidityChip(info = info, trustWarning = warning)
 
         // ── Subject ───────────────────────────────────────────────────
         CertSection(title = "Subject", icon = Icons.Filled.Badge) {
@@ -353,32 +353,39 @@ private fun CertResultContent(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ValidityChip(info: CertificateInfo) {
-    val (bgColor, contentColor, icon, label) = when (info.validityStatus) {
-        CertValidityStatus.VALID -> Quad(
-            Color(0xFF1B5E20), Color(0xFFA5D6A7),
-            Icons.Filled.CheckCircle,
-            if (info.daysUntilExpiry > 365) "Valid" else "Valid · expires in ${info.daysUntilExpiry}d",
-        )
-        CertValidityStatus.EXPIRING_SOON -> Quad(
-            Color(0xFFE65100), Color(0xFFFFCC80),
-            Icons.Filled.Warning,
-            "Expiring Soon · ${info.daysUntilExpiry}d left",
-        )
-        CertValidityStatus.EXPIRED -> Quad(
+private fun ValidityChip(info: CertificateInfo, trustWarning: String?) {
+    val (bgColor, contentColor, icon, label) = when {
+          // Trust issues always override to "Invalid" in red
+        trustWarning != null -> Quad(
             MaterialTheme.colorScheme.errorContainer,
             MaterialTheme.colorScheme.onErrorContainer,
             Icons.Filled.Error,
-            "Expired · ${-info.daysUntilExpiry}d ago",
-        )
-    }
+             "Invalid",
+          )
+        info.validityStatus == CertValidityStatus.VALID -> Quad(
+            Color(0xFF1B5E20), Color(0xFFA5D6A7),
+            Icons.Filled.CheckCircle,
+            if (info.daysUntilExpiry > 365) "Valid" else "Valid · expires in ${info.daysUntilExpiry}d",
+          )
+        info.validityStatus == CertValidityStatus.EXPIRING_SOON -> Quad(
+            Color(0xFFE65100), Color(0xFFFFCC80),
+            Icons.Filled.Warning,
+              "Expiring Soon · ${info.daysUntilExpiry}d left",
+          )
+        else -> Quad(
+            MaterialTheme.colorScheme.errorContainer,
+            MaterialTheme.colorScheme.onErrorContainer,
+            Icons.Filled.Error,
+              "Expired · ${-info.daysUntilExpiry}d ago",
+          )
+      }
 
     Surface(
         shape = RoundedCornerShape(50.dp),
         color = bgColor,
-    ) {
+     ) {
         Row(
-            modifier          = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier           = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
