@@ -68,7 +68,9 @@ class BulkActionsViewModel(
     private val cancellationToken = AtomicBoolean(false)
 
     /** Path to a marker file in the app's private directory. Exists while bulk actions are running. */
-    private val runningFile = File(context.filesDir, ".running-tasks")
+    private val runningFile: File by lazy {
+        File(context.filesDir, ".running-tasks")
+    }
 
     /** CSV output preference loaded from DataStore. */
     private val csvDataStore: DataStore<Preferences> by lazy {
