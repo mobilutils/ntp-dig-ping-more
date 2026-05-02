@@ -103,12 +103,13 @@ sealed class HttpsCertResult {
     data class CertExpired(val info: CertificateInfo) : HttpsCertResult()
 
     /**
-     * The certificate chain is not trusted by the system (e.g. self-signed,
-     * unknown CA). The cert data is extracted where possible.
-     */
-    data class UntrustedChain(val info: CertificateInfo?, val reason: String) : HttpsCertResult()
+      * The certificate chain is not trusted by the system (e.g. untrusted root,
+      * unknown CA). The full certificate data is always extracted and exposed
+      * so the UI can display it with a warning.
+      */
+    data class UntrustedChain(val info: CertificateInfo, val reason: String) : HttpsCertResult()
 
-    /** Any other error during the handshake or parsing phase. */
+     /** Any other error during the handshake or parsing phase. */
     data class Error(val message: String) : HttpsCertResult()
 }
 
@@ -119,23 +120,21 @@ sealed class HttpsCertResult {
 /**
  * A [X509TrustManager] that wraps the system default PKIX trust manager.
  *
- * On a successful validation it records the full chain so it can be
- * inspected afterwards. It intentionally does NOT relax any validation
- * rules — the system manager's [checkServerTrusted] is always called first.
+ * The full chain is recorded **before** calling the system trust manager,
+ * so untrusted or expired chains are still captured for inspection.
+ * The system manager's [checkServerTrusted] still enforces PKIX rules —
+ * if validation fails the exception propagates but the chain is already recorded.
  */
 private class RecordingTrustManager(private val systemTm: X509TrustManager) : X509TrustManager {
 
-    /** Populated after a successful [checkServerTrusted] call. */
+    /** Populated on every [checkServerTrusted] call, regardless of validation outcome. */
     var chain: Array<out X509Certificate>? = null
         private set
 
-    /**
-     * If the system manager accepts the chain it is recorded; otherwise the
-     * original exception propagates unchanged.
-     */
     override fun checkServerTrusted(chain: Array<out X509Certificate>, authType: String) {
-        systemTm.checkServerTrusted(chain, authType)
+        // Record BEFORE validation so untrusted/expired chains are still captured.
         this.chain = chain
+        systemTm.checkServerTrusted(chain, authType)
     }
 
     override fun checkClientTrusted(chain: Array<out X509Certificate>, authType: String) =
@@ -218,21 +217,20 @@ class HttpsCertRepository {
             HttpsCertResult.Success(info)
 
         } catch (e: CertificateExpiredException) {
-            // Chain was extracted before the expiry check in PKIX — try to parse it.
-            val info = recorder.chain?.let { parseCertificate(host, port, it) }
-            if (info != null) HttpsCertResult.CertExpired(info)
-            else HttpsCertResult.Error("Certificate is expired: ${e.localizedMessage}")
+            // Chain was recorded before PKIX expiry check — always available.
+            val info = parseCertificate(host, port, recorder.chain!!)
+            HttpsCertResult.CertExpired(info)
 
         } catch (e: SSLHandshakeException) {
             // Could be self-signed, wrong host, or other trust failure.
-            // Try to get whatever the recording manager captured before failing.
-            val info = recorder.chain?.let { parseCertificate(host, port, it) }
+            // Chain was recorded before PKIX validation — always available.
+            val info = parseCertificate(host, port, recorder.chain!!)
             val reason = e.localizedMessage ?: "TLS handshake failed"
 
             // Distinguish expired specifically (PKIX embeds it in the handshake ex)
             val causeIsExpiry = generateSequence(e.cause) { it.cause }
                 .any { it is CertificateExpiredException }
-            if (causeIsExpiry && info != null) {
+            if (causeIsExpiry) {
                 HttpsCertResult.CertExpired(info)
             } else {
                 HttpsCertResult.UntrustedChain(info, reason)
