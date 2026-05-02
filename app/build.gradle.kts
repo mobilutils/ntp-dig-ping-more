@@ -25,8 +25,8 @@ android {
         applicationId = "io.github.mobilutils.ntp_dig_ping_more"
         minSdk = 26
         targetSdk { version = release(rootProject.extra["defaultTargetSdkVersion"] as Int) }
-        versionCode = 19
-        versionName = "2.80"
+        versionCode = 20
+        versionName = "2.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -124,6 +124,9 @@ dependencies {
 
     // dnsjava – full DNS resolution (records, TTL, CNAME chains)
     implementation(libs.dnsjava)
+
+    // QuickJS – lightweight JS engine for PAC script evaluation
+    implementation(libs.quickjs)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

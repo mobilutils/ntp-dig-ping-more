@@ -3,7 +3,10 @@ package io.github.mobilutils.ntp_dig_ping_more.settings
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,4 +42,18 @@ object SettingsKeys {
 
     /** Maximum accepted timeout value. */
     const val MAX_TIMEOUT_SECONDS: Int = 60
+
+    // ── Proxy / PAC keys ─────────────────────────────────────────────────────
+
+    /** Whether proxy routing is enabled. */
+    val PROXY_ENABLED = booleanPreferencesKey("proxy_enabled")
+
+    /** URL to a PAC auto-configuration script. */
+    val PROXY_PAC_URL = stringPreferencesKey("proxy_pac_url")
+
+    /** Epoch millis of the last "Test Proxy" action. */
+    val PROXY_LAST_TESTED = longPreferencesKey("proxy_last_tested")
+
+    /** Human-readable result string of the last proxy test. */
+    val PROXY_LAST_TEST_RESULT = stringPreferencesKey("proxy_last_test_result")
 }
