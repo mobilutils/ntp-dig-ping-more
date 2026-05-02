@@ -1,0 +1,75 @@
+══════════════════════════════════════════════════════
+  BULK ACTIONS — OUTPUT REPORT
+══════════════════════════════════════════════════════
+  Generated: 2026-05-02 11:17:10
+══════════════════════════════════════════════════════
+
+── COMMAND RESULTS ──────────────────────────────────
+
+[1] port-scan_gg: port-scan 80 google.com
+    Status: CLOSED (2188ms)
+        [2026-05-02 11:16:47] port-scan 80 google.com
+        [2026-05-02 11:16:47] Status: CLOSED (2188ms)
+          No open ports found.
+
+[2] port-scan_ggp: port-scan -p 80 google.com
+    Status: CLOSED (2007ms)
+        [2026-05-02 11:16:49] port-scan -p 80 google.com
+        [2026-05-02 11:16:49] Status: CLOSED (2007ms)
+          No open ports found.
+
+[3] port-scan_gg-2ips: port-scan 80,443 google.com
+    Status: CLOSED (2011ms)
+        [2026-05-02 11:16:51] port-scan 80,443 google.com
+        [2026-05-02 11:16:51] Status: CLOSED (2011ms)
+          No open ports found.
+
+[4] port-scan_phttp80: port-scan 80 phttp.com
+    Status: CLOSED (2171ms)
+        [2026-05-02 11:16:53] port-scan 80 phttp.com
+        [2026-05-02 11:16:53] Status: CLOSED (2171ms)
+          No open ports found.
+
+[5] port-scan_phttp80-82p: port-scan -p 80-82 phttp.com
+    Status: CLOSED (2012ms)
+        [2026-05-02 11:16:56] port-scan -p 80-82 phttp.com
+        [2026-05-02 11:16:56] Status: CLOSED (2012ms)
+          No open ports found.
+
+[6] port-scan_phttp80-82: port-scan 80-82 phttp.com
+    Status: CLOSED (2017ms)
+        [2026-05-02 11:16:58] port-scan 80-82 phttp.com
+        [2026-05-02 11:16:58] Status: CLOSED (2017ms)
+          No open ports found.
+
+[7] port-scan_phttp80and82: port-scan 80,82 phttp.com
+    Status: CLOSED (2007ms)
+        [2026-05-02 11:17:00] port-scan 80,82 phttp.com
+        [2026-05-02 11:17:00] Status: CLOSED (2007ms)
+          No open ports found.
+
+[8] port-scan_phttp80timeout10: port-scan 80 phttp.com -t 10
+    Status: TIMEOUT
+
+[9] port-scan_noexistantdm: port-scan ksldfjsdkuer.com
+    Status: ERROR
+     Unable to resolve host "ksldfjsdkuer.com": No address associated with hostname
+
+── SUMMARY ──────────────────────────────────────────
+
+    ┌───────────────────────┬──────────┬─────────────┐
+    │ Metric                  │ Count      │ Percentage    │
+    ├───────────────────────┼──────────┼─────────────┤
+    │ Total commands          │      9 │  100.0% │
+    ├───────────────────────┼──────────┼─────────────┤
+    │ ✓ SUCCESS               │      0 │    0,0% │
+    │ ✗ ERROR                 │      1 │   11,1% │
+    │ ⏱ TIMEOUT               │      1 │   11,1% │
+     │ ✗ CLOSED                  │      7 │   77,8% │
+    ├───────────────────────┼──────────┼─────────────┤
+    │ Total duration          │    14413 ms    │               │
+    └───────────────────────┴──────────┴─────────────┘
+
+  Progress: [░░░░░░░░░] 0/9
+
+══════════════════════════════════════════════════════
