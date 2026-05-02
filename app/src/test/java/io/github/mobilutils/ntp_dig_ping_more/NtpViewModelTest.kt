@@ -3,6 +3,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -16,12 +17,16 @@ import org.junit.Test
  */
 class NtpViewModelTest {
 
+    private fun fakeSettingsRepository(): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
+        coEvery { it.timeoutSecondsFlow } returns flowOf(5)
+    }
+
     private fun createViewModel(
         repository: NtpRepository = mockk(relaxed = true),
         historyStore: NtpHistoryStore = mockk(relaxed = true),
     ): SimpleNtpViewModel {
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        return SimpleNtpViewModel(repository, historyStore)
+        return SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
     }
 
     @Test
@@ -80,7 +85,7 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("")
         viewModel.checkReachability()
 
@@ -95,7 +100,7 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
         viewModel.onPortChange("123")
 
@@ -123,7 +128,7 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("invalid.host.xyz")
 
         coEvery { repository.query("invalid.host.xyz", 123) } returns NtpResult.DnsFailure("invalid.host.xyz")
@@ -141,7 +146,7 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("slow.server.com")
 
         coEvery { repository.query("slow.server.com", 123) } returns NtpResult.Timeout("slow.server.com")
@@ -159,7 +164,7 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
 
         coEvery { repository.query("pool.ntp.org", 123) } returns NtpResult.NoNetwork
@@ -177,7 +182,7 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
 
         coEvery { repository.query("pool.ntp.org", 123) } returns NtpResult.Success(
@@ -198,7 +203,7 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         val entry = NtpHistoryEntry(
             timestamp = "2024/01/15 10:30:00",
             server = "time.google.com",
@@ -227,7 +232,7 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
 
         coEvery { repository.query(any(), any()) } returns NtpResult.Success(
@@ -259,7 +264,7 @@ class NtpViewModelTest {
             delayMs = 120L
         )
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
 
         // Run 6 different queries
         for (i in 1..6) {
@@ -278,7 +283,7 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
         viewModel.onPortChange("abc")
 
@@ -300,7 +305,7 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
-        val viewModel = SimpleNtpViewModel(repository, historyStore)
+        val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
 
         // First query that takes a long time

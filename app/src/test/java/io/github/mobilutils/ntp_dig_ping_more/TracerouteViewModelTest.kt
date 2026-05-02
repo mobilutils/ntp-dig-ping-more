@@ -3,6 +3,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -20,10 +21,14 @@ import org.junit.Test
  */
 class TracerouteViewModelTest {
 
+    private fun fakeSettingsRepository(): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
+        coEvery { it.timeoutSecondsFlow } returns flowOf(5)
+    }
+
     private fun createViewModel(): TracerouteViewModel {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        return TracerouteViewModel(historyStore)
+        return TracerouteViewModel(historyStore, fakeSettingsRepository())
     }
 
     @Test
@@ -117,7 +122,7 @@ class TracerouteViewModelTest {
     fun `stopTraceroute saves history when stopped`() = runTest {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        val viewModel = TracerouteViewModel(historyStore)
+        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
         viewModel.stopTraceroute()
@@ -147,7 +152,7 @@ class TracerouteViewModelTest {
     fun `selectHistoryEntry stops previous traceroute if running`() = runTest {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        val viewModel = TracerouteViewModel(historyStore)
+        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
 
@@ -175,7 +180,7 @@ class TracerouteViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(savedHistory)
 
         // Create a new ViewModel to trigger history loading
-        val viewModel = TracerouteViewModel(historyStore)
+        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
         advanceUntilIdle()
 
         assertEquals(2, viewModel.uiState.value.history.size)
@@ -196,7 +201,7 @@ class TracerouteViewModelTest {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(largeHistory)
 
-        val viewModel = TracerouteViewModel(historyStore)
+        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
         advanceUntilIdle()
 
         // HistoryStore should already have capped at 5
@@ -207,7 +212,7 @@ class TracerouteViewModelTest {
     fun `stopTraceroute calculates ALL_FAILED status when no hops replied`() = runTest {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        val viewModel = TracerouteViewModel(historyStore)
+        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
         viewModel.stopTraceroute()
@@ -244,7 +249,7 @@ class TracerouteViewModelTest {
     fun `multiple startTraceroute calls with different hosts`() = runTest {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        val viewModel = TracerouteViewModel(historyStore)
+        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
         // Start first traceroute
         viewModel.onHostChange("google.com")
         viewModel.startTraceroute()

@@ -3,6 +3,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -16,10 +17,14 @@ import org.junit.Test
  */
 class PortScannerViewModelTest {
 
+    private fun fakeSettingsRepository(): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
+        coEvery { it.timeoutSecondsFlow } returns flowOf(5)
+    }
+
     private fun createViewModel(): PortScannerViewModel {
         val historyStore = mockk<PortScannerHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        return PortScannerViewModel(historyStore)
+        return PortScannerViewModel(historyStore, fakeSettingsRepository())
     }
 
     @Test
