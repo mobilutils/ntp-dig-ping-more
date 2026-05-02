@@ -264,22 +264,42 @@ class HttpsCertViewModelTest {
     }
 
     @Test
-    fun `fetchCert handles UntrustedChain without info`() = runTest {
+    fun `fetchCert handles UntrustedChain with cert data shows PartialSuccess`() = runTest {
+        val info = CertificateInfo(
+            host                 = "broken.com",
+            port                 = 443,
+            subject              = DistinguishedName(cn = "broken.com", o = null, ou = null, c = null),
+            issuer               = DistinguishedName(cn = "Broken CA", o = null, ou = null, c = null),
+            notBefore            = "2024-01-01 00:00:00 UTC",
+            notAfter             = "2026-12-31 23:59:59 UTC",
+            validityStatus       = CertValidityStatus.VALID,
+            daysUntilExpiry      = 365,
+            serialNumber         = "01",
+            sha256Fingerprint    = "AA:BB",
+            sha1Fingerprint      = "CC:DD",
+            subjectAltNames      = emptyList(),
+            keyAlgorithm         = "RSA",
+            keySize              = 2048,
+            version              = 3,
+            signatureAlgorithm   = "SHA256withRSA",
+            chainDepth           = 1,
+         )
         viewModel.onHostChange("broken.com")
         coEvery { repository.fetchCertificate("broken.com", 443) } returns
             HttpsCertResult.UntrustedChain(
-                info = null,
+                info     = info,
                 reason = "TLS handshake failed"
-            )
+             )
 
         viewModel.fetchCert()
         testDispatcher.scheduler.advanceUntilIdle()
 
         val state = viewModel.uiState.value
-        assertTrue(state is HttpsCertUiState.Error)
+        assertTrue(state is HttpsCertUiState.PartialSuccess)
 
-        val errorState = state as HttpsCertUiState.Error
-        assertTrue(errorState.message.contains("Untrusted"))
+        val partialState = state as HttpsCertUiState.PartialSuccess
+        assertTrue(partialState.warningMessage.contains("Untrusted"))
+        assertEquals(info, partialState.info)
     }
 
     @Test
