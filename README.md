@@ -167,7 +167,6 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 | `tracert` | `tracert host [-t H]` | TTL-probing traceroute (-t H = max hops, also sets coroutine timeout) |
 | `google-timesync` | `google-timesync` | Google time sync (no -t) |
 | `lan-scan` | `lan-scan` | LAN subnet device discovery (no -t) |
-| `sleep N` | `sleep N` | Non-blocking delay 1–3600s (clamped to 3600 if > 3600; returns SUCCESS) |
 
 **Timeout precedence:** per-command `-t` > config-level `"timeout"` > default 30s.
 
@@ -225,7 +224,7 @@ adb shell "run-as $APP_ID cat $PRIVATE_DIR/blkacts_single_ping_success.txt" \
 | `adb pull /data/user/0/<pkg>/files/...` | `Permission denied` — `adb` runs as `shell` user | Use `adb shell "run-as <pkg> cat <file>"` and redirect to host |
 | `adb shell "run-as <pkg> cp <file> /sdcard/..."` | `Permission denied` — `run-as` cannot write to `/sdcard/` | Use the host-redirect pull approach above |
 
-#### Bundled script
+#### Bundled script (Unix / Linux / macOS)
 
 ```bash
 # Single config (default emulator)
@@ -247,7 +246,29 @@ adb shell "run-as $APP_ID cat $PRIVATE_DIR/blkacts_single_ping_success.txt" \
 ./BULKACTIONS-ADB-SCRIPT.sh -f ~/Downloads/blkacts_single_ping_success.json --no-interact
 ```
 
-Options:
+#### Bundled script (Windows)
+
+```cmd
+REM Single config (default emulator)
+BULKACTIONS-ADB-SCRIPT-NEW.bat -f blkacts_single_ping_success.json
+
+REM Specific emulator
+BULKACTIONS-ADB-SCRIPT-NEW.bat -f blkacts_multi_all9_success.json -e Medium_Phone_API_35
+
+REM Fully unattended — no interactive prompts at the end
+BULKACTIONS-ADB-SCRIPT-NEW.bat -f blkacts_multi_all9_success.json --no-interact
+
+REM Show emulator window during run
+BULKACTIONS-ADB-SCRIPT-NEW.bat -f blkacts_single_ping_success.json --show-emulator
+
+REM Real device mode (skips all emulator commands)
+BULKACTIONS-ADB-SCRIPT-NEW.bat -f blkacts_multi_all9_success.json --real-device --no-interact
+
+REM Path with ~ expanded to %USERPROFILE%
+BULKACTIONS-ADB-SCRIPT-NEW.bat -f ~\Downloads\blkacts_single_ping_success.json --no-interact
+```
+
+Options (both scripts share the same flags):
 
 | Flag | Description |
 |---|---|
