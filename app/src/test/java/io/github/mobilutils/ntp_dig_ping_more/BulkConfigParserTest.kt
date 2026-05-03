@@ -423,4 +423,63 @@ class BulkConfigParserTest {
         assertEquals("checkcert -p 443 example.com", config.commands["cert"])
         assertEquals("google-timesync", config.commands["sync"])
     }
+
+
+     // ────────────────────────────────────────────────────────────────
+     // sleep pseudo-command parsing tests
+      // ────────────────────────────────────────────────────────────────
+
+      @Test
+    fun `parseConfigWithSleepCommand_parsesCorrectly`() {
+        val json = """
+              {
+                  "run": {
+                      "wait-5s": "sleep 5"
+                  }
+              }
+          """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertEquals(1, config.commands.size)
+        assertEquals("sleep 5", config.commands["wait-5s"])
+     }
+
+      @Test
+    fun `parseConfigWithMultipleSleepCommands_parsesAll`() {
+        val json = """
+              {
+                  "run": {
+                      "ping-google": "ping -c 3 google.com",
+                      "wait-5s": "sleep 5",
+                      "dig-example": "dig @8.8.8.8 example.com",
+                      "wait-short": "sleep 1"
+                  }
+              }
+          """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertEquals(4, config.commands.size)
+        assertEquals("ping -c 3 google.com", config.commands["ping-google"])
+        assertEquals("sleep 5", config.commands["wait-5s"])
+        assertEquals("dig @8.8.8.8 example.com", config.commands["dig-example"])
+        assertEquals("sleep 1", config.commands["wait-short"])
+     }
+
+      @Test
+    fun `parseConfigWithMaxSleepValue_parsesCorrectly`() {
+        val json = """
+              {
+                  "run": {
+                      "long-wait": "sleep 3600"
+                  }
+              }
+          """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertEquals(1, config.commands.size)
+        assertEquals("sleep 3600", config.commands["long-wait"])
+     }
 }

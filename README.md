@@ -167,6 +167,7 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 | `tracert` | `tracert host [-t H]` | TTL-probing traceroute (-t H = max hops, also sets coroutine timeout) |
 | `google-timesync` | `google-timesync` | Google time sync (no -t) |
 | `lan-scan` | `lan-scan` | LAN subnet device discovery (no -t) |
+| `sleep N` | `sleep N` | Non-blocking delay 1–3600s (clamped to 3600 if > 3600; returns SUCCESS) |
 
 **Timeout precedence:** per-command `-t` > config-level `"timeout"` > default 30s.
 
