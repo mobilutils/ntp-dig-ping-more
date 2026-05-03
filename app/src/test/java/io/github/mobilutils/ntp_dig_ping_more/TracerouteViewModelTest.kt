@@ -4,12 +4,19 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -19,7 +26,20 @@ import org.junit.Test
  * be easily mocked. These tests focus on state management, input handlers,
  * history persistence, and job cancellation logic.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class TracerouteViewModelTest {
+
+    private val testDispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setup() {
+        Dispatchers.setMain(testDispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
 
     private fun fakeSettingsRepository(): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
         coEvery { it.timeoutSecondsFlow } returns flowOf(5)
@@ -92,6 +112,10 @@ class TracerouteViewModelTest {
         val state = viewModel.uiState.value
         assertTrue(state.isRunning)
         assertTrue(state.outputLines.isEmpty())
+
+        // Cleanup: cancel the running traceroute to avoid leaked coroutines
+        viewModel.stopTraceroute()
+        advanceUntilIdle()
     }
 
     @Test
@@ -105,6 +129,10 @@ class TracerouteViewModelTest {
 
         // Should still be running, but no duplicate start
         assertTrue(viewModel.uiState.value.isRunning)
+
+        // Cleanup
+        viewModel.stopTraceroute()
+        advanceUntilIdle()
     }
 
     @Test
@@ -113,6 +141,7 @@ class TracerouteViewModelTest {
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
         viewModel.stopTraceroute()
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertFalse(state.isRunning)
@@ -230,6 +259,8 @@ class TracerouteViewModelTest {
 
         // onCleared() is protected and called by the framework when ViewModel is cleared
         // We can't directly test it, but we verify the ViewModel handles cancellation gracefully
+        viewModel.stopTraceroute()
+        advanceUntilIdle()
         assertTrue(true)
     }
 
@@ -243,6 +274,10 @@ class TracerouteViewModelTest {
         // Note: Actual hop probing runs on IO dispatcher and can't be easily mocked
         // This test verifies the initial state change
         assertTrue(viewModel.uiState.value.isRunning)
+
+        // Cleanup
+        viewModel.stopTraceroute()
+        advanceUntilIdle()
     }
 
     @Test
@@ -275,5 +310,9 @@ class TracerouteViewModelTest {
         // Output should be cleared when starting
         assertTrue(viewModel.uiState.value.outputLines.isEmpty())
         assertTrue(viewModel.uiState.value.isRunning)
+
+        // Cleanup
+        viewModel.stopTraceroute()
+        advanceUntilIdle()
     }
 }

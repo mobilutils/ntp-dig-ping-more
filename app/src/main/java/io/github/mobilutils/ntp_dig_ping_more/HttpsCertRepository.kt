@@ -1,8 +1,12 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.MessageDigest
@@ -157,7 +161,9 @@ private class RecordingTrustManager(private val systemTm: X509TrustManager) : X5
  * by catching the specific exceptions and mapped to dedicated result types
  * so the UI can still display the parsed certificate fields.
  */
-class HttpsCertRepository {
+class HttpsCertRepository(
+    private val proxyResolver: ProxyResolver? = null,
+) {
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 10_000
@@ -197,11 +203,24 @@ class HttpsCertRepository {
         var socket: SSLSocket? = null
 
         try {
-            // ── Establish connection ──────────────────────────────────────
-            socket = (sslContext.socketFactory.createSocket() as SSLSocket).also { s ->
-                s.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
-                s.soTimeout = READ_TIMEOUT_MS
-                s.useClientMode = true
+            // ── Establish connection (direct or proxied) ─────────────────
+            val proxy = proxyResolver?.resolveProxy("https://$host:$port")
+
+            socket = if (proxy != null && proxy.type() == java.net.Proxy.Type.HTTP) {
+                // HTTP CONNECT tunneling for proxied SSL
+                createProxiedSSLSocket(
+                    targetHost  = host,
+                    targetPort  = port,
+                    proxy       = proxy,
+                    sslFactory  = sslContext.socketFactory,
+                )
+            } else {
+                // Direct connection (no proxy, or SOCKS proxy handled by Socket)
+                (sslContext.socketFactory.createSocket() as SSLSocket).also { s ->
+                    s.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+                    s.soTimeout = READ_TIMEOUT_MS
+                    s.useClientMode = true
+                }
             }
 
             // ── Attempt handshake ─────────────────────────────────────────
@@ -268,6 +287,74 @@ class HttpsCertRepository {
         } finally {
             runCatching { socket?.close() }
         }
+    }
+    // ── CONNECT tunnel (proxied SSL) ───────────────────────────────────────────
+
+    /**
+     * Establishes an HTTP CONNECT tunnel through [proxy], then wraps the raw
+     * socket with SSL for a transparent TLS handshake to [targetHost]:[targetPort].
+     *
+     * Steps:
+     *  1. Open a raw TCP [Socket] to the proxy address.
+     *  2. Send `CONNECT targetHost:targetPort HTTP/1.1\r\n\r\n`.
+     *  3. Read the proxy's response; expect `HTTP/1.x 200 ...`.
+     *  4. Wrap the raw socket with [sslFactory] for the real TLS handshake.
+     *
+     * @throws java.io.IOException if the proxy rejects the CONNECT or if the
+     *         connection cannot be established within [CONNECT_TIMEOUT_MS].
+     */
+    // TODO: Proxy authentication is deferred — CONNECT does not send
+    //       Proxy-Authorization headers. Add support when needed.
+    private fun createProxiedSSLSocket(
+        targetHost: String,
+        targetPort: Int,
+        proxy: java.net.Proxy,
+        sslFactory: javax.net.ssl.SSLSocketFactory,
+    ): SSLSocket {
+        val proxyAddr = proxy.address() as InetSocketAddress
+
+        // 1. Raw TCP connection to the proxy
+        val rawSocket = Socket()
+        rawSocket.connect(
+            InetSocketAddress(proxyAddr.hostString, proxyAddr.port),
+            CONNECT_TIMEOUT_MS,
+        )
+        rawSocket.soTimeout = READ_TIMEOUT_MS
+
+        // 2. Send CONNECT request
+        val connectRequest = "CONNECT $targetHost:$targetPort HTTP/1.1\r\n" +
+                "Host: $targetHost:$targetPort\r\n" +
+                "\r\n"
+        rawSocket.getOutputStream().apply {
+            write(connectRequest.toByteArray(Charsets.US_ASCII))
+            flush()
+        }
+
+        // 3. Read the proxy's response status line and headers
+        val reader = BufferedReader(InputStreamReader(rawSocket.getInputStream(), Charsets.US_ASCII))
+        val statusLine = reader.readLine()
+            ?: throw java.io.IOException("Proxy closed connection before sending CONNECT response")
+
+        // Expect "HTTP/1.x 200 ..."
+        if (!statusLine.contains(" 200 ")) {
+            rawSocket.close()
+            throw java.io.IOException("Proxy CONNECT failed: $statusLine")
+        }
+
+        // Consume remaining headers until the blank line
+        while (true) {
+            val line = reader.readLine() ?: break
+            if (line.isEmpty()) break
+        }
+
+        // 4. Wrap with SSL — autoClose=true so closing SSLSocket also closes rawSocket
+        val sslSocket = sslFactory.createSocket(
+            rawSocket, targetHost, targetPort, /* autoClose = */ true,
+        ) as SSLSocket
+        sslSocket.soTimeout = READ_TIMEOUT_MS
+        sslSocket.useClientMode = true
+
+        return sslSocket
     }
 
     // ── Certificate parsing ───────────────────────────────────────────────────

@@ -51,4 +51,36 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.TIMEOUT_SECONDS] = clamped
         }
     }
+
+    // ── Proxy / PAC ──────────────────────────────────────────────────────────
+
+    /**
+     * Emits the current [ProxyConfig] whenever any proxy-related key changes.
+     *
+     * Defaults to a disabled config with empty PAC URL on first launch.
+     */
+    val proxyConfigFlow: Flow<ProxyConfig> = context.settingsDataStore.data.map { prefs ->
+        ProxyConfig(
+            enabled        = prefs[SettingsKeys.PROXY_ENABLED] ?: false,
+            pacUrl         = prefs[SettingsKeys.PROXY_PAC_URL] ?: "",
+            lastTested     = prefs[SettingsKeys.PROXY_LAST_TESTED] ?: 0L,
+            lastTestResult = prefs[SettingsKeys.PROXY_LAST_TEST_RESULT],
+        )
+    }
+
+    /**
+     * Persists the full [ProxyConfig] atomically.
+     */
+    suspend fun saveProxyConfig(config: ProxyConfig) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[SettingsKeys.PROXY_ENABLED]          = config.enabled
+            prefs[SettingsKeys.PROXY_PAC_URL]           = config.pacUrl
+            prefs[SettingsKeys.PROXY_LAST_TESTED]       = config.lastTested
+            if (config.lastTestResult != null) {
+                prefs[SettingsKeys.PROXY_LAST_TEST_RESULT] = config.lastTestResult
+            } else {
+                prefs.remove(SettingsKeys.PROXY_LAST_TEST_RESULT)
+            }
+        }
+    }
 }

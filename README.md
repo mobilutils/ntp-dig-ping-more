@@ -4,7 +4,7 @@
   <img src="notes/icon_ntp-dig-ping-more_macgiver.png" alt="App Icon" width="128" height="128">
 </p>
 
-A modern Android app for network diagnostics: **NTP reachability testing**, **DNS lookup (DIG)**, **Ping**, **Traceroute**, **Port Scanner**, **LAN Scanner**, **Google Time Sync**, and **Bulk Actions** (batch execute commands from a JSON config).
+A modern Android app for network diagnostics: **NTP reachability testing**, **DNS lookup (DIG)**, **Ping**, **Traceroute**, **Port Scanner**, **LAN Scanner**, **Google Time Sync**, **HTTPS Certificate Inspector**, and **Bulk Actions** (batch execute commands from a JSON config). Includes a global **Settings** screen with configurable operation timeouts and optional **Proxy PAC** routing.
 
 ## Visuals
 
@@ -99,6 +99,35 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 - Custom host field (defaults to `clients2.google.com`)
 - One-tap **Copy Offset** button for manual clock-adjustment workflows
 - Idle / Loading / Success / Error states survive rotation and config changes
+- Supports optional proxy routing when Proxy PAC is enabled in Settings
+
+### 🔒 HTTPS Certificate Inspector
+- Enter any hostname and port (defaults to `google.com:443`)
+- Performs a real TLS handshake and extracts the peer's leaf certificate
+- Displays:
+  - Subject / Issuer distinguished names (CN, O, OU, C)
+  - Validity period (Not Before / Not After) with days-until-expiry
+  - Validity status: ✅ Valid · ⚠️ Expiring Soon · ❌ Expired
+  - Serial number, SHA-256 and SHA-1 fingerprints (tap to copy)
+  - Subject Alternative Names (SANs)
+  - Key algorithm, key size, signature algorithm, chain depth
+- Detects untrusted chains and self-signed certificates without bypassing security
+- Last 5 inspected hosts kept as clickable history (persisted across app restarts)
+- Supports SSL tunneling through HTTP CONNECT when Proxy PAC is enabled
+
+### ⚙️ Settings
+- **Operation Timeout** — global timeout (1–60 s) applied to all network tools
+  - Changes saved immediately on valid input; reverts on focus-loss if invalid
+- **Proxy PAC Configuration** — app-level proxy override (independent of system proxy)
+  - Toggle proxy routing on/off
+  - PAC URL input with URL format validation (http/https only)
+  - PAC scripts evaluated with a lightweight JavaScript engine (QuickJS)
+  - PAC results cached with 5-minute TTL for performance
+  - Supports `PROXY`, `SOCKS`, and `DIRECT` directives with fallback chains
+  - **"Test Proxy/PAC"** button sends a HEAD request through the resolved proxy and reports latency
+  - Last test result and timestamp persisted across app restarts
+  - Applied to Google Time Sync (HTTP) and HTTPS Certificate Inspector (SSL CONNECT tunnel)
+  - All failures fall back silently to DIRECT — proxy issues never block normal usage
 
 ### 📱 Device Info
 - Comprehensive read-only view of device identity, network, battery, and security
@@ -140,6 +169,19 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 | `lan-scan` | `lan-scan` | LAN subnet device discovery (no -t) |
 
 **Timeout precedence:** per-command `-t` > config-level `"timeout"` > default 30s.
+
+**Proxy PAC override (`url-proxypac`):** An optional global field that specifies a PAC script URL for proxy routing. When set, the HTTP-based pseudo-commands `checkcert` and `google-timesync` route traffic through the proxy resolved by the PAC script. This is independent of the app's Settings proxy configuration and does not modify persisted settings.
+
+```json
+{
+  "url-proxypac": "http://proxy.corp.com/proxy.pac",
+  "output-file": "~/files/results.txt",
+  "run": {
+    "cert_google": "checkcert -p 443 google.com",
+    "timesync":    "google-timesync"
+  }
+}
+```
 
 ### 🤖 ADB Automation (headless / CI)
 
@@ -232,7 +274,8 @@ See [notes/20260501_BulkActions-ADB-Script-fixed.md](notes/20260501_BulkActions-
 | Concurrency | Kotlin Coroutines (`Dispatchers.IO`) |
 | NTP | Apache Commons Net 3.11.1 (`NTPUDPClient`) |
 | DNS | dnsjava 3.6.2 (`SimpleResolver`) |
-| Persistence | AndroidX DataStore (NTP, Ping & Traceroute history) |
+| JS Engine | QuickJS 0.9.2 (`app.cash.quickjs`) — PAC script evaluation |
+| Persistence | AndroidX DataStore (history + global settings) |
 | Testing | JUnit 4, MockK 1.13, Coroutines Test |
 | Min SDK | 26 (Android 8.0) |
 | Target SDK | 35 (Android 15) |
@@ -242,7 +285,7 @@ See [notes/20260501_BulkActions-ADB-Script-fixed.md](notes/20260501_BulkActions-
 ```
 app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ├── MainActivity.kt              # NavHost, bottom navigation bar, NTP screen UI
-├── MoreToolsScreen.kt           # Overflow screen: Traceroute, Port Scanner, LAN Scanner, Google Time Sync, Device Info
+├── MoreToolsScreen.kt           # Overflow screen: Settings, Traceroute, Port Scanner, etc.
 ├── NtpRepository.kt             # NTP network I/O (NTPUDPClient, sealed NtpResult)
 ├── NtpViewModel.kt              # NTP UI state (StateFlow<NtpUiState>), coroutine lifecycle
 ├── NtpHistoryStore.kt           # DataStore persistence for NTP query history
@@ -265,6 +308,20 @@ app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
 ├── GoogleTimeSyncRepository.kt  # HTTP fetch, XSSI strip, JSON parse, T1/T4 offset calc
 ├── GoogleTimeSyncViewModel.kt   # Idle/Loading/Success/Error StateFlow, syncTime() & reset()
 ├── GoogleTimeSyncScreen.kt      # Google Time Sync screen composable
+├── HttpsCertRepository.kt       # TLS handshake, cert extraction, CONNECT tunnel for proxied SSL
+├── HttpsCertViewModel.kt        # HTTPS Cert Inspector state, history, fetchCert()
+├── HttpsCertScreen.kt           # HTTPS Certificate screen composable
+├── HttpsCertHistoryStore.kt     # DataStore persistence for cert inspection history
+├── SettingsViewModel.kt         # Settings state: timeout, proxy config, PAC URL validation
+├── SettingsScreen.kt            # Settings screen: timeout input, proxy toggle/URL/test
+├── settings/
+│   ├── SettingsDataStore.kt     # DataStore keys: timeout, proxy_enabled, pac_url, etc.
+│   ├── SettingsRepository.kt    # Reactive flows + mutations for all persisted settings
+│   └── ProxyConfig.kt           # Data class for proxy PAC configuration
+├── proxy/
+│   ├── JsEngine.kt              # Interface for PAC script evaluation
+│   ├── QuickJsEngine.kt         # QuickJS-based FindProxyForURL evaluator
+│   └── ProxyResolver.kt         # PAC fetch, eval, parse, cache, proxy test
 ├── deviceinfo/
 │   ├── DeviceInfoModels.kt      # Data models: DeviceInfo, CertificateInfo, DeviceInfoState
 │   ├── SystemInfoRepository.kt  # System API calls: identity, network, battery, storage, MDM, certs
@@ -300,14 +357,14 @@ adb shell am start -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
 
 ## Testing
 
-This project includes a unit test suite (70+ tests) covering business logic, ViewModels, and data parsing.
+This project includes a unit test suite (255 tests) covering business logic, ViewModels, proxy resolution, and data parsing.
 
 ```bash
 # Run all unit tests
 ./gradlew test
 
 # Run specific test class
-./gradlew test --tests "NtpViewModelTest"
+./gradlew testDebugUnitTest --tests "io.github.mobilutils.ntp_dig_ping_more.ProxyResolverTest"
 ```
 
 See [TESTING.md](TESTING.md) for details.
@@ -337,6 +394,9 @@ See [TESTING.md](TESTING.md) for details.
 | No Network | Device has no active internet connection |
 | HTTP Error | Non-200 response from the Google Time endpoint |
 | Parse Error | Response body missing XSSI prefix or invalid JSON |
+| Untrusted Chain | TLS certificate chain failed PKIX validation |
+| Cert Expired | TLS certificate validity period has lapsed |
+| CONNECT Failed | Proxy rejected the HTTP CONNECT tunnel request |
 | Error | Any other unexpected exception |
 
 ## License
