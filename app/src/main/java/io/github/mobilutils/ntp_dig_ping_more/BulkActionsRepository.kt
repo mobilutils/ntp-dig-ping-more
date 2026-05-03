@@ -40,6 +40,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * @param urlProxyPac Optional PAC script URL. When set, HTTP-based pseudo-commands
  *                    (checkcert, google-timesync) will route traffic through the
  *                    proxy resolved by this PAC script.
+ * @param logProxy    Optional flag to enable proxy PAC logging for this batch.
+ *                    When `true`, proxy events are logged regardless of the global
+ *                    logging toggle. Batch-scoped — does not modify persisted settings.
  */
 data class BulkConfig(
     val outputFile: String?,
@@ -47,6 +50,7 @@ data class BulkConfig(
     val timeoutMs: Long? = null,
     val outputAsCsv: Boolean = false,
     val urlProxyPac: String? = null,
+    val logProxy: Boolean? = null,
 )
 
 /**
@@ -165,6 +169,12 @@ object BulkConfigParser {
             if (url.isNullOrBlank()) null else url.trim()
         }.getOrNull()
 
+        val logProxy: Boolean? = if (root.has("log-proxy")) {
+            runCatching { root.optBoolean("log-proxy", false) }.getOrNull()
+        } else {
+            null
+        }
+
         val runObj = root.optJSONObject("run")
             ?: throw IllegalArgumentException("Missing required 'run' object in configuration")
 
@@ -178,7 +188,7 @@ object BulkConfigParser {
             }
         }
 
-        return BulkConfig(outputFile, commands, timeoutMs, outputAsCsv, urlProxyPac)
+        return BulkConfig(outputFile, commands, timeoutMs, outputAsCsv, urlProxyPac, logProxy)
     }
 
     /** Expands `~` to the app's private files directory (no permissions needed on SDK 33+). */
@@ -274,9 +284,22 @@ class BulkActionsRepository(
      * Uses [ProxyResolver.forStaticPacUrl] to create a resolver that evaluates
      * the PAC script directly without reading from or writing to the user's
      * persisted proxy settings.
+     *
+     * @param pacUrl        PAC script URL.
+     * @param forceLogging  When `true`, proxy events are logged regardless of
+     *                      the global logging toggle.
      */
-    private fun buildProxyResolver(pacUrl: String): ProxyResolver =
-        ProxyResolver.forStaticPacUrl(pacUrl, context)
+    private fun buildProxyResolver(pacUrl: String, forceLogging: Boolean = false): ProxyResolver {
+        val logger = io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyPacLogger.getInstance(
+            logFile = context.filesDir.resolve("proxypac-logs.txt")
+        )
+        return ProxyResolver.forStaticPacUrl(
+            pacUrl = pacUrl,
+            context = context,
+            logger = logger,
+            forceLogging = forceLogging,
+        )
+    }
 
     /**
      * Sets up the proxy resolver for commands that support proxy routing
@@ -285,9 +308,12 @@ class BulkActionsRepository(
      * Call this before [executeSingleCommand] when a `url-proxypac` is defined
      * in the config. The resolver is used for the lifetime of the bulk execution
      * and should be cleared via [clearProxyResolver] when execution completes.
+     *
+     * @param pacUrl        PAC script URL (null = no proxy).
+     * @param forceLogging  When `true`, proxy events are logged for this batch.
      */
-    fun setupProxyResolver(pacUrl: String?) {
-        bulkProxyResolver = pacUrl?.let { buildProxyResolver(it) }
+    fun setupProxyResolver(pacUrl: String?, forceLogging: Boolean = false) {
+        bulkProxyResolver = pacUrl?.let { buildProxyResolver(it, forceLogging) }
     }
 
     /**
@@ -320,7 +346,9 @@ class BulkActionsRepository(
         onProgress: ((BulkProgress) -> Unit)? = null,
     ): List<BulkCommandResult> {
         // Set up proxy resolver from config-level PAC URL (if any)
-        bulkProxyResolver = config.urlProxyPac?.let { buildProxyResolver(it) }
+        bulkProxyResolver = config.urlProxyPac?.let {
+            buildProxyResolver(it, forceLogging = config.logProxy == true)
+        }
 
         val results = mutableListOf<BulkCommandResult>()
         val commands = config.commands.toList()

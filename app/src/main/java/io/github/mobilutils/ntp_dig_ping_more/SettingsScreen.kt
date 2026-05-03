@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -23,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -50,8 +54,8 @@ import java.util.Locale
  * Displays:
  *  1. A numeric text field to configure the operation timeout applied to all
  *     network-based tools.
- *  2. A Proxy/PAC configuration section with toggle, PAC URL input, and a
- *     "Test Proxy/PAC" button.
+ *  2. A Proxy/PAC configuration section with toggle, PAC URL input, logging
+ *     toggle, log viewer, and a "Test Proxy/PAC" button.
  *
  * Changes are saved immediately on valid input. If the timeout field loses
  * focus while invalid, the value is reverted to the last known-good setting.
@@ -165,6 +169,53 @@ fun SettingsScreen() {
 
             Spacer(Modifier.height(8.dp))
 
+            // ── Proxy logging toggle ──────────────────────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Enable Proxy Logging",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = "Logs PAC fetches, resolutions, and errors to memory & file",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = uiState.proxyLoggingEnabled,
+                    onCheckedChange = viewModel::onProxyLoggingEnabledChange,
+                    enabled = uiState.proxyEnabled,
+                )
+            }
+
+            // Log action buttons
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TextButton(
+                    onClick = viewModel::onViewLogs,
+                    enabled = uiState.proxyEnabled,
+                ) {
+                    Text("View Logs")
+                }
+                TextButton(
+                    onClick = viewModel::onClearLogs,
+                    enabled = uiState.proxyEnabled,
+                ) {
+                    Text("Clear Logs")
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             // Test Proxy/PAC button
             Button(
                 onClick = viewModel::testProxy,
@@ -213,6 +264,42 @@ fun SettingsScreen() {
                 }
             }
         }
+    }
+
+    // ── Log viewer dialog ─────────────────────────────────────────────────────
+    if (uiState.showLogDialog) {
+        AlertDialog(
+            onDismissRequest = viewModel::onDismissLogDialog,
+            title = { Text("Proxy PAC Logs") },
+            text = {
+                if (uiState.proxyLogs.isEmpty()) {
+                    Text(
+                        text = "No logs recorded yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.height(400.dp),
+                    ) {
+                        items(uiState.proxyLogs) { line ->
+                            Text(
+                                text = line,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                ),
+                                modifier = Modifier.padding(vertical = 1.dp),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::onDismissLogDialog) {
+                    Text("Close")
+                }
+            },
+        )
     }
 }
 
