@@ -5,62 +5,107 @@
 # Fully automated Bulk Actions execution via ADB — no user interaction.
 #
 # Prerequisites:
-#      - ADB installed and on PATH
-#      - Emulator running OR device connected
-#      - App already installed (or run ./gradlew installDebug first)
+#       - ADB installed and on PATH
+#       - Emulator running OR device connected
+#       - App already installed (or run ./gradlew installDebug first)
 #
 # Usage:
-#       ./BULKACTIONS-ADB-SCRIPT.sh [config_filename] [emulator_name] [--no-interact] [--show-emulator]
+#        ./BULKACTIONS-ADB-SCRIPT.sh -f <config_filename> [options]
+#
+# Options:
+#        -f, --filepath <config>          Config filename (required)
+#        -e, --emulator-name <name>       AVD name to launch (default: Medium_Phone_API_35)
+#        -d, --real-device                Skip emulator entirely; use connected physical device
+#        -a, --no-interact                Suppress all prompts (auto-exit after completion)
+#        -s, --show-emulator              Launch emulator in visible window mode
+#        -h, --help                         Show this help message
 #
 # Examples:
-#      ./BULKACTIONS-ADB-SCRIPT.sh blkacts_single_ping_success.json
-#      ./BULKACTIONS-ADB-SCRIPT.sh blkacts_multi_all9_success.json Medium_Phone_API_35
-#      ./BULKACTIONS-ADB-SCRIPT.sh blkacts_multi_all9_success.json "" --no-interact
-#      ./BULKACTIONS-ADB-SCRIPT.sh blkacts_single_ping_success.json "" --show-emulator
+#        ./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_single_ping_success.json --no-interact
+#        ./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_multi_all9_success.json -e Medium_Phone_API_35
+#        ./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_multi_all9_success.json --real-device --no-interact
+#        ./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_single_ping_success.json --show-emulator
 #
 # ── Key fixes applied (vs. original script) ──────────────────────────
 #
 #  FIX 1 (Critical): Use --ez for boolean intent extra, not --es.
-#      `adb shell am start --es auto_run true` passes a String, and
-#      `getBooleanExtra("auto_run", false)` silently returns false.
-#      → Use `--ez auto_run true` to pass a real boolean.
+#       `adb shell am start --es auto_run true` passes a String, and
+#       `getBooleanExtra("auto_run", false)` silently returns false.
+#       → Use `--ez auto_run true` to pass a real boolean.
 #
 #  FIX 2 (Critical): Private dir is .../files/files/, not .../files/.
 #      Context.filesDir resolves to /data/user/0/<pkg>/files on disk,
 #      but the shell path for the *contents* is /data/user/0/<pkg>/files/files/
 #      because the directory listing shows `files → files/files/`.
-#      → PRIVATE_DIR is now /data/user/0/$APP_ID/files/files
+#       → PRIVATE_DIR is now /data/user/0/$APP_ID/files/files
 #
 #  FIX 3 (Critical): adb pull cannot read from app private dir.
-#      `adb pull /data/user/0/<pkg>/files/...` fails with "Permission denied"
+#       `adb pull /data/user/0/<pkg>/files/...` fails with "Permission denied"
 #      because adb runs as the shell user, not the app UID.
-#      → Use `adb shell run-as <pkg> cat <file>` and redirect to host.
+#       → Use `adb shell run-as <pkg> cat <file>` and redirect to host.
 #
 #  FIX 4 (Moderate): Wait time accounts for sequential command count.
 #      Old: timeout * 2 + 30. New: timeout * command_count + 30.
 #
 #  FIX 5 (Minor): adb pull ~ expansion was broken.
-#      ~ in output-file is expanded to PRIVATE_DIR (app's filesDir).
+#       ~ in output-file is expanded to PRIVATE_DIR (app's filesDir).
 # ------------------------------------------------------------------
 
 set -euo pipefail
 
-# -- Parse flags and positional args ---------------------------------
-# Filter out flags so positional args are extracted correctly regardless of order.
-FILTERED_ARGS=()
+# -- Help -------------------------------------------------------------
+show_help() {
+    cat <<EOF
+Usage: ./BULKACTIONS-ADB-SCRIPT.sh -f <config_filename> [options]
+
+Options:
+   -f, --filepath <config>          Config filename (required)
+   -e, --emulator-name <name>       AVD name to launch (default: Medium_Phone_API_35)
+   -d, --real-device                Skip emulator; use connected physical device
+   -a, --no-interact                Suppress all prompts
+   -s, --show-emulator              Launch emulator in visible window mode
+   -h, --help                         Show this help message
+
+Examples:
+   ./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_single_ping_success.json --no-interact
+   ./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_multi_all9_success.json -e Medium_Phone_API_35
+   ./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_multi_all9_success.json --real-device --no-interact
+EOF
+}
+
+# -- Parse flags -------------------------------------------------------
+CONFIG=""
+EMULATOR="Medium_Phone_API_35"
 NO_INTERACT=false
 SHOW_EMULATOR=false
-for arg in "$@"; do
-    case "$arg" in
-         --no-interact)   NO_INTERACT=true ;;
-         --show-emulator) SHOW_EMULATOR=true ;;
-         *) FILTERED_ARGS+=("$arg") ;;
+REAL_DEVICE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -f|--filepath)
+            CONFIG="${2/#\~/$HOME}"; shift 2 ;;
+        -e|--emulator-name)
+            EMULATOR="$2"; shift 2 ;;
+        -d|--real-device)
+            REAL_DEVICE=true; shift ;;
+        -a|--no-interact)
+            NO_INTERACT=true; shift ;;
+        -s|--show-emulator)
+            SHOW_EMULATOR=true; shift ;;
+        -h|--help)
+            show_help; exit 0 ;;
+        *)
+            echo "ERROR: Unknown argument: $1"
+            show_help
+            exit 1 ;;
     esac
 done
 
-# -- Defaults --------------------------------------------------------
-CONFIG="${FILTERED_ARGS[0]:-blkacts_single_ping_success.json}"
-EMULATOR="${FILTERED_ARGS[1]:-Medium_Phone_API_35}"
+if [ -z "$CONFIG" ]; then
+    echo "ERROR: --filepath (-f) is required."
+    show_help
+    exit 1
+fi
 
 APP_ID="io.github.mobilutils.ntp_dig_ping_more"
 
@@ -72,12 +117,15 @@ APP_ID="io.github.mobilutils.ntp_dig_ping_more"
 FILES_DIR="/data/user/0/$APP_ID/files"
 PRIVATE_DIR="$FILES_DIR"
 
-PUSH_PATH="$PRIVATE_DIR/$CONFIG"
+# Resolve tilde in CONFIG to absolute path, then extract just the filename for device push.
+CONFIG="${CONFIG/#\~/$HOME}"
+CONFIG_FILENAME="$(basename "$CONFIG")"
+PUSH_PATH="$PRIVATE_DIR/$CONFIG_FILENAME"
+
 RESULTS_DIR="./test-results"
 
-# Resolve script directory for finding config files
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG_SOURCE="$SCRIPT_DIR/notes/config-files_bulk-actions/$CONFIG"
+# Use CONFIG as-is (already expanded). No implicit prefix resolution.
+CONFIG_SOURCE="$CONFIG"
 
 # -- Helper: extract JSON string field (pure grep/sed, no python) ---
 # Usage: json_str_field <file> <field_name>
@@ -102,24 +150,28 @@ json_num_field() {
 # -- Validate config file exists ------------------------------------
 if [ ! -f "$CONFIG_SOURCE" ]; then
     echo "ERROR: Config file not found: $CONFIG_SOURCE"
-    echo "Available configs:"
-    ls -1 "$SCRIPT_DIR/notes/config-files_bulk-actions/"*.json 2>/dev/null | \
-        sed 's|.*/notes/config-files_bulk-actions/||' | sed 's/.json$//' | \
-        sed 's/^/    - /'
     exit 1
 fi
 
 echo "================================================================"
 echo "  Bulk Actions ADB Automation"
 echo "================================================================"
-echo "  Config:        $CONFIG"
-echo "  Emulator:      $EMULATOR"
-echo "  Push path:     $PUSH_PATH"
-echo "  Results dir:   $RESULTS_DIR"
+echo "  Config:         $CONFIG"
+if [ "$REAL_DEVICE" = true ]; then
+    echo "  Mode:           Real Device"
+else
+    echo "  Emulator:       $EMULATOR"
+fi
+echo "  Push path:      $PUSH_PATH"
+echo "  Results dir:    $RESULTS_DIR"
 echo "================================================================"
 
 # -- 1. Ensure emulator is running ----------------------------------
-if ! adb devices | grep -q $'\tdevice'; then
+if [ "$REAL_DEVICE" = true ]; then
+    echo ""
+    echo "[1/8] Real device mode — skipping emulator."
+    EMULATOR_LAUNCHED=false
+elif ! adb devices | grep -q $'\tdevice'; then
     echo ""
     echo "[1/8] Starting emulator: $EMULATOR"
     if [ "$SHOW_EMULATOR" = true ]; then
@@ -179,12 +231,12 @@ FILE_URI="file://$PUSH_PATH"
 adb shell am force-stop "$APP_ID" 2>/dev/null || true
 sleep 0.5
 adb shell am start \
-    -n "$APP_ID/.MainActivity" \
-    -d "$FILE_URI" \
-    --ez auto_run true
+     -n "$APP_ID/.MainActivity" \
+     -d "$FILE_URI" \
+     --ez auto_run true
 
-echo "  intent.data  = $FILE_URI"
-echo "  auto_run     = true (boolean via --ez)"
+echo "  intent.data   = $FILE_URI"
+echo "  auto_run      = true (boolean via --ez)"
 
 # -- 5. Wait for execution to complete ---------------------------------
 echo ""
@@ -198,7 +250,7 @@ POLL_INTERVAL=1
 MAX_WAIT=600
 WAITED=0
 while [ "$WAITED" -lt "$MAX_WAIT" ]; do
-  #check if the marker does not yet exists
+   #check if the marker does not yet exists
   exists=$(adb shell "run-as $APP_ID test -f $PRIVATE_DIR/$RUNNING_FILE && echo yes || echo no" 2>/dev/null | tail -1)
     if [ "$exists" != "no" ]; then
         echo "  waiting for marker .running-tasks file creation ${WAITED}s."
@@ -217,7 +269,7 @@ WAITED=0
 echo "  Polling for .running-tasks marker file (max ${MAX_WAIT}s, ${POLL_INTERVAL}s interval)..."
 
 while [ "$WAITED" -lt "$MAX_WAIT" ]; do
-    # Check if the marker file still exists
+     # Check if the marker file still exists
     exists=$(adb shell "run-as $APP_ID test -f $PRIVATE_DIR/$RUNNING_FILE && echo yes || echo no" 2>/dev/null | tail -1)
     if [ "$exists" != "yes" ]; then
         echo "  Execution finished after ${WAITED}s."
@@ -251,14 +303,14 @@ if echo "$OUTPUT_FILE" | grep -q '^/sdcard'; then
 fi
 
 if [ -n "$OUTPUT_FILE" ]; then
-    # FIX 5: Expand ~ in output-file to the app's private filesDir.
-    # BulkConfigParser.expandTilde() uses: filesDir.absolutePath + path.substring(1)
-    # where filesDir.absolutePath = FILES_DIR = /data/user/0/<pkg>/files
-    # Example: "~/files/foo.txt" → FILES_DIR + "/files/foo.txt" = PRIVATE_DIR/foo.txt
-    #          "~/foo.txt"       → FILES_DIR + "/foo.txt" = FILES_DIR/foo.txt
-    #          "/abs/path"       → "/abs/path" (no change)
+     # FIX 5: Expand ~ in output-file to the app's private filesDir.
+     # BulkConfigParser.expandTilde() uses: filesDir.absolutePath + path.substring(1)
+     # where filesDir.absolutePath = FILES_DIR = /data/user/0/<pkg>/files
+     # Example: "~/files/foo.txt" → FILES_DIR + "/files/foo.txt" = PRIVATE_DIR/foo.txt
+     #           "~/foo.txt"        → FILES_DIR + "/foo.txt" = FILES_DIR/foo.txt
+     #           "/abs/path"        → "/abs/path" (no change)
     if echo "$OUTPUT_FILE" | grep -q '^~/'; then
-        path_after_tilde="${OUTPUT_FILE#\~}"         # e.g. /files/blkacts_single_ping_success.txt
+        path_after_tilde="${OUTPUT_FILE#\~}"          # e.g. /files/blkacts_single_ping_success.txt
         DEVICE_OUTPUT_FILE="${FILES_DIR}${path_after_tilde}"
     else
         DEVICE_OUTPUT_FILE="$OUTPUT_FILE"
@@ -266,18 +318,18 @@ if [ -n "$OUTPUT_FILE" ]; then
 
     TIMESTAMP=$(date '+%Y%m%d-%H:%M:%S')
     LOCAL_OUTPUT="$RESULTS_DIR/${TIMESTAMP}_$(basename "$DEVICE_OUTPUT_FILE")"
-    # LOCAL_OUTPUT="$RESULTS_DIR/$(basename "$DEVICE_OUTPUT_FILE")"
+     # LOCAL_OUTPUT="$RESULTS_DIR/$(basename "$DEVICE_OUTPUT_FILE")"
 
-    # FIX 3: adb pull cannot read from private dir (shell user denied).
-    # Use run-as to cat the file to stdout, capture on host with shell redirect.
+     # FIX 3: adb pull cannot read from private dir (shell user denied).
+     # Use run-as to cat the file to stdout, capture on host with shell redirect.
     echo "  Pulling: $DEVICE_OUTPUT_FILE"
     adb shell "run-as $APP_ID cat $DEVICE_OUTPUT_FILE" > "$LOCAL_OUTPUT" 2>/dev/null || {
         echo "  WARNING: Could not pull $DEVICE_OUTPUT_FILE (may not exist if auto-save failed)"
         LOCAL_OUTPUT=""
-    }
+     }
 
     if [ -n "$LOCAL_OUTPUT" ] && [ -s "$LOCAL_OUTPUT" ]; then
-        echo "       -> $LOCAL_OUTPUT"
+        echo "        -> $LOCAL_OUTPUT"
     else
         echo "  WARNING: Output file is empty or missing. Did the commands complete in time?"
         echo "  Hint: Increase wait time or check app logs with: adb logcat | grep ntp_dig"
@@ -297,7 +349,7 @@ echo "[7/8] Cleaning remote android app folder..."
 mkdir -p "$RESULTS_DIR"
 echo "Will Clean $PRIVATE_DIR"
 if adb shell "run-as $APP_ID test -f '$PUSH_PATH'"; then
-    # We will remove file on device now
+     # We will remove file on device now
     echo "  Removing $PUSH_PATH"
     adb shell "run-as $APP_ID rm '$PUSH_PATH'"
 else
@@ -321,15 +373,15 @@ echo "================================================================"
 echo "  Automation complete."
 if [ -n "${LOCAL_OUTPUT:-}" ] && [ -f "$LOCAL_OUTPUT" ] && [ -s "$LOCAL_OUTPUT" ]; then
     echo "  Results: $LOCAL_OUTPUT"
-    echo "  Lines:   $(wc -l < "$LOCAL_OUTPUT")"
-    echo "  Size:    $(wc -c < "$LOCAL_OUTPUT") bytes"
+    echo "  Lines:    $(wc -l < "$LOCAL_OUTPUT")"
+    echo "  Size:     $(wc -c < "$LOCAL_OUTPUT") bytes"
 else
     echo "  No results file found."
 fi
 echo "================================================================"
 
 # Optionally keep emulator running or close it
-if [ "$NO_INTERACT" = false ] && [ "$EMULATOR_LAUNCHED" = true ]; then
+if [ "$NO_INTERACT" = false ] && [ "$EMULATOR_LAUNCHED" = true ] && [ "$REAL_DEVICE" = false ]; then
     echo ""
     read -p "Close emulator? (y/N): " -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
