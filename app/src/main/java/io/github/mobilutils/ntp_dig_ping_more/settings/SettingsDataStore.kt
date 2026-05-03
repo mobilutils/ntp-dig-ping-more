@@ -56,4 +56,7 @@ object SettingsKeys {
 
     /** Human-readable result string of the last proxy test. */
     val PROXY_LAST_TEST_RESULT = stringPreferencesKey("proxy_last_test_result")
+
+    /** Whether proxy PAC logging is enabled. */
+    val PROXY_LOGGING_ENABLED = booleanPreferencesKey("proxy_logging_enabled")
 }

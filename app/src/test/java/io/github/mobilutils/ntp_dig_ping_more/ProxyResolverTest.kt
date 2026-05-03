@@ -1,12 +1,14 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
 import io.github.mobilutils.ntp_dig_ping_more.proxy.JsEngine
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyPacLogger
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import io.github.mobilutils.ntp_dig_ping_more.settings.ProxyConfig
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -20,7 +22,7 @@ import java.net.Proxy
 /**
  * Unit tests for [ProxyResolver].
  *
- * Tests PAC result parsing, caching, and fallback behaviour.
+ * Tests PAC result parsing, caching, fallback behaviour, and logging integration.
  * Network I/O (PAC script fetching) and JS evaluation are mocked.
  */
 class ProxyResolverTest {
@@ -168,5 +170,76 @@ class ProxyResolverTest {
     fun `clearCache does not throw`() {
         // Just verify it doesn't crash
         resolver.clearCache()
+    }
+
+    // ── Logging integration tests ────────────────────────────────────────────
+
+    @Test
+    fun `resolver with null logger does not throw`() = runTest {
+        // Default resolver has no logger — should work fine
+        val noLogResolver = ProxyResolver(settingsRepository, jsEngine, logger = null)
+        coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
+            ProxyConfig(enabled = false)
+        )
+
+        val result = noLogResolver.resolveProxy("http://example.com")
+        assertNull(result)
+    }
+
+    @Test
+    fun `logIfEnabled does not log when logger disabled and forceLogging false`() = runTest {
+        val logger = mockk<ProxyPacLogger>(relaxed = true)
+        every { logger.enabled } returns false
+
+        val loggedResolver = ProxyResolver(
+            settingsRepository, jsEngine, logger = logger, forceLogging = false
+        )
+        coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
+            ProxyConfig(enabled = false)
+        )
+
+        loggedResolver.resolveProxy("http://example.com")
+
+        // Logger.log should not be called because proxy is disabled (early return)
+        // and even if logging path were hit, logger.enabled is false + forceLogging is false
+        verify(exactly = 0) { logger.log(any(), any()) }
+    }
+
+    @Test
+    fun `logIfEnabled logs when forceLogging is true even if logger disabled`() = runTest {
+        val logger = mockk<ProxyPacLogger>(relaxed = true)
+        every { logger.enabled } returns false
+
+        val loggedResolver = ProxyResolver(
+            settingsRepository, jsEngine, logger = logger, forceLogging = true
+        )
+        coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
+            ProxyConfig(enabled = true, pacUrl = "http://pac.example.com/proxy.pac")
+        )
+
+        // PAC fetch will fail (no real network), which should trigger a log
+        loggedResolver.resolveProxy("http://example.com")
+
+        // Should have logged the PAC fetch failure
+        verify(atLeast = 1) { logger.log(match { it.contains("PAC_FETCH_FAIL") }, force = true) }
+    }
+
+    @Test
+    fun `logIfEnabled logs when logger enabled`() = runTest {
+        val logger = mockk<ProxyPacLogger>(relaxed = true)
+        every { logger.enabled } returns true
+
+        val loggedResolver = ProxyResolver(
+            settingsRepository, jsEngine, logger = logger, forceLogging = false
+        )
+        coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
+            ProxyConfig(enabled = true, pacUrl = "http://pac.example.com/proxy.pac")
+        )
+
+        // PAC fetch will fail (no real network), which should trigger a log
+        loggedResolver.resolveProxy("http://example.com")
+
+        // Should have logged the PAC fetch failure
+        verify(atLeast = 1) { logger.log(match { it.contains("PAC_FETCH_FAIL") }, any()) }
     }
 }

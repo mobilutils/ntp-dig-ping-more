@@ -216,9 +216,13 @@ class HttpsCertViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val appContext = context.applicationContext
                     val settingsRepo = io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository(appContext)
+                    val logger = io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyPacLogger.getInstance(
+                        logFile = java.io.File(appContext.filesDir, "proxypac-logs.txt"),
+                    )
                     val proxyResolver = io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver(
                         settingsRepo,
                         io.github.mobilutils.ntp_dig_ping_more.proxy.QuickJsEngine(),
+                        logger = logger,
                     )
                     return HttpsCertViewModel(
                         repository   = HttpsCertRepository(proxyResolver),

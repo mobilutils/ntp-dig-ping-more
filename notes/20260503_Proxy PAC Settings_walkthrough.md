@@ -43,7 +43,7 @@ Implemented a global Proxy PAC configuration section in the Settings screen. Whe
 | [GoogleTimeSyncViewModel.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/GoogleTimeSyncViewModel.kt) | Factory now injects `ProxyResolver` into repository |
 | [HttpsCertViewModel.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/HttpsCertViewModel.kt) | Factory now injects `ProxyResolver` into repository |
 
-### Phase 5: Testing
+### Phase 5: Testing (Proxy PAC Settings)
 
 | File | Tests | Status |
 |------|-------|--------|
@@ -51,16 +51,72 @@ Implemented a global Proxy PAC configuration section in the Settings screen. Whe
 | [SettingsViewModelTest.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/SettingsViewModelTest.kt) | **[NEW]** 17 tests (init, timeout, proxy toggle, URL validation, debounce, test proxy) | ✅ All pass |
 | [HttpsCertViewModelTest.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/HttpsCertViewModelTest.kt) | Existing 24 tests | ✅ All pass |
 
+---
+
+### Phase 6: Proxy PAC Logging
+
+Added a user-controlled logging system for Proxy PAC operations. When enabled, high-level events (PAC fetches, proxy resolutions, errors) are written to a shared in-memory buffer and a persistent file, both capped at 500 lines. BulkActions configs support an independent `"log-proxy": true` JSON field for batch-scoped logging.
+
+#### Logging Infrastructure
+
+| File | Change |
+|------|--------|
+| [ProxyPacLogger.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/proxy/ProxyPacLogger.kt) | **[NEW]** Thread-safe singleton logger: `ArrayDeque` buffer + persistent file (`proxypac-logs.txt`), both capped at 500 lines. Async file I/O via `Mutex` + `Dispatchers.IO`. `getInstance()` ensures all ViewModels share the same in-memory buffer. `log(event, force)` parameter bypasses the `enabled` check for batch-scoped overrides. |
+
+#### Persistence Layer
+
+| File | Change |
+|------|--------|
+| [SettingsDataStore.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/settings/SettingsDataStore.kt) | Added `PROXY_LOGGING_ENABLED` preference key |
+| [ProxyConfig.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/settings/ProxyConfig.kt) | Added `loggingEnabled: Boolean` field |
+| [SettingsRepository.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/settings/SettingsRepository.kt) | Mapped `loggingEnabled` in `proxyConfigFlow` and `saveProxyConfig()` |
+
+#### ProxyResolver Instrumentation
+
+| File | Change |
+|------|--------|
+| [ProxyResolver.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/proxy/ProxyResolver.kt) | Added `logger: ProxyPacLogger?` + `forceLogging: Boolean` constructor params. `logIfEnabled()` helper passes `force = forceLogging` to the logger. Instrumented at 5 points: `PAC_FETCH_SUCCESS`, `PAC_FETCH_FAIL`, `PROXY_RESOLVED`, `PROXY_TEST`, `PROXY_ERROR`. Updated `forStaticPacUrl()` factory. |
+
+#### BulkActions Integration
+
+| File | Change |
+|------|--------|
+| [BulkActionsRepository.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/BulkActionsRepository.kt) | Added `logProxy: Boolean?` to `BulkConfig`. Parse `"log-proxy"` JSON field. `buildProxyResolver()` creates `ProxyPacLogger.getInstance()` and passes `forceLogging`. |
+| [BulkActionsViewModel.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/BulkActionsViewModel.kt) | Both `onLoadAndRun` and `onRunClicked` pass `forceLogging = config.logProxy == true` to `setupProxyResolver()`. |
+
+#### Settings UI & ViewModel
+
+| File | Change |
+|------|--------|
+| [SettingsViewModel.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/SettingsViewModel.kt) | Added 3 UI state fields (`proxyLoggingEnabled`, `showLogDialog`, `proxyLogs`). Added `ProxyPacLogger` constructor param + 4 handlers: `onProxyLoggingEnabledChange`, `onViewLogs`, `onClearLogs`, `onDismissLogDialog`. Factory uses `ProxyPacLogger.getInstance()`. |
+| [SettingsScreen.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/SettingsScreen.kt) | Added "Enable Proxy Logging" toggle with subtitle, "View Logs" / "Clear Logs" buttons, and `AlertDialog` with monospace `LazyColumn` for log viewing. |
+
+#### Shared Logger Across All Screens
+
+| File | Change |
+|------|--------|
+| [GoogleTimeSyncViewModel.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/GoogleTimeSyncViewModel.kt) | Factory uses `ProxyPacLogger.getInstance()` and passes it to `ProxyResolver` |
+| [HttpsCertViewModel.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/HttpsCertViewModel.kt) | Factory uses `ProxyPacLogger.getInstance()` and passes it to `ProxyResolver` |
+
+> [!NOTE]
+> All ViewModels use `ProxyPacLogger.getInstance()` (singleton) so proxy events from any screen (Settings, HttpsCert, GoogleTimeSync, BulkActions) share the same in-memory buffer and appear in the Settings > View Logs dialog.
+
+### Phase 7: Testing (Proxy PAC Logging)
+
+| File | Tests | Status |
+|------|-------|--------|
+| [ProxyPacLoggerTest.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/ProxyPacLoggerTest.kt) | **[NEW]** 10 tests (buffer cap, timestamp format, snapshots, disabled no-op, file writes, file rolling, clear buffer/file, thread safety) | ✅ All pass |
+| [SettingsViewModelTest.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/SettingsViewModelTest.kt) | +8 logging tests (toggle on/off, persists config, view/clear/dismiss dialog, syncs logger flag) → **25 total** | ✅ All pass |
+| [ProxyResolverTest.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/ProxyResolverTest.kt) | +4 logging tests (null logger, disabled+no-force, forceLogging, enabled logger) → **18 total** | ✅ All pass |
+| [BulkConfigParserTest.kt](file:///Users/enola/Workspace-gitmobilutils/android-ntp_dig_ping_more/app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/BulkConfigParserTest.kt) | +4 log-proxy tests (true, false, absent, combined fields) | ✅ All pass |
+
 ## Verification
 
 | Check | Result |
 |-------|--------|
-| `./gradlew assembleDebug` | ✅ BUILD SUCCESSFUL |
-| `ProxyResolverTest` | ✅ 14/14 passed |
-| `SettingsViewModelTest` | ✅ 17/17 passed |
+| `./gradlew clean test` | ✅ BUILD SUCCESSFUL — **305 tests pass, 0 failures** |
+| `ProxyPacLoggerTest` | ✅ 10/10 passed |
+| `ProxyResolverTest` | ✅ 18/18 passed |
+| `SettingsViewModelTest` | ✅ 25/25 passed |
+| `BulkConfigParserTest` | ✅ All passed (incl. 4 new log-proxy tests) |
 | `HttpsCertViewModelTest` | ✅ 24/24 passed |
-| `GoogleTimeSyncViewModelTest` | ⚠️ Pre-existing Looper/Dispatchers.Main failures (unrelated) |
-| `TracerouteViewModelTest` | ⚠️ Pre-existing Looper failures (unrelated) |
-
-> [!WARNING]
-> `GoogleTimeSyncViewModelTest` and `TracerouteViewModelTest` have pre-existing failures caused by missing `Dispatchers.setMain()` setup. These are **not** regressions from this change.
