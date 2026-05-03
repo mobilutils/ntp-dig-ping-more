@@ -1,5 +1,6 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -59,7 +60,9 @@ sealed class GoogleTimeSyncResult {
  * The response is prefixed with `)]}'` (XSSI protection) which is stripped
  * before JSON parsing.
  */
-class GoogleTimeSyncRepository {
+class GoogleTimeSyncRepository(
+    private val proxyResolver: ProxyResolver? = null,
+) {
 
     companion object {
         /** Default endpoint – exposed so the ViewModel and Screen can reference
@@ -87,7 +90,15 @@ class GoogleTimeSyncRepository {
             // T1: record timestamp BEFORE the request goes out.
             val t1 = System.currentTimeMillis()
 
-            connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            // Resolve proxy (if configured); null → direct connection
+            val proxy = proxyResolver?.resolveProxy(url)
+
+            connection = if (proxy != null) {
+                URL(url).openConnection(proxy) as HttpURLConnection
+            } else {
+                URL(url).openConnection() as HttpURLConnection
+            }
+            connection.apply {
                 requestMethod        = "GET"
                 connectTimeout       = CONNECT_TIMEOUT_MS
                 readTimeout          = READ_TIMEOUT_MS

@@ -30,6 +30,9 @@ class BulkConfigParserTest {
         // Extract "timeout" value (mirrors production parsing)
         val timeoutMs = extractLongField(trimmed, "timeout")?.takeIf { it > 0 }?.let { it * 1000L }
 
+        // Extract "url-proxypac" value
+        val urlProxyPac = extractStringField(trimmed, "url-proxypac")
+
         // Extract "run" object
         val runMatch = Regex("""\"run\"\s*:\s*\{([^}]*)\}""").find(trimmed)
             ?: throw IllegalArgumentException("Missing required 'run' object in configuration")
@@ -37,7 +40,7 @@ class BulkConfigParserTest {
         val runContent = runMatch.groupValues[1]
         val commands = mutableMapOf<String, String>()
 
-        val commandPattern = Regex("""\"([^\"]+)\"\s*:\s*\"([^\"]*)\"""")
+        val commandPattern = Regex("""\"([^\"]+)\"\s*:\s*\"([^\"]*)\"""") 
         commandPattern.findAll(runContent).forEach { match ->
             val key = match.groupValues[1]
             val value = match.groupValues[2].trim()
@@ -46,7 +49,7 @@ class BulkConfigParserTest {
             }
         }
 
-        return BulkConfig(outputFile, commands, timeoutMs)
+        return BulkConfig(outputFile, commands, timeoutMs, urlProxyPac = urlProxyPac)
     }
 
     /** Extracts a long field value from JSON, returning null if not found. */
@@ -345,4 +348,79 @@ class BulkConfigParserTest {
         assertEquals(2004L, result.durationMs)
         assertTrue(result.outputLines.any { "No open ports found" in it })
      }
+
+    // ────────────────────────────────────────────────────────────────
+    // url-proxypac tests
+    // ────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `parseConfigWithUrlProxyPac returns value`() {
+        val json = """
+            {
+                "url-proxypac": "http://proxy.corp.com/proxy.pac",
+                "run": {
+                    "cmd1": "checkcert -p 443 google.com"
+                }
+            }
+        """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertEquals("http://proxy.corp.com/proxy.pac", config.urlProxyPac)
+    }
+
+    @Test
+    fun `parseConfigWithoutUrlProxyPac returns null`() {
+        val json = """
+            {
+                "run": {
+                    "cmd1": "ping -c 1 example.com"
+                }
+            }
+        """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertNull(config.urlProxyPac)
+    }
+
+    @Test
+    fun `parseConfigWithBlankUrlProxyPac returns null`() {
+        val json = """
+            {
+                "url-proxypac": "",
+                "run": {
+                    "cmd1": "ping -c 1 example.com"
+                }
+            }
+        """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertNull(config.urlProxyPac)
+    }
+
+    @Test
+    fun `parseConfigWithUrlProxyPacAndOtherFields preserves all`() {
+        val json = """
+            {
+                "output-file": "/tmp/out.txt",
+                "timeout": 30,
+                "url-proxypac": "http://pac.example.org/auto.pac",
+                "run": {
+                    "cert": "checkcert -p 443 example.com",
+                    "sync": "google-timesync"
+                }
+            }
+        """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertEquals("/tmp/out.txt", config.outputFile)
+        assertEquals(30_000L, config.timeoutMs)
+        assertEquals("http://pac.example.org/auto.pac", config.urlProxyPac)
+        assertEquals(2, config.commands.size)
+        assertEquals("checkcert -p 443 example.com", config.commands["cert"])
+        assertEquals("google-timesync", config.commands["sync"])
+    }
 }

@@ -213,11 +213,18 @@ class HttpsCertViewModel(
         fun factory(context: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    HttpsCertViewModel(
-                        repository   = HttpsCertRepository(),
-                        historyStore = HttpsCertHistoryStore(context.applicationContext),
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    val appContext = context.applicationContext
+                    val settingsRepo = io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository(appContext)
+                    val proxyResolver = io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver(
+                        settingsRepo,
+                        io.github.mobilutils.ntp_dig_ping_more.proxy.QuickJsEngine(),
+                    )
+                    return HttpsCertViewModel(
+                        repository   = HttpsCertRepository(proxyResolver),
+                        historyStore = HttpsCertHistoryStore(appContext),
                     ) as T
+                }
             }
     }
 }
