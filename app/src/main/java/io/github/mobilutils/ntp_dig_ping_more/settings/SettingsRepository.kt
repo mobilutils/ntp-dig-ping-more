@@ -65,6 +65,7 @@ class SettingsRepository(private val context: Context) {
             pacUrl         = prefs[SettingsKeys.PROXY_PAC_URL] ?: "",
             lastTested     = prefs[SettingsKeys.PROXY_LAST_TESTED] ?: 0L,
             lastTestResult = prefs[SettingsKeys.PROXY_LAST_TEST_RESULT],
+            loggingEnabled = prefs[SettingsKeys.PROXY_LOGGING_ENABLED] ?: false,
         )
     }
 
@@ -76,6 +77,7 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.PROXY_ENABLED]          = config.enabled
             prefs[SettingsKeys.PROXY_PAC_URL]           = config.pacUrl
             prefs[SettingsKeys.PROXY_LAST_TESTED]       = config.lastTested
+            prefs[SettingsKeys.PROXY_LOGGING_ENABLED]   = config.loggingEnabled
             if (config.lastTestResult != null) {
                 prefs[SettingsKeys.PROXY_LAST_TEST_RESULT] = config.lastTestResult
             } else {

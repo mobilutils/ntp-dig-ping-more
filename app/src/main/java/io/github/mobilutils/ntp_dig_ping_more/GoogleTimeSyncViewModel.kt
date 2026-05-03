@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyPacLogger
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import io.github.mobilutils.ntp_dig_ping_more.proxy.QuickJsEngine
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
@@ -180,7 +181,10 @@ class GoogleTimeSyncViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val appContext = context.applicationContext
                     val settingsRepo = SettingsRepository(appContext)
-                    val proxyResolver = ProxyResolver(settingsRepo, QuickJsEngine())
+                    val logger = ProxyPacLogger.getInstance(
+                        logFile = java.io.File(appContext.filesDir, "proxypac-logs.txt"),
+                    )
+                    val proxyResolver = ProxyResolver(settingsRepo, QuickJsEngine(), logger = logger)
                     return GoogleTimeSyncViewModel(
                         repository   = GoogleTimeSyncRepository(proxyResolver),
                         historyStore = GoogleTimeSyncHistoryStore(appContext),

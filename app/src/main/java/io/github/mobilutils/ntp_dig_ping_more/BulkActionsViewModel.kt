@@ -249,7 +249,7 @@ class BulkActionsViewModel(
             val allResults = mutableListOf<BulkCommandResult>()
 
             // Set up proxy resolver from config-level PAC URL (if any)
-            repository.setupProxyResolver(config.urlProxyPac)
+            repository.setupProxyResolver(config.urlProxyPac, forceLogging = config.logProxy == true)
 
             try {
                 commands.forEachIndexed { index, (name, cmd) ->
@@ -334,7 +334,7 @@ class BulkActionsViewModel(
                 val allResults = mutableListOf<BulkCommandResult>()
 
                 // Set up proxy resolver from config-level PAC URL (if any)
-                repository.setupProxyResolver(config.urlProxyPac)
+                repository.setupProxyResolver(config.urlProxyPac, forceLogging = config.logProxy == true)
 
                 commands.forEachIndexed { index, (name, cmd) ->
                     if (cancellationToken.get()) {

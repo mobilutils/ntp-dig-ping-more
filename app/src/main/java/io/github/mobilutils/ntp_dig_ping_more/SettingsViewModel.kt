@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyPacLogger
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import io.github.mobilutils.ntp_dig_ping_more.proxy.QuickJsEngine
 import io.github.mobilutils.ntp_dig_ping_more.settings.ProxyConfig
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.File
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UI state
@@ -34,6 +36,9 @@ import kotlinx.coroutines.launch
  * @param isTestingProxy   True while a proxy connectivity test is in progress.
  * @param proxyTestResult  Human-readable result of the last test, or null if never tested.
  * @param proxyLastTested  Epoch millis of the last test, or 0 if never tested.
+ * @param proxyLoggingEnabled Whether proxy PAC logging is active.
+ * @param showLogDialog    True when the log viewer dialog is visible.
+ * @param proxyLogs        Snapshot of log lines displayed in the dialog.
  */
 data class SettingsUiState(
     val timeoutInput: String = SettingsKeys.DEFAULT_TIMEOUT_SECONDS.toString(),
@@ -46,6 +51,10 @@ data class SettingsUiState(
     val isTestingProxy: Boolean = false,
     val proxyTestResult: String? = null,
     val proxyLastTested: Long = 0L,
+    // Proxy logging fields
+    val proxyLoggingEnabled: Boolean = false,
+    val showLogDialog: Boolean = false,
+    val proxyLogs: List<String> = emptyList(),
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,10 +71,12 @@ data class SettingsUiState(
  *  - Revert the text field to the last known-good value on explicit [revert] call
  *    (e.g. when focus leaves an invalid field).
  *  - Manage the Proxy/PAC configuration (enable/disable, PAC URL, test connectivity).
+ *  - Control the proxy PAC logger (enable/disable, view logs, clear logs).
  */
 class SettingsViewModel(
     private val settingsRepository: SettingsRepository,
     private val proxyResolver: ProxyResolver,
+    private val proxyPacLogger: ProxyPacLogger,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -99,11 +110,14 @@ class SettingsViewModel(
         viewModelScope.launch {
             val config = settingsRepository.proxyConfigFlow.first()
             _uiState.value = _uiState.value.copy(
-                proxyEnabled    = config.enabled,
-                proxyPacUrl     = config.pacUrl,
-                proxyLastTested = config.lastTested,
-                proxyTestResult = config.lastTestResult,
+                proxyEnabled        = config.enabled,
+                proxyPacUrl         = config.pacUrl,
+                proxyLastTested     = config.lastTested,
+                proxyTestResult     = config.lastTestResult,
+                proxyLoggingEnabled = config.loggingEnabled,
             )
+            // Sync logger toggle from persisted state
+            proxyPacLogger.enabled = config.loggingEnabled
         }
     }
 
@@ -216,6 +230,48 @@ class SettingsViewModel(
         }
     }
 
+    // ── Proxy logging actions ────────────────────────────────────────────────
+
+    /**
+     * Toggles proxy PAC logging on/off, updates the logger flag, and persists.
+     */
+    fun onProxyLoggingEnabledChange(enabled: Boolean) {
+        proxyPacLogger.enabled = enabled
+        _uiState.value = _uiState.value.copy(proxyLoggingEnabled = enabled)
+        viewModelScope.launch {
+            saveCurrentProxyConfig()
+        }
+    }
+
+    /**
+     * Opens the log viewer dialog with a snapshot of the current log buffer.
+     */
+    fun onViewLogs() {
+        val logs = proxyPacLogger.getLogs()
+        _uiState.value = _uiState.value.copy(
+            showLogDialog = true,
+            proxyLogs = logs,
+        )
+    }
+
+    /**
+     * Clears both the in-memory and persistent logs, and closes the dialog.
+     */
+    fun onClearLogs() {
+        proxyPacLogger.clear()
+        _uiState.value = _uiState.value.copy(
+            proxyLogs = emptyList(),
+            showLogDialog = false,
+        )
+    }
+
+    /**
+     * Dismisses the log viewer dialog.
+     */
+    fun onDismissLogDialog() {
+        _uiState.value = _uiState.value.copy(showLogDialog = false)
+    }
+
     // ── Private helpers ──────────────────────────────────────────────────────
 
     /**
@@ -254,6 +310,7 @@ class SettingsViewModel(
                 pacUrl         = state.proxyPacUrl,
                 lastTested     = overrideLastTested ?: state.proxyLastTested,
                 lastTestResult = overrideTestResult ?: state.proxyTestResult,
+                loggingEnabled = state.proxyLoggingEnabled,
             )
         )
     }
@@ -268,10 +325,18 @@ class SettingsViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val appContext = context.applicationContext
                     val settingsRepo = SettingsRepository(appContext)
-                    val proxyResolver = ProxyResolver(settingsRepo, QuickJsEngine())
+                    val logger = ProxyPacLogger.getInstance(
+                        logFile = File(appContext.filesDir, "proxypac-logs.txt"),
+                    )
+                    val proxyResolver = ProxyResolver(
+                        settingsRepository = settingsRepo,
+                        jsEngine = QuickJsEngine(),
+                        logger = logger,
+                    )
                     return SettingsViewModel(
                         settingsRepository = settingsRepo,
                         proxyResolver      = proxyResolver,
+                        proxyPacLogger     = logger,
                     ) as T
                 }
             }

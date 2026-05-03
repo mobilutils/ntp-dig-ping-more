@@ -48,11 +48,18 @@ data class ProxyTestResult(
  *                            uses this URL directly instead of reading from
  *                            [settingsRepository]. Used by BulkActions for
  *                            config-level `url-proxypac` without touching persisted settings.
+ * @param logger              Optional [ProxyPacLogger] for high-level event logging.
+ *                            When `null`, no logging occurs regardless of [forceLogging].
+ * @param forceLogging        When `true`, logging is enabled even if [ProxyPacLogger.enabled]
+ *                            is `false`. Used by BulkActions when `"log-proxy": true` is set
+ *                            in the JSON config.
  */
 class ProxyResolver(
     private val settingsRepository: SettingsRepository,
     private val jsEngine: JsEngine,
     private val staticPacUrl: String? = null,
+    private val logger: ProxyPacLogger? = null,
+    private val forceLogging: Boolean = false,
 ) {
 
     companion object {
@@ -72,18 +79,24 @@ class ProxyResolver(
          * Intended for BulkActions where the PAC URL comes from the JSON config
          * and should not affect the user's persisted proxy settings.
          *
-         * @param pacUrl    PAC script URL (e.g. `http://proxy.corp.com/proxy.pac`).
-         * @param context   Application context (needed by [SettingsRepository] internally).
-         * @param jsEngine  JS engine for PAC evaluation (default: [QuickJsEngine]).
+         * @param pacUrl        PAC script URL (e.g. `http://proxy.corp.com/proxy.pac`).
+         * @param context       Application context (needed by [SettingsRepository] internally).
+         * @param jsEngine      JS engine for PAC evaluation (default: [QuickJsEngine]).
+         * @param logger        Optional logger for PAC events.
+         * @param forceLogging  When `true`, logging is enabled regardless of [ProxyPacLogger.enabled].
          */
         fun forStaticPacUrl(
             pacUrl: String,
             context: android.content.Context,
             jsEngine: JsEngine = QuickJsEngine(),
+            logger: ProxyPacLogger? = null,
+            forceLogging: Boolean = false,
         ): ProxyResolver = ProxyResolver(
             settingsRepository = SettingsRepository(context),
             jsEngine = jsEngine,
             staticPacUrl = pacUrl,
+            logger = logger,
+            forceLogging = forceLogging,
         )
     }
 
@@ -98,6 +111,21 @@ class ProxyResolver(
     private data class CachedProxy(val proxy: Proxy?, val resolvedAt: Long)
 
     private val proxyCache = mutableMapOf<String, CachedProxy>()
+
+    // ── Logging helper ───────────────────────────────────────────────────────
+
+    /**
+     * Logs [message] if logging is active. Logging is active when [logger] is
+     * non-null AND either [ProxyPacLogger.enabled] or [forceLogging] is `true`.
+     *
+     * This is strictly fire-and-forget — it never suspends or blocks.
+     */
+    private fun logIfEnabled(message: String) {
+        val log = logger ?: return
+        if (log.enabled || forceLogging) {
+            log.log(message, force = forceLogging)
+        }
+    }
 
     // ── Public API ───────────────────────────────────────────────────────────
 
@@ -136,12 +164,15 @@ class ProxyResolver(
             // Evaluate FindProxyForURL
             val pacResult = try {
                 jsEngine.evaluatePac(pacScript, targetUrl, host)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                logIfEnabled("PROXY_ERROR step=evaluatePac reason=${e.message}")
                 return@withContext null
             }
 
             // Parse PAC result into a Proxy
             val proxy = parsePacResult(pacResult)
+            val resultLabel = if (proxy != null) proxy.address().toString() else "DIRECT"
+            logIfEnabled("PROXY_RESOLVED host=$host result=$resultLabel")
 
             // Cache the result
             synchronized(proxyCache) {
@@ -149,7 +180,8 @@ class ProxyResolver(
             }
 
             proxy
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            logIfEnabled("PROXY_ERROR step=resolveProxy reason=${e.message}")
             null
         }
     }
@@ -184,12 +216,14 @@ class ProxyResolver(
 
             if (code in 200..299) {
                 val via = if (proxy != null) "via ${proxy.address()}" else "DIRECT"
+                logIfEnabled("PROXY_TEST result=SUCCESS latency=${latencyMs}ms via=$via")
                 ProxyTestResult(
                     success   = true,
                     message   = "✓ HTTP $code $via (${latencyMs}ms)",
                     latencyMs = latencyMs,
                 )
             } else {
+                logIfEnabled("PROXY_TEST result=FAIL code=$code latency=${latencyMs}ms")
                 ProxyTestResult(
                     success = false,
                     message = "✗ HTTP $code (${latencyMs}ms)",
@@ -197,6 +231,7 @@ class ProxyResolver(
                 )
             }
         } catch (e: Exception) {
+            logIfEnabled("PROXY_ERROR step=testProxy reason=${e.message}")
             ProxyTestResult(
                 success = false,
                 message = "✗ ${e.localizedMessage ?: "Connection failed"}",
@@ -241,6 +276,7 @@ class ProxyResolver(
             }
 
             if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                logIfEnabled("PAC_FETCH_FAIL url=$pacUrl reason=HTTP_${connection.responseCode}")
                 return null
             }
 
@@ -248,8 +284,10 @@ class ProxyResolver(
             cachedPacScript = script
             cachedPacUrl = pacUrl
             pacFetchedAt = now
+            logIfEnabled("PAC_FETCH_SUCCESS url=$pacUrl")
             script
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            logIfEnabled("PAC_FETCH_FAIL url=$pacUrl reason=${e.message}")
             null
         } finally {
             connection?.disconnect()
