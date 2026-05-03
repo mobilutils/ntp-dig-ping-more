@@ -1,151 +1,158 @@
-# Qwen Code Context — NTP DIG PING MORE
+# Qwen Code — Project Context
 
 ## Project Overview
 
-**NTP DIG PING MORE** is a professional-grade Android network diagnostics toolkit built with Kotlin and Jetpack Compose (Material 3). It provides a suite of network troubleshooting tools in a single app with a bottom navigation bar and an overflow "More" screen.
+**ntp_dig_ping_more** is a production Android app (min SDK 26, target SDK 37) for network diagnostics. It provides 9 built-in tools plus a batch "Bulk Actions" feature: NTP Check, DIG (DNS), Ping, Traceroute, Port Scanner, LAN Scanner, Google Time Sync, HTTPS Certificate Inspector, Device Info, Settings, and Bulk Actions (JSON-configurable command batches).
 
-**Core Features:**
-- **NTP Check** — NTP server reachability, server time, clock offset, round-trip delay (via Apache Commons Net `NTPUDPClient`)
-- **DIG Test** — DNS resolution to custom servers with full CNAME chain support (via dnsjava `SimpleResolver`)
-- **Ping** — Live ICMP ping with streaming terminal output (up to 100 packets)
-- **Traceroute** — TTL-probing hop discovery via `ping -c 1 -t <TTL>` (no external binary needed)
-- **Port Scanner** — Concurrent TCP/UDP port range scanning with live progress
-- **LAN Scanner** — Subnet device discovery (IP, hostname, MAC, latency)
-- **Google Time Sync** — HTTP-based time sync with RTT/offset computation
-- **Device Info** — Read-only device identity, network, battery, storage, MDM status, CA certs
-- **HTTPS Cert Check** — Certificate inspection for hosts
-- **Bulk Actions** — Batch execution of diagnostic commands from a JSON config, with ADB automation support for headless/CI workflows
+The app uses **ADB intent extras** for headless automation — configs can be pushed to the app's private directory via `run-as`, then the app launched with `--ez auto_run true` to execute commands without user interaction. A bundled shell script (`BULKACTIONS-ADB-SCRIPT.sh`) wraps this into a fully automated workflow for CI/manual use.
+
+---
+
+## Building & Running
+
+| Command | Purpose |
+|---|---|
+| `./gradlew assembleDebug` | Build debug APK |
+| `./gradlew installDebug` | Build + install debug APK on connected device/emulator |
+| `./gradlew test` | Run all unit tests (~265 tests) |
+| `./gradlew test --tests "ClassName"` | Run a single test class |
+| `./gradlew testDebugUnitTest` | Run debug unit tests only |
+| `./gradlew connectedDebugAndroidTest` | Run instrumented tests on connected device |
+| `./gradlew jacocoUnitTestReport` | Generate JaCoCo coverage report |
+
+**Open in Android Studio:** File → Open → select this root directory. Wait for Gradle sync, then press ▶ Run.
+
+---
 
 ## Architecture
 
-| Layer | Technology |
+```
+MainActivity.kt              ← Entry point, NavHost, bottom nav bar, intent extras (configUri + autoRun)
+    │
+    ├── AppRoot()            ← Composable with NavHost + NavigationBar
+    │
+    ├── Screen modules (per tool):
+    │   │
+    │   ├── *Screen.kt       ← Jetpack Compose UI (Material 3)
+    │   ├── *ViewModel.kt    ← StateFlow<UiState>, coroutine lifecycle, command dispatch
+    │   ├── *Repository.kt   ← Network I/O (NTPUDPClient, dnsjava, HttpURLConnection, Runtime.exec)
+    │   └── *HistoryStore.kt ← DataStore persistence (last 5–10 entries per tool)
+    │
+    ├── settings/            ← Global Settings + Proxy PAC configuration
+    │   ├── SettingsDataStore.kt
+    │   ├── SettingsRepository.kt
+    │   └── ProxyConfig.kt
+    ├── proxy/               ← PAC script evaluation
+    │   ├── JsEngine.kt          ← Interface
+    │   ├── QuickJsEngine.kt     ← QuickJS-based evaluator
+    │   └── ProxyResolver.kt     ← Fetch, eval, parse, cache (5min TTL)
+    ├── deviceinfo/          ← Device identity, network, battery, storage, MDM, CA certs
+    └── ui/theme/            ← Material 3 colors, typography, theme composable
+```
+
+**Key patterns:**
+- Every screen follows **MVVM**: `StateFlow<UiState>` → Compose reads state → ViewModel dispatches to Repository
+- Coroutines use `Dispatchers.IO` for all I/O; tests use `StandardTestDispatcher` + `advanceUntilIdle()`
+- History stores are pipe-delimited (or JSON for LAN Scanner), parsed by custom `parse*History()` functions, persisted via AndroidX DataStore Preferences
+- Navigation uses Jetpack Navigation Compose with `NavHost` + `NavigationBar`; the "More" tab reveals hidden screens
+
+---
+
+## Test Suite
+
+Located in `app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/`.
+
+| Test Class | Count | Covers |
+|---|---|---|
+| `HistoryStoreParsingTest` | 30+ | All history store parsers (backward compat, edge cases) |
+| `HttpsCertViewModelTest` | 28 | All cert result variants, history, state transitions |
+| `LanScannerViewModelTest` | 21 | Subnet sweep, quick/full modes, progress, error handling |
+| `NtpViewModelTest` | 14 | State mutations, repo mocking, error paths, history |
+| `GoogleTimeSyncViewModelTest` | 14 | URL fallback, success/error states, reset |
+| `TracerouteViewModelTest` | 16 | Start/stop, blank guards, history, cancellation |
+| `DigViewModelTest` | 14 | Input handlers, DNS errors, CNAME chains |
+| `PortScannerViewModelTest` | 12 | Validation, scan lifecycle, history |
+| `DeviceInfoViewModelTest` | 13 | Permissions, loading/success/error, periodic updates |
+| `LanScannerRepositoryTest` | — | IP conversion utilities (pure functions) |
+| `BulkActionsViewModelTest` | — | Bulk Actions config parsing + execution |
+| `BulkConfigParserTest` | — | JSON config parser |
+| `ProxyResolverTest` | — | PAC script fetching, eval, cache |
+| `SettingsViewModelTest` | — | Timeout input, proxy toggle/PAC URL validation |
+
+**Testing conventions:**
+- JUnit 4 (`@RunWith(JUnit4::class)`) + MockK (`mockk(relaxed = true)` for dependencies)
+- `StandardTestDispatcher` for coroutine control; `coEvery { ... } returns ...` for suspend mocks
+- Test names use backtick format: `` `test description that explains scenario` ``
+- Pure functions tested directly (no mocking); ViewModels tested with mocked repos + history stores
+- Setup/teardown resets `Dispatchers.Main` in `@After`
+
+---
+
+## Key Files & Locations
+
+| Path | Purpose |
 |---|---|
-| Language | Kotlin (via Kotlin Compose plugin) |
-| UI | Jetpack Compose + Material 3 |
-| Architecture | MVVM (ViewModel + StateFlow) |
-| Navigation | Jetpack Navigation Compose |
-| Concurrency | Kotlin Coroutines (`Dispatchers.IO`) |
-| Persistence | AndroidX DataStore Preferences (query history) |
-| Build | Gradle Kotlin DSL, AGP 9.2.0 |
-| Min SDK | 26 (Android 8.0) |
-| Compile SDK | 37 |
+| `app/build.gradle.kts` | Module build config, dependencies, JaCoCo setup |
+| `build.gradle.kts` (root) | Plugin aliases, shared `targetSdk` extra property |
+| `gradle/libs.versions.toml` | Version catalog (all dependency versions) |
+| `BULKACTIONS-ADB-SCRIPT.sh` | Automated ADB script for headless CI/manual use |
+| `notes/config-files_bulk-actions/*.json` | 65+ test configs for Bulk Actions automation |
+| `notes/20260501_BulkActions-ADB-Automations.md` | ADB automation documentation |
+| `TESTING.md` | Comprehensive testing guide |
+| `JACOCO_SETUP.md` | JaCoCo coverage configuration |
 
-### Key Dependencies
-- `commons-net:3.11.1` — NTP UDP client
-- `dnsjava:3.6.2` — DNS resolution
-- `androidx.datastore:preferences:1.1.1` — History persistence
-- `androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7` — ViewModel integration
-- `app.cash.quickjs:quickjs-android:0.9.2` — JS engine for PAC proxy evaluation (Telnet feature)
-- `junit:4.13.2`, `mockk:1.13.12`, `kotlinx-coroutines-test:1.8.1` — Testing
+---
 
-## Project Structure
+## Scripting & Automation
 
-```
-app/src/main/java/io/github/mobilutils/ntp_dig_ping_more/
-├── MainActivity.kt                 # NavHost, bottom navigation bar
-├── MoreToolsScreen.kt              # Overflow screen (Traceroute, Port Scanner, LAN Scanner, etc.)
-├── SettingsScreen.kt               # Settings UI + Proxy/PAC configuration screens
-├── NtpScreen.kt, NtpViewModel.kt, NtpRepository.kt, NtpHistoryStore.kt
-├── DigScreen.kt, DigViewModel.kt, DigRepository.kt, DigHistoryStore.kt
-├── PingScreen.kt, PingViewModel.kt, PingHistoryStore.kt
-├── TracerouteScreen.kt, TracerouteViewModel.kt, TracerouteHistoryStore.kt
-├── PortScannerScreen.kt, PortScannerViewModel.kt, PortScannerHistoryStore.kt
-├── LanScannerScreen.kt, LanScannerViewModel.kt, LanScannerRepository.kt, LanScannerHistoryStore.kt
-├── GoogleTimeSyncScreen.kt, GoogleTimeSyncViewModel.kt, GoogleTimeSyncRepository.kt, GoogleTimeSyncHistoryStore.kt
-├── HttpsCertScreen.kt, HttpsCertViewModel.kt, HttpsCertRepository.kt, HttpsCertHistoryStore.kt
-├── BulkActionsScreen.kt, BulkActionsViewModel.kt, BulkActionsRepository.kt, BulkActionsHistoryStore.kt
-├── SettingsViewModel.kt              # Settings state management
-├── proxy/                            # PAC proxy resolution (QuickJS-based)
-│      └── ProxyResolver.kt          # PAC script evaluation for Telnet feature
-├── deviceinfo/
-│      ├── DeviceInfoScreen.kt
-│      ├── DeviceInfoViewModel.kt
-│      ├── DeviceInfoModels.kt
-│      └── SystemInfoRepository.kt
-└── ui/theme/                       # Material 3 colors, typography, theme
-
-app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/
-├── NtpViewModelTest.kt             (14 tests)
-├── DigViewModelTest.kt             (14 tests)
-├── TracerouteViewModelTest.kt      (16 tests)
-├── PortScannerViewModelTest.kt     (12 tests)
-├── LanScannerViewModelTest.kt      (21 tests)
-├── LanScannerRepositoryTest.kt     (18 tests)
-├── GoogleTimeSyncViewModelTest.kt (14 tests)
-├── HttpsCertViewModelTest.kt       (28 tests)
-├── BulkActionsViewModelTest.kt
-├── BulkConfigParserTest.kt
-├── ProxyResolverTest.kt            # PAC proxy resolver tests
-├── SettingsViewModelTest.kt        # Settings UI state tests
-├── deviceinfo/DeviceInfoViewModelTest.kt (13 tests)
-└── HistoryStoreParsingTest.kt      (30+ tests)
-```
-
-## Building and Running
+### `BULKACTIONS-ADB-SCRIPT.sh` (Unix/Linux/macOS)
 
 ```bash
-# Build debug APK
-./gradlew assembleDebug
-
-# Install on connected device/emulator
-./gradlew installDebug
-
-# Run all unit tests
-./gradlew test
-
-# Run a specific test class
-./gradlew test --tests "NtpViewModelTest"
-
-# Run with JaCoCo coverage report
-./gradlew jacocoUnitTestReport
-
-# Full build (includes tests)
-./gradlew build
+./BULKACTIONS-ADB-SCRIPT.sh -f <config> [options]
 ```
 
-In Android Studio: open the project root → wait for Gradle sync → connect device/emulator → press **▶ Run**.
+| Flag | Description |
+|---|---|
+| `-f, --filepath <config>` | Config file path (required; supports `~` expansion and absolute paths) |
+| `-e, --emulator-name <name>` | AVD to launch (default: `Medium_Phone_API_35`) |
+| `-d, --real-device` | Skip emulator entirely; use connected physical device |
+| `-a, --no-interact` | Suppress all prompts (auto-exit) |
+| `-s, --show-emulator` | Launch emulator in visible window mode |
+| `-h, --help` | Show usage help |
 
-## Testing Conventions
+**What it does:** starts emulator → pushes config via `run-as` pipe → launches app with intent extras → polls `.running-tasks` marker file → pulls results to `./test-results/`.
 
-- **70+ unit tests** covering ViewModels (with MockK), pure functions (IP conversion, parsing), and history store serialization.
-- All ViewModel tests use `StandardTestDispatcher` + `advanceUntilIdle()` for coroutine control.
-- Tests live in `app/src/test/java/...` following the same package as the source code.
-- Test template: use `@RunWith(JUnit4::class)`, `@OptIn(ExperimentalCoroutinesApi::class)`, `runTest` scope, MockK `coEvery`/`coVerify`.
-- **Pending coverage:** `PingViewModel` (Runtime.exec mocking), Compose UI tests in `androidTest/`.
-- JaCoCo is enabled for debug builds (`enableUnitTestCoverage = true`).
+### `BULKACTIONS-ADB-WINDOWS-SCRIPT.bat` (Windows)
 
-## Development Notes
+Same workflow as the Unix script, using PowerShell for JSON parsing and native CMD constructs.
 
-- **MVVM pattern:** Each feature has a `*Screen.kt` (Compose UI), `*ViewModel.kt` (StateFlow state), and optionally `*Repository.kt` (network I/O) and `*HistoryStore.kt` (DataStore).
-- **Coroutine concurrency:** All network operations run on `Dispatchers.IO` via coroutines. Timeouts are applied per-operation.
-- **History persistence:** Each tool keeps the last 5–10 entries in DataStore, persisted across app restarts.
-- **Runtime permissions:** Location (`ACCESS_COARSE/FINE_LOCATION`) and phone state (`READ_PHONE_STATE`) are requested at runtime via `ActivityResultContracts`.
-- **Cleartext traffic:** `android:usesCleartextTraffic="true"` is set in `AndroidManifest.xml` for the Google Time Sync HTTP endpoint.
-- **Android 13+ (API 33):** `READ_EXTERNAL_STORAGE` is no longer grantable; Bulk Actions ADB automation pushes configs via `run-as` pipe and pulls results the same way.
-- **Build config:** Keystore at `.keystore/my-release.keystore`. ProGuard disabled for release (`isMinifyEnabled = false`).
-- **Version catalog:** All dependency versions are in `gradle/libs.versions.toml`.
-- **Target SDK:** Set to 37 via `rootProject.extra["defaultTargetSdkVersion"]` in the root `build.gradle.kts`.
+---
 
-## Bulk Actions / ADB Automation
+## Dependencies (Key External Libraries)
 
-The app supports headless batch execution via ADB intent extras (`--ez auto_run true`). See `README.md` for full ADB script documentation and common pitfalls. Bundled scripts:
-- `BULKACTIONS-ADB-SCRIPT.sh` — Mac/Linux/Unix
-- `BULKACTIONS-ADB-WINDOWS-SCRIPT.bat` — Windows
+| Library | Purpose |
+|---|---|
+| `org.apache.commons:commons-net:3.11.1` | NTP UDP client (`NTPUDPClient`) |
+| `dnsjava:dnsjava:3.6.2` | DNS resolution bypassing system resolver |
+| `app.cash.quickjs:quickjs-android-wrapper:0.9.2` | PAC script JS evaluation |
+| `androidx.datastore:datastore-preferences` | Persistent history + settings |
+| `androidx.navigation:navigation-compose` | Compose navigation |
 
-## Permissions Required
+---
 
-```xml
-INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE    (normal — auto-granted)
-ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION          (dangerous — runtime request)
-READ_PHONE_STATE                                      (dangerous — runtime request)
-```
+## Coding Conventions (Inferred)
 
-## Version
+- **Kotlin code style:** `official` (per `gradle.properties`)
+- **Naming:** camelCase for locals/fields, PascalCase for classes/objects, `snake_case` for file names (`*.kt`)
+- **Sealed classes** for UI state and result types (`NtpResult`, etc.)
+- **Composables** are file-scoped functions (not class members), previewed with `@Preview`
+- **ViewModels** expose constructor-injected dependencies (repository + history store) with companion-object `factory()` delegates for `viewModel()` factory support
+- **Comments:** Chinese and English mixed in some files; commit messages use conventional prefixes (`fix()`, `feat()`, `improve/`)
 
-- **Name:** NTP DIG PING MORE
-- **Version:** 2.9 (release), 2.9-dev (debug)
-- **Version Code:** 20
+---
 
-## License
+## Git Workflow
 
-MIT
+- Branch naming: `feat/<feature>`, `fix/<issue>`, `improve/<topic>`
+- Merge PRs with descriptive titles; version tags at `v2.x` on `main`
+- Recent work includes Proxy PAC, Settings, Bulk Actions ADB automation, and Device Info improvements
