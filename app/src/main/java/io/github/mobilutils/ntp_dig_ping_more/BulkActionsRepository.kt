@@ -422,7 +422,11 @@ class BulkActionsRepository(
                     add("[${timestampFmt.format(LocalDateTime.now())}] Status: ${if (exitCode == 0) "SUCCESS" else "FAILED"} (${duration}ms)")
                     addAll(output)
                 }
-                BulkCommandSuccess(name, cmd, lines, duration)
+
+                when (exitCode) {
+                    0 -> BulkCommandSuccess(name, cmd, lines, duration)
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+                 }
             } catch (e: Exception) {
                 BulkCommandError(name, cmd, e.message ?: "Unknown error")
             }
@@ -466,7 +470,11 @@ class BulkActionsRepository(
                             add("[${timestampFmt.format(LocalDateTime.now())}] Status: ERROR - ${result.message} (${duration}ms)")
                     }
                 }
-                BulkCommandSuccess(name, cmd, lines, duration)
+
+                when (result) {
+                    is DigResult.Success -> BulkCommandSuccess(name, cmd, lines, duration)
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+                 }
             } catch (e: Exception) {
                 BulkCommandError(name, cmd, e.message ?: "Unknown error")
             }
@@ -504,7 +512,11 @@ class BulkActionsRepository(
                             add("[${timestampFmt.format(LocalDateTime.now())}] Status: ERROR - ${result.message} (${duration}ms)")
                     }
                 }
-                BulkCommandSuccess(name, cmd, lines, duration)
+
+                when (result) {
+                    is NtpResult.Success -> BulkCommandSuccess(name, cmd, lines, duration)
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+                 }
             } catch (e: Exception) {
                 BulkCommandError(name, cmd, e.message ?: "Unknown error")
             }
@@ -671,7 +683,12 @@ class BulkActionsRepository(
                     is HttpsCertResult.Error ->
                         lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: ERROR - ${result.message} (${duration}ms)")
                     }
-                warningResult ?: BulkCommandSuccess(name, cmd, lines, duration)
+
+                when {
+                    warningResult != null -> warningResult
+                    result is HttpsCertResult.Success -> BulkCommandSuccess(name, cmd, lines, duration)
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+                 }
              } catch (e: Exception) {
                 BulkCommandError(name, cmd, e.message ?: "Unknown error")
             }
@@ -834,7 +851,11 @@ class BulkActionsRepository(
                             add("[${timestampFmt.format(LocalDateTime.now())}] Status: ERROR - ${result.message} (${dur}ms)")
                     }
                 }
-                BulkCommandSuccess(name, cmd, lines, dur)
+
+                when (result) {
+                    is GoogleTimeSyncResult.Success -> BulkCommandSuccess(name, cmd, lines, dur)
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+                 }
             } catch (e: Exception) {
                 BulkCommandError(name, cmd, e.message ?: "Unknown error")
             }
