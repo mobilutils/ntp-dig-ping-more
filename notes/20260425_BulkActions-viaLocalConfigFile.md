@@ -46,6 +46,7 @@ Added a **Bulk Actions** screen accessible from the MORE overflow menu. Users se
 | `tracert <host>` | TTL-probing via `ping -c 1 -t <TTL>` — hop-by-hop traceroute |
 | `google-timesync` | `GoogleTimeSyncRepository.fetchGoogleTime()` — server time, RTT, clock offset |
 | `lan-scan` | `LanScannerRepository` subnet sweep — discovers active local devices |
+| `sleep N` | Non-blocking delay (1–3600s, clamped to 3600); returns SUCCESS; UI stays responsive |
 | Unknown | Raw `ProcessBuilder` execution — falls back to shell |
 
 > **Breaking change:** The `nmap` prefix is no longer recognized. Use `port-scan` instead.

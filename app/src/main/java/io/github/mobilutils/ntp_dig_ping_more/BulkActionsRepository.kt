@@ -11,6 +11,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
@@ -366,6 +368,7 @@ class BulkActionsRepository(
             prefix == "tracert"         -> executeTracert(name, trimmed, timeoutMs)
             prefix == "google-timesync" -> executeGoogleTimeSync(name, trimmed, timeoutMs)
             prefix == "lan-scan"        -> executeLanScan(name, trimmed, timeoutMs)
+            prefix == "sleep"              -> executeSleep(name, trimmed, timeoutMs)
             else                        -> executeRaw(name, trimmed, timeoutMs)
         }
     }
@@ -907,6 +910,47 @@ class BulkActionsRepository(
             }
         }
     }
+
+      // ── sleep ───────────────────────────────────────────────────────
+
+    private suspend fun executeSleep(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
+        return withContext(Dispatchers.IO) {
+            val t0 = System.currentTimeMillis()
+            try {
+                val parts = cmd.trim().split(Regex("\\s+"))
+                if (parts.size < 2 || parts[1].toIntOrNull() == null) {
+                    return@withContext BulkCommandError(name, cmd, "Invalid sleep argument. Expected: sleep N (integer)")
+                 }
+
+                var n = parts[1].toInt()
+                val actualSeconds = if (n > 3600) 3600 else if (n < 1) {
+                    return@withContext BulkCommandError(name, cmd, "Sleep duration must be between 1 and 3600 seconds")
+                 } else n
+
+                var remaining = actualSeconds.toLong()
+
+                while (remaining > 0) {
+                    ensureActive()
+                    delay(minOf(remaining, 1L))
+                    remaining--
+                 }
+
+                val durationMs = System.currentTimeMillis() - t0
+                BulkCommandSuccess(
+                    commandName = name,
+                    command = cmd,
+                    outputLines = listOf("Slept for $actualSeconds seconds (${durationMs}ms)"),
+                    durationMs = durationMs,
+                 )
+             } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                BulkCommandTimeout(name, cmd)
+             } catch (e: CancellationException) {
+                BulkCommandClosed(name, cmd, emptyList(), System.currentTimeMillis() - t0)
+             } catch (e: Exception) {
+                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+             }
+         }
+     }
 
     // ── raw ────────────────────────────────────────────────────────────────
 
