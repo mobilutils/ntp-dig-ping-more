@@ -2,6 +2,7 @@
 
 > Created: 2026-05-01
 > Branch: `feat/bulk-actions-add-intent-for-adb-automation`
+> Updated: 2026-05-03 — CLI rewritten to flag-based syntax (`-f`, `-e`, `-d`, `-a`, `-s`)
 
 ---
 
@@ -25,7 +26,7 @@ Add **intent extras** so the app can be launched with a config URI and auto-run 
 
 | Extra | Type | Description |
 |---|---|---|
-| `intent.data` (URI) | `Uri` | File URI of the JSON config (e.g. `file:///sdcard/Download/blkacts_single_ping_success.json`) |
+| `intent.data` (URI) | `Uri` | File URI of the JSON config (e.g. `file:///data/user/0/<pkg>/files/blkacts_single_ping_success.json`) |
 | `auto_run` | `boolean` | If `true`, auto-executes commands after loading the config |
 
 ## 3. Usage
@@ -33,42 +34,67 @@ Add **intent extras** so the app can be launched with a config URI and auto-run 
 ### Direct (one-off)
 
 ```bash
-# Push config
-adb push notes/config-files_bulk-actions/blkacts_single_ping_success.json /sdcard/Download/
+# Push config (use run-as pipe — adb cannot write directly to app private dir)
+APP_ID="io.github.mobilutils.ntp_dig_ping_more"
+PRIVATE_DIR="/data/user/0/$APP_ID/files"
+cat notes/config-files_bulk-actions/blkacts_single_ping_success.json \
+     | adb shell "run-as $APP_ID sh -c 'cat > $PRIVATE_DIR/blkacts_single_ping_success.json'"
 
 # Launch with auto-load + auto-run
+# IMPORTANT: use --ez (boolean), NOT --es (string)
+adb shell am force-stop "$APP_ID"
 adb shell am start \
-    -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity \
-    -d "file:///sdcard/Download/blkacts_single_ping_success.json" \
-    --es auto_run true
+      -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity \
+      -d "file://$PRIVATE_DIR/blkacts_single_ping_success.json" \
+      --ez auto_run true
 
 # Wait for execution (adjust based on config timeout)
 sleep 60
 
-# Pull results
-adb pull /sdcard/Download/blkacts_single_ping_success.txt ./test-results/
+# Pull results (use run-as cat — adb pull cannot read private dir)
+adb shell "run-as $APP_ID cat $PRIVATE_DIR/blkacts_single_ping_success.txt" \
+     > ./test-results/blkacts_single_ping_success.txt
 ```
 
 ### Automated script
 
 ```bash
-# Single config, default emulator
-./BULKACTIONS-ADB-SCRIPT.sh blkacts_single_ping_success.json
+# Single config (default emulator)
+./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_single_ping_success.json
 
 # Specific emulator
-./BULKACTIONS-ADB-SCRIPT.sh blkacts_multi_all9_success.json Pixel_6_API_34
+./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_multi_all9_success.json -e Medium_Phone_API_35
 
 # Fully unattended (no interactive prompts, emulator stays running)
-./BULKACTIONS-ADB-SCRIPT.sh blkacts_multi_all9_success.json "" --no-interact
+./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_multi_all9_success.json --no-interact
+
+# Real device mode (skips all emulator commands)
+./BULKACTIONS-ADB-SCRIPT.sh -f blkacts_multi_all9_success.json --real-device --no-interact
+
+# Absolute path or tilde-expanded path to config
+./BULKACTIONS-ADB-SCRIPT.sh -f ~/Downloads/blkacts_single_ping_success.json --no-interact
 ```
 
+Options:
+
+| Flag | Description |
+|---|---|
+| `-f, --filepath <config>` | Config filename (required) |
+| `-e, --emulator-name <name>` | AVD name to launch (default: `Medium_Phone_API_35`) |
+| `-d, --real-device` | Skip emulator entirely; use connected physical device |
+| `-a, --no-interact` | Suppress all prompts (auto-exit after completion) |
+| `-s, --show-emulator` | Launch emulator in visible window mode |
+| `-h, --help` | Show this help message |
+
 The script:
-1. Starts emulator if not running
-2. Pushes config to `/sdcard/Download/`
+1. Starts emulator if not running (skipped when `--real-device` is set)
+2. Pushes config to `$PRIVATE_DIR` via `run-as` pipe
 3. Launches app with intent extras (auto-load + auto-run)
-4. Waits for execution (estimates from config `timeout` field using pure grep/sed)
-5. Pulls results to `./test-results/`
+4. Polls for `.running-tasks` marker file creation, then removal (max 10min)
+5. Pulls results to `./test-results/` using `run-as cat`
 6. Optionally closes emulator (only if it was launched by the script and `--no-interact` is not set)
+
+**`--real-device` flag**: Skips all emulator commands — no launch, no boot wait, no close prompt. Useful when a physical device is connected.
 
 **`--no-interact` flag**: Skips the interactive "Close emulator?" prompt at the end. The emulator stays running. Useful for CI pipelines.
 
@@ -101,7 +127,7 @@ Timeout precedence (highest to lowest):
 2. Config-level `"timeout"` field (seconds)
 3. Default 30 seconds
 
-The script estimates wait time as `max(timeout * 2 + 30, 10s)`, capped at 300s.
+The script polls for the `.running-tasks` marker file instead of relying on a blind timeout estimate. Max wait: 10 minutes (600s).
 
 ## 8. Files
 
