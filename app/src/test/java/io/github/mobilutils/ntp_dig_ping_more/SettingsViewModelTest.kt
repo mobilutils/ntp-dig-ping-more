@@ -1,12 +1,15 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyPacLogger
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyTestResult
 import io.github.mobilutils.ntp_dig_ping_more.settings.ProxyConfig
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -27,7 +30,7 @@ import org.junit.Test
  * Unit tests for [SettingsViewModel].
  *
  * Tests both the existing timeout functionality and the new proxy/PAC
- * configuration features.
+ * configuration and logging features.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
@@ -35,6 +38,7 @@ class SettingsViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var proxyResolver: ProxyResolver
+    private lateinit var proxyPacLogger: ProxyPacLogger
     private lateinit var viewModel: SettingsViewModel
 
     @Before
@@ -42,11 +46,13 @@ class SettingsViewModelTest {
         Dispatchers.setMain(testDispatcher)
         settingsRepository = mockk(relaxed = true)
         proxyResolver = mockk(relaxed = true)
+        proxyPacLogger = mockk(relaxed = true)
 
         coEvery { settingsRepository.timeoutSecondsFlow } returns flowOf(5)
         coEvery { settingsRepository.proxyConfigFlow } returns flowOf(ProxyConfig())
+        every { proxyPacLogger.getLogs() } returns emptyList()
 
-        viewModel = SettingsViewModel(settingsRepository, proxyResolver)
+        viewModel = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger)
     }
 
     @After
@@ -75,6 +81,12 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `initial state has logging disabled`() = runTest {
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.proxyLoggingEnabled)
+    }
+
+    @Test
     fun `initial state loads persisted proxy config`() = runTest {
         coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
             ProxyConfig(
@@ -82,16 +94,30 @@ class SettingsViewModelTest {
                 pacUrl = "http://proxy.corp.com/proxy.pac",
                 lastTested = 1000L,
                 lastTestResult = "✓ Success",
+                loggingEnabled = true,
             )
         )
 
-        val vm = SettingsViewModel(settingsRepository, proxyResolver)
+        val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger)
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(vm.uiState.value.proxyEnabled)
         assertEquals("http://proxy.corp.com/proxy.pac", vm.uiState.value.proxyPacUrl)
         assertEquals(1000L, vm.uiState.value.proxyLastTested)
         assertEquals("✓ Success", vm.uiState.value.proxyTestResult)
+        assertTrue(vm.uiState.value.proxyLoggingEnabled)
+    }
+
+    @Test
+    fun `initial state syncs logger enabled flag from persisted config`() = runTest {
+        coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
+            ProxyConfig(loggingEnabled = true)
+        )
+
+        val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verify { proxyPacLogger.enabled = true }
     }
 
     // ── Timeout ──────────────────────────────────────────────────────────────
@@ -260,5 +286,76 @@ class SettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         coVerify { settingsRepository.saveProxyConfig(any()) }
+    }
+
+    // ── Proxy logging ────────────────────────────────────────────────────────
+
+    @Test
+    fun `onProxyLoggingEnabledChange updates UI state`() = runTest {
+        viewModel.onProxyLoggingEnabledChange(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.proxyLoggingEnabled)
+    }
+
+    @Test
+    fun `onProxyLoggingEnabledChange sets logger enabled flag`() = runTest {
+        viewModel.onProxyLoggingEnabledChange(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verify { proxyPacLogger.enabled = true }
+    }
+
+    @Test
+    fun `onProxyLoggingEnabledChange persists config`() = runTest {
+        viewModel.onProxyLoggingEnabledChange(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify { settingsRepository.saveProxyConfig(match { it.loggingEnabled }) }
+    }
+
+    @Test
+    fun `onProxyLoggingEnabledChange to false updates state and logger`() = runTest {
+        viewModel.onProxyLoggingEnabledChange(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onProxyLoggingEnabledChange(false)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.proxyLoggingEnabled)
+        verify { proxyPacLogger.enabled = false }
+    }
+
+    @Test
+    fun `onViewLogs opens dialog with log snapshot`() = runTest {
+        val fakeLogs = listOf("[2026-05-03] EVENT_1", "[2026-05-03] EVENT_2")
+        every { proxyPacLogger.getLogs() } returns fakeLogs
+
+        viewModel.onViewLogs()
+
+        assertTrue(viewModel.uiState.value.showLogDialog)
+        assertEquals(fakeLogs, viewModel.uiState.value.proxyLogs)
+    }
+
+    @Test
+    fun `onClearLogs clears logger and closes dialog`() = runTest {
+        viewModel.onViewLogs()
+        assertTrue(viewModel.uiState.value.showLogDialog)
+
+        viewModel.onClearLogs()
+
+        verify { proxyPacLogger.clear() }
+        assertTrue(viewModel.uiState.value.proxyLogs.isEmpty())
+        assertFalse(viewModel.uiState.value.showLogDialog)
+    }
+
+    @Test
+    fun `onDismissLogDialog closes dialog`() = runTest {
+        viewModel.onViewLogs()
+        assertTrue(viewModel.uiState.value.showLogDialog)
+
+        viewModel.onDismissLogDialog()
+
+        assertFalse(viewModel.uiState.value.showLogDialog)
     }
 }
