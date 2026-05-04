@@ -170,8 +170,11 @@ class ProxyResolver(
             }
 
             // Parse PAC result into a Proxy
-            val proxy = parsePacResult(pacResult)
-            val resultLabel = if (proxy != null) proxy.address().toString() else "DIRECT"
+            // Proxy.NO_PROXY for DIRECT — lets callers force a truly direct
+            // connection (bypassing the system ProxySelector) via
+            // URL.openConnection(Proxy.NO_PROXY).
+            val proxy = parsePacResult(pacResult) ?: Proxy.NO_PROXY
+            val resultLabel = if (proxy.type() != Proxy.Type.DIRECT) proxy.address().toString() else "DIRECT"
             logIfEnabled("PROXY_RESOLVED host=$host result=$resultLabel")
 
             // Cache the result
@@ -215,7 +218,7 @@ class ProxyResolver(
             val latencyMs = System.currentTimeMillis() - startMs
 
             if (code in 200..299) {
-                val via = if (proxy != null) "via ${proxy.address()}" else "DIRECT"
+                val via = if (proxy != null && proxy.type() != Proxy.Type.DIRECT) "via ${proxy.address()}" else "DIRECT"
                 logIfEnabled("PROXY_TEST result=SUCCESS latency=${latencyMs}ms via=$via")
                 ProxyTestResult(
                     success   = true,
