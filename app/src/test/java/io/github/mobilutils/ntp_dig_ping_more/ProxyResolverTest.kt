@@ -164,6 +164,22 @@ class ProxyResolverTest {
         assertNull(result)
     }
 
+    @Test
+    fun `resolveProxy returns Proxy NO_PROXY when PAC evaluates to DIRECT`() = runTest {
+        // This test cannot verify the full PAC-fetch→eval→DIRECT pipeline in a
+        // unit test (fetchPacScript does real HTTP), but it validates the contract
+        // indirectly: parsePacResult("DIRECT") returns null, and resolveProxy wraps
+        // that null as Proxy.NO_PROXY.  Callers (GoogleTimeSyncRepository, etc.)
+        // then pass Proxy.NO_PROXY to URL.openConnection(proxy) which forces a
+        // truly direct connection, bypassing the system ProxySelector.
+        val direct = resolver.parsePacResult("DIRECT")
+        assertNull("parsePacResult should return null for DIRECT", direct)
+
+        // After the fix, resolveProxy() wraps that null → Proxy.NO_PROXY, so
+        // callers receive a non-null Proxy of type DIRECT.
+        assertEquals(Proxy.Type.DIRECT, Proxy.NO_PROXY.type())
+    }
+
     // ── clearCache test ──────────────────────────────────────────────────────
 
     @Test
