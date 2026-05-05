@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**ntp_dig_ping_more** is a production Android app (min SDK 26, target SDK 37) for network diagnostics. It provides 9 built-in tools plus a batch "Bulk Actions" feature: NTP Check, DIG (DNS), Ping, Traceroute, Port Scanner, LAN Scanner, Google Time Sync, HTTPS Certificate Inspector, Device Info, Settings, and Bulk Actions (JSON-configurable command batches).
+**ntp_dig_ping_more** is a production Android app (min SDK 26, target SDK 37) for network diagnostics. It provides 9 built-in tools plus a batch "Bulk Actions" feature: NTP Check, DIG (DNS), Ping, Traceroute, Port Scanner, LAN Scanner, Google Time Sync, HTTPS Certificate Inspector, Device Info, Settings, and Bulk Actions (JSON-configurable command batches). Current version: **3.0**.
 
 The app uses **ADB intent extras** for headless automation — configs can be pushed to the app's private directory via `run-as`, then the app launched with `--ez auto_run true` to execute commands without user interaction. A bundled shell script (`BULKACTIONS-ADB-SCRIPT.sh`) wraps this into a fully automated workflow for CI/manual use.
 
@@ -154,5 +154,5 @@ Same workflow as the Unix script, using PowerShell for JSON parsing and native C
 ## Git Workflow
 
 - Branch naming: `feat/<feature>`, `fix/<issue>`, `improve/<topic>`
-- Merge PRs with descriptive titles; version tags at `v2.x` on `main`
-- Recent work includes Proxy PAC, Settings, Bulk Actions ADB automation, and Device Info improvements
+- Merge PRs with descriptive titles; version tags at `v3.0` on `main`
+- Recent work includes Proxy PAC (file-based loading via SAF picker), Settings, Bulk Actions ADB automation, Device Info improvements, and test suite expansion to 334 tests

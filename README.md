@@ -298,7 +298,7 @@ See [notes/20260501_BulkActions-ADB-Script-fixed.md](notes/20260501_BulkActions-
 | Persistence | AndroidX DataStore (history + global settings) |
 | Testing | JUnit 4, MockK 1.13, Coroutines Test |
 | Min SDK | 26 (Android 8.0) |
-| Target SDK | 35 (Android 15) |
+| Target SDK | 37 (Android 15) |
 
 ## Project Structure
 
@@ -377,7 +377,7 @@ adb shell am start -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
 
 ## Testing
 
-This project includes a unit test suite (255 tests) covering business logic, ViewModels, proxy resolution, and data parsing.
+This project includes a unit test suite (334 tests) covering business logic, ViewModels, proxy resolution, and data parsing.
 
 ```bash
 # Run all unit tests
