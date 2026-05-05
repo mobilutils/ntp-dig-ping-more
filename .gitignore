@@ -25,7 +25,11 @@ local.properties
 # ── Keystore & signing ─────────────────────────────────────────────────────────
 *.jks
 *.keystore
+signing.properties
 keystore.properties
+
+# -- Keystore
+.keystore/
 
 # ── Generated / captured files ────────────────────────────────────────────────
 captures/
@@ -38,9 +42,6 @@ captures/
 
 # ── Version control ────────────────────────────────────────────────────────────
 *.orig
-
-# -- Keystore
-.keystore/
 
 # -- Me related -----------------------------------------------------------------
 troubleshooting/
