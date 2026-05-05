@@ -50,6 +50,7 @@ data class BulkConfig(
     val timeoutMs: Long? = null,
     val outputAsCsv: Boolean = false,
     val urlProxyPac: String? = null,
+    val fileProxyPac: String? = null,
     val logProxy: Boolean? = null,
 )
 
@@ -116,6 +117,10 @@ object BulkConfigParser {
     @Volatile
     internal var appContext: Context? = null
 
+    /** When true, skip file existence checks during parse (for unit tests). Default: false. */
+    @Volatile
+    internal var skipFileValidation: Boolean = false
+
     /**
      * Parses a per-command `-t N` timeout from the command string.
      * Returns the timeout in milliseconds, or null if not present.
@@ -169,6 +174,29 @@ object BulkConfigParser {
             if (url.isNullOrBlank()) null else url.trim()
         }.getOrNull()
 
+        val fileProxyPac = runCatching {
+            val path = root.optString("file-proxypac", "")
+            if (path.isNullOrBlank()) null else expandTilde(path.trim())
+           }.getOrNull()
+
+            // Mutual exclusion validation — throw if both are present
+        if (!urlProxyPac.isNullOrBlank() && !fileProxyPac.isNullOrBlank()) {
+            throw IllegalArgumentException(
+                      "Cannot specify both 'url-proxypac' and 'file-proxypac'. They are mutually exclusive."
+                    )
+            }
+
+            // Validate file-proxypac exists and is readable (parse-time validation, skippable in tests)
+        if (!fileProxyPac.isNullOrBlank() && !skipFileValidation) {
+            val file = java.io.File(fileProxyPac)
+            if (!file.exists() || !file.isFile || !file.canRead()) {
+                throw IllegalArgumentException(
+                            "file-proxypac points to inaccessible file: $fileProxyPac. " +
+                                "Ensure the file exists and is readable."
+                        )
+                    }
+            }
+
         val logProxy: Boolean? = if (root.has("log-proxy")) {
             runCatching { root.optBoolean("log-proxy", false) }.getOrNull()
         } else {
@@ -188,7 +216,7 @@ object BulkConfigParser {
             }
         }
 
-        return BulkConfig(outputFile, commands, timeoutMs, outputAsCsv, urlProxyPac, logProxy)
+        return BulkConfig(outputFile, commands, timeoutMs, outputAsCsv, urlProxyPac, fileProxyPac, logProxy)
     }
 
     /** Expands `~` to the app's private files directory (no permissions needed on SDK 33+). */
