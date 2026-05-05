@@ -27,6 +27,7 @@ local.properties
 *.keystore
 signing.properties
 keystore.properties
+app/signing.properties
 
 # -- Keystore
 .keystore/
