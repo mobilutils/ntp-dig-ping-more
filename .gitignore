@@ -26,6 +26,7 @@ local.properties
 *.jks
 *.keystore
 keystore.properties
+app/signing.properties
 
 # ── Generated / captured files ────────────────────────────────────────────────
 captures/
