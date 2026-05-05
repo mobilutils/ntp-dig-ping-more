@@ -1,9 +1,15 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
+import android.content.Context
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.unmockkAll
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -13,84 +19,117 @@ import org.junit.Test
  */
 class BulkConfigParserTest {
 
-    // ────────────────────────────────────────────────────────────────
-    // Parsing helpers that mirror BulkConfigParser
-    // ────────────────────────────────────────────────────────────────
+     @Before
+    fun setUp() {
+          // Ensure skipFileValidation is false before each test
+        BulkConfigParser.skipFileValidation = false
+        BulkConfigParser.appContext = null
+      }
 
-    /**
-     * Parses a JSON string into a [BulkConfig] using a minimal pure-Kotlin parser.
-     * Mirrors the logic in BulkConfigParser.parse() for testing without Android APIs.
-     */
+      @After
+    fun tearDown() {
+        unmockkAll()
+         // Reset parser state after each test
+        BulkConfigParser.skipFileValidation = false
+        BulkConfigParser.appContext = null
+       }
+
+       // ────────────────────────────────────────────────────────────────
+       // Parsing helpers that mirror BulkConfigParser
+       // ────────────────────────────────────────────────────────────────
+
+       /**
+        * Parses a JSON string into a [BulkConfig] using a minimal pure-Kotlin parser.
+        * Mirrors the logic in BulkConfigParser.parse() for testing without Android APIs.
+        */
     private fun parseBulkConfig(json: String): BulkConfig {
         val trimmed = json.trim()
 
-        // Extract "output-file" value (supports both quoted and unquoted)
+          // Extract "output-file" value (supports both quoted and unquoted)
         val outputFile = extractStringField(trimmed, "output-file")
 
-        // Extract "timeout" value (mirrors production parsing)
+          // Extract "timeout" value (mirrors production parsing)
         val timeoutMs = extractLongField(trimmed, "timeout")?.takeIf { it > 0 }?.let { it * 1000L }
 
-        // Extract "url-proxypac" value
+          // Extract "url-proxypac" value
         val urlProxyPac = extractStringField(trimmed, "url-proxypac")
 
-        // Extract "log-proxy" value
+          // Extract "file-proxypac" value
+        var fileProxyPac = extractStringField(trimmed, "file-proxypac")
+
+          // Apply tilde expansion if appContext is set (mirrors BulkConfigParser.expandTilde)
+          // In JVM tests, appContext is null by default so tilde is preserved as-is
+        if (fileProxyPac != null && fileProxyPac.startsWith("~/")) {
+            val privateDir = BulkConfigParser.appContext?.applicationContext?.filesDir?.absolutePath
+                ?: "/sdcard"
+            fileProxyPac = "$privateDir${fileProxyPac.substring(1)}"
+           }
+
+          // Extract "log-proxy" value
         val logProxy = extractBooleanField(trimmed, "log-proxy")
 
-        // Extract "run" object
+          // Mutual exclusion validation — mirrors BulkConfigParser behavior
+        if (!urlProxyPac.isNullOrBlank() && !fileProxyPac.isNullOrBlank()) {
+            throw IllegalArgumentException(
+                 "Cannot specify both 'url-proxypac' and 'file-proxypac'. They are mutually exclusive."
+               )
+           }
+
+          // Extract "run" object
         val runMatch = Regex("""\"run\"\s*:\s*\{([^}]*)\}""").find(trimmed)
-            ?: throw IllegalArgumentException("Missing required 'run' object in configuration")
+              ?: throw IllegalArgumentException("Missing required 'run' object in configuration")
 
         val runContent = runMatch.groupValues[1]
         val commands = mutableMapOf<String, String>()
 
-        val commandPattern = Regex("""\"([^\"]+)\"\s*:\s*\"([^\"]*)\"""") 
+        val commandPattern = Regex("""\"([^\"]+)\"\s*:\s*\"([^\"]*)\"""")
         commandPattern.findAll(runContent).forEach { match ->
             val key = match.groupValues[1]
             val value = match.groupValues[2].trim()
             if (value.isNotBlank()) {
                 commands[key] = value
-            }
-        }
+              }
+          }
 
-        return BulkConfig(outputFile, commands, timeoutMs, urlProxyPac = urlProxyPac, logProxy = logProxy)
-    }
+        return BulkConfig(outputFile, commands, timeoutMs, urlProxyPac = urlProxyPac, fileProxyPac = fileProxyPac, logProxy = logProxy)
+       }
 
-    /** Extracts a long field value from JSON, returning null if not found. */
+       /** Extracts a long field value from JSON, returning null if not found. */
     private fun extractLongField(json: String, fieldName: String): Long? {
         val pattern = Regex("""\"$fieldName\"\s*:\s*(-?\d+)""")
         val match = pattern.find(json)
         return match?.groupValues?.getOrNull(1)?.toLongOrNull()
-    }
+       }
 
-    /** Extracts a string field value from JSON, returning null if not found. */
+       /** Extracts a string field value from JSON, returning null if not found. */
     private fun extractStringField(json: String, fieldName: String): String? {
         val pattern = Regex("""\"$fieldName\"\s*:\s*\"([^\"]*)\"""")
         val match = pattern.find(json)
         return match?.groupValues?.getOrNull(1)?.takeIf { it.isNotEmpty() }
-    }
+       }
 
-    /** Extracts a boolean field value from JSON, returning null if not found. */
+       /** Extracts a boolean field value from JSON, returning null if not found. */
     private fun extractBooleanField(json: String, fieldName: String): Boolean? {
         val pattern = Regex("""\"$fieldName\"\s*:\s*(true|false)""")
         val match = pattern.find(json)
         return match?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
-    }
+       }
 
-    // ────────────────────────────────────────────────────────────────
-    // Tests
-    // ────────────────────────────────────────────────────────────────
+       // ────────────────────────────────────────────────────────────────
+       // Tests
+       // ────────────────────────────────────────────────────────────────
 
-    @Test
+       @Test
     fun `parseValidConfig returns config with commands`() {
         val json = """
-            {
-                "output-file": "/tmp/output.txt",
-                "run": {
-                    "cmd1": "ping -c 4 google.com",
-                    "cmd2": "dig @1.1.1.1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "output-file": "/tmp/output.txt",
+                  "run": {
+                      "cmd1": "ping -c 4 google.com",
+                      "cmd2": "dig @1.1.1.1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
@@ -98,331 +137,331 @@ class BulkConfigParserTest {
         assertEquals(2, config.commands.size)
         assertEquals("ping -c 4 google.com", config.commands["cmd1"])
         assertEquals("dig @1.1.1.1 example.com", config.commands["cmd2"])
-    }
+       }
 
-    @Test
+       @Test
     fun `parseMissingRunKey throws exception`() {
         val json = """
-            {
-                "output-file": "/tmp/output.txt"
-            }
-        """.trimIndent()
+              {
+                  "output-file": "/tmp/output.txt"
+              }
+          """.trimIndent()
 
         val exception = try {
             parseBulkConfig(json)
             null
-        } catch (e: IllegalArgumentException) {
+           } catch (e: IllegalArgumentException) {
             e
-        }
+           }
 
         assertNotNull(exception)
         assertTrue(exception!!.message?.contains("run") == true)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseEmptyCommands returns empty map`() {
         val json = """
-            {
-                "run": {}
-            }
-        """.trimIndent()
+              {
+                  "run": {}
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertTrue(config.commands.isEmpty())
         assertNull(config.outputFile)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseIgnoresBlankCommands`() {
         val json = """
-            {
-                "run": {
-                    "cmd1": "",
-                    "cmd2": "   ",
-                    "cmd3": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "run": {
+                      "cmd1": "",
+                      "cmd2": "    ",
+                      "cmd3": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertEquals(1, config.commands.size)
         assertTrue(config.commands.containsKey("cmd3"))
-    }
+       }
 
-    @Test
+       @Test
     fun `parseMultipleCommands preserves all commands`() {
         val json = """
-            {
-                "run": {
-                    "cmd1": "ping -c 4 google.com",
-                    "cmd2": "ping -c 5 10.0.0.1",
-                    "cmd3": "dig @1.1.1.1 cybernews.com",
-                    "cmd4": "ntp pool.ntp.org",
-                    "cmd5": "port-scan -p 80-443 mobilutils.com",
-                    "cmd6": "checkcert -p 443 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "run": {
+                      "cmd1": "ping -c 4 google.com",
+                      "cmd2": "ping -c 5 10.0.0.1",
+                      "cmd3": "dig @1.1.1.1 cybernews.com",
+                      "cmd4": "ntp pool.ntp.org",
+                      "cmd5": "port-scan -p 80-443 mobilutils.com",
+                      "cmd6": "checkcert -p 443 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertEquals(6, config.commands.size)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseNoOutputFile returns null outputFile`() {
         val json = """
-            {
-                "run": {
-                    "cmd1": "ping -c 2 google.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "run": {
+                      "cmd1": "ping -c 2 google.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertNull(config.outputFile)
         assertEquals(1, config.commands.size)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseTildePath preserves tilde in JVM tests`() {
         val json = """
-            {
-                "output-file": "~/Downloads/test-run.txt",
-                "run": {
-                    "cmd1": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "output-file": "~/Downloads/test-run.txt",
+                  "run": {
+                      "cmd1": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
-        // In JVM tests without Android APIs, tilde is preserved as-is
-        // In production (Android), it would be expanded to external storage dir
+          // In JVM tests without Android APIs, tilde is preserved as-is
+          // In production (Android), it would be expanded to external storage dir
         assertTrue(config.outputFile?.startsWith("~/") == true)
         assertTrue(config.outputFile?.contains("Downloads/test-run.txt") == true)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseNonTildePath returns unchanged`() {
         val json = """
-            {
-                "output-file": "/absolute/path/output.txt",
-                "run": {
-                    "cmd1": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "output-file": "/absolute/path/output.txt",
+                  "run": {
+                      "cmd1": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertEquals("/absolute/path/output.txt", config.outputFile)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseCommandsWithWhitespace trimsValues`() {
         val json = """
-            {
-                "run": {
-                    "cmd1": "  ping -c 1 example.com  "
-                }
-            }
-        """.trimIndent()
+              {
+                  "run": {
+                      "cmd1": "  ping -c 1 example.com   "
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertEquals("ping -c 1 example.com", config.commands["cmd1"])
-    }
+       }
 
-    @Test
+       @Test
     fun `parseConfigWithTimeout returns timeoutMs`() {
         val json = """
-            {
-                "timeout": 60,
-                "run": {
-                    "cmd1": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "timeout": 60,
+                  "run": {
+                      "cmd1": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertEquals(60_000L, config.timeoutMs)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseConfigWithoutTimeout returns null`() {
         val json = """
-            {
-                "run": {
-                    "cmd1": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "run": {
+                      "cmd1": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertNull(config.timeoutMs)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseConfigWithZeroTimeout returns null`() {
         val json = """
-            {
-                "timeout": 0,
-                "run": {
-                    "cmd1": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "timeout": 0,
+                  "run": {
+                      "cmd1": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertNull(config.timeoutMs)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseConfigWithNegativeTimeout returns null`() {
         val json = """
-            {
-                "timeout": -10,
-                "run": {
-                    "cmd1": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "timeout": -10,
+                  "run": {
+                      "cmd1": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertNull(config.timeoutMs)
-    }
+       }
 
-    @Test
+       @Test
     fun `extractCommandTimeoutWithValidValueReturnsMs`() {
         assertEquals(10_000L, BulkConfigParser.extractCommandTimeout("ping -c 4 -t 10 google.com"))
         assertEquals(30_000L, BulkConfigParser.extractCommandTimeout("dig @1.1.1.1 -t 30 example.com"))
         assertEquals(5_000L, BulkConfigParser.extractCommandTimeout("port-scan -p 80 -t 5 host"))
-    }
+       }
 
-    @Test
+       @Test
     fun `extractCommandTimeoutWithNoTFlagReturnsNull`() {
         assertNull(BulkConfigParser.extractCommandTimeout("ping -c 4 google.com"))
         assertNull(BulkConfigParser.extractCommandTimeout("device-info"))
-    }
+       }
 
-    @Test
+       @Test
     fun `extractCommandTimeoutWithZeroOrNegativeReturnsNull`() {
         assertNull(BulkConfigParser.extractCommandTimeout("ping -c 4 -t 0 google.com"))
         assertNull(BulkConfigParser.extractCommandTimeout("ping -c 4 -t -5 google.com"))
-    }
+       }
 
-    @Test
+       @Test
     fun `extractCommandTimeoutWithNonNumericReturnsNull`() {
         assertNull(BulkConfigParser.extractCommandTimeout("ping -c 4 -t abc google.com"))
-    }
+       }
 
 
-    @Test
+       @Test
     fun `bulkCommandClosed_isSubtypeOfBulkCommandResult`() {
         val result = BulkCommandClosed(
             commandName = "port-scan-test",
             command = "port-scan -p 443 10.0.0.1",
             outputLines = listOf("No open ports found."),
             durationMs = 2000L,
-        )
+           )
 
-         // Verify it's a valid BulkCommandResult
+          // Verify it's a valid BulkCommandResult
         assertTrue(result is BulkCommandResult)
         assertEquals("port-scan-test", result.commandName)
         assertEquals("port-scan -p 443 10.0.0.1", result.command)
-     }
+       }
 
-    @Test
+       @Test
     fun `bulkCommandClosed_containsOutputLinesAndDuration`() {
         val lines = listOf(
-             "[2026-04-30 09:53:19] port-scan -p 443 10.0.0.1",
-             "[2026-04-30 09:53:19] Status: CLOSED (2004ms)",
-             "  No open ports found.",
-        )
+              "[2026-04-30 09:53:19] port-scan -p 443 10.0.0.1",
+              "[2026-04-30 09:53:19] Status: CLOSED (2004ms)",
+              "  No open ports found.",
+           )
         val result = BulkCommandClosed(
             commandName = "test",
             command = "port-scan -p 443 10.0.0.1",
             outputLines = lines,
             durationMs = 2004L,
-        )
+           )
 
         assertEquals(3, result.outputLines.size)
         assertEquals(2004L, result.durationMs)
         assertTrue(result.outputLines.any { "No open ports found" in it })
-     }
+       }
 
-    // ────────────────────────────────────────────────────────────────
-    // url-proxypac tests
-    // ────────────────────────────────────────────────────────────────
+       // ────────────────────────────────────────────────────────────────
+       // url-proxypac tests
+       // ────────────────────────────────────────────────────────────────
 
-    @Test
+       @Test
     fun `parseConfigWithUrlProxyPac returns value`() {
         val json = """
-            {
-                "url-proxypac": "http://proxy.corp.com/proxy.pac",
-                "run": {
-                    "cmd1": "checkcert -p 443 google.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "url-proxypac": "http://proxy.corp.com/proxy.pac",
+                  "run": {
+                      "cmd1": "checkcert -p 443 google.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertEquals("http://proxy.corp.com/proxy.pac", config.urlProxyPac)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseConfigWithoutUrlProxyPac returns null`() {
         val json = """
-            {
-                "run": {
-                    "cmd1": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "run": {
+                      "cmd1": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertNull(config.urlProxyPac)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseConfigWithBlankUrlProxyPac returns null`() {
         val json = """
-            {
-                "url-proxypac": "",
-                "run": {
-                    "cmd1": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "url-proxypac": "",
+                  "run": {
+                      "cmd1": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertNull(config.urlProxyPac)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseConfigWithUrlProxyPacAndOtherFields preserves all`() {
         val json = """
-            {
-                "output-file": "/tmp/out.txt",
-                "timeout": 30,
-                "url-proxypac": "http://pac.example.org/auto.pac",
-                "run": {
-                    "cert": "checkcert -p 443 example.com",
-                    "sync": "google-timesync"
-                }
-            }
-        """.trimIndent()
+              {
+                  "output-file": "/tmp/out.txt",
+                  "timeout": 30,
+                  "url-proxypac": "http://pac.example.org/auto.pac",
+                  "run": {
+                      "cert": "checkcert -p 443 example.com",
+                      "sync": "google-timesync"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
@@ -432,41 +471,41 @@ class BulkConfigParserTest {
         assertEquals(2, config.commands.size)
         assertEquals("checkcert -p 443 example.com", config.commands["cert"])
         assertEquals("google-timesync", config.commands["sync"])
-    }
+       }
 
 
-     // ────────────────────────────────────────────────────────────────
-     // sleep pseudo-command parsing tests
-      // ────────────────────────────────────────────────────────────────
+        // ────────────────────────────────────────────────────────────────
+        // sleep pseudo-command parsing tests
+         // ────────────────────────────────────────────────────────────────
 
-      @Test
+         @Test
     fun `parseConfigWithSleepCommand_parsesCorrectly`() {
         val json = """
-              {
-                  "run": {
-                      "wait-5s": "sleep 5"
-                  }
-              }
-          """.trimIndent()
+                {
+                    "run": {
+                        "wait-5s": "sleep 5"
+                    }
+                }
+            """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertEquals(1, config.commands.size)
         assertEquals("sleep 5", config.commands["wait-5s"])
-     }
+       }
 
-      @Test
+         @Test
     fun `parseConfigWithMultipleSleepCommands_parsesAll`() {
         val json = """
-              {
-                  "run": {
-                      "ping-google": "ping -c 3 google.com",
-                      "wait-5s": "sleep 5",
-                      "dig-example": "dig @8.8.8.8 example.com",
-                      "wait-short": "sleep 1"
-                  }
-              }
-          """.trimIndent()
+                {
+                    "run": {
+                        "ping-google": "ping -c 3 google.com",
+                        "wait-5s": "sleep 5",
+                        "dig-example": "dig @8.8.8.8 example.com",
+                        "wait-short": "sleep 1"
+                    }
+                }
+            """.trimIndent()
 
         val config = parseBulkConfig(json)
 
@@ -475,89 +514,89 @@ class BulkConfigParserTest {
         assertEquals("sleep 5", config.commands["wait-5s"])
         assertEquals("dig @8.8.8.8 example.com", config.commands["dig-example"])
         assertEquals("sleep 1", config.commands["wait-short"])
-     }
+       }
 
-      @Test
+         @Test
     fun `parseConfigWithMaxSleepValue_parsesCorrectly`() {
         val json = """
+                {
+                    "run": {
+                        "long-wait": "sleep 3600"
+                    }
+                }
+            """.trimIndent()
+
+        val config = parseBulkConfig(json)
+
+        assertEquals(1, config.commands.size)
+        assertEquals("sleep 3600", config.commands["long-wait"])
+       }
+
+       // ────────────────────────────────────────────────────────────────
+       // log-proxy tests
+       // ────────────────────────────────────────────────────────────────
+
+       @Test
+    fun `parseConfigWithLogProxyTrue returns true`() {
+        val json = """
               {
+                  "log-proxy": true,
                   "run": {
-                      "long-wait": "sleep 3600"
+                      "cmd1": "checkcert -p 443 google.com"
                   }
               }
           """.trimIndent()
 
         val config = parseBulkConfig(json)
 
-        assertEquals(1, config.commands.size)
-        assertEquals("sleep 3600", config.commands["long-wait"])
-     }
-
-    // ────────────────────────────────────────────────────────────────
-    // log-proxy tests
-    // ────────────────────────────────────────────────────────────────
-
-    @Test
-    fun `parseConfigWithLogProxyTrue returns true`() {
-        val json = """
-            {
-                "log-proxy": true,
-                "run": {
-                    "cmd1": "checkcert -p 443 google.com"
-                }
-            }
-        """.trimIndent()
-
-        val config = parseBulkConfig(json)
-
         assertEquals(true, config.logProxy)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseConfigWithLogProxyFalse returns false`() {
         val json = """
-            {
-                "log-proxy": false,
-                "run": {
-                    "cmd1": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "log-proxy": false,
+                  "run": {
+                      "cmd1": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertEquals(false, config.logProxy)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseConfigWithoutLogProxy returns null`() {
         val json = """
-            {
-                "run": {
-                    "cmd1": "ping -c 1 example.com"
-                }
-            }
-        """.trimIndent()
+              {
+                  "run": {
+                      "cmd1": "ping -c 1 example.com"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
         assertNull(config.logProxy)
-    }
+       }
 
-    @Test
+       @Test
     fun `parseConfigWithLogProxyAndOtherFields preserves all`() {
         val json = """
-            {
-                "output-file": "/tmp/out.txt",
-                "timeout": 30,
-                "url-proxypac": "http://pac.example.org/auto.pac",
-                "log-proxy": true,
-                "run": {
-                    "cert": "checkcert -p 443 example.com",
-                    "sync": "google-timesync"
-                }
-            }
-        """.trimIndent()
+              {
+                  "output-file": "/tmp/out.txt",
+                  "timeout": 30,
+                  "url-proxypac": "http://pac.example.org/auto.pac",
+                  "log-proxy": true,
+                  "run": {
+                      "cert": "checkcert -p 443 example.com",
+                      "sync": "google-timesync"
+                  }
+              }
+          """.trimIndent()
 
         val config = parseBulkConfig(json)
 
@@ -566,5 +605,116 @@ class BulkConfigParserTest {
         assertEquals("http://pac.example.org/auto.pac", config.urlProxyPac)
         assertEquals(true, config.logProxy)
         assertEquals(2, config.commands.size)
-    }
+       }
+
+       // ────────────────────────────────────────────────────────────────
+       // file-proxypac tests (using mirror parser to avoid Android API deps)
+       // ────────────────────────────────────────────────────────────────
+
+       @Test
+    fun `parseConfigWithFileProxyPac_returnsPath`() {
+        val json = """{
+                 "run": { "ping_test": "ping -c 3 google.com" },
+                 "file-proxypac": "/sdcard/Downloads/proxy.pac"
+             }"""
+
+        val config = parseBulkConfig(json)
+        assertEquals("/sdcard/Downloads/proxy.pac", config.fileProxyPac)
+       }
+
+       @Test
+    fun `parseConfigWithBothUrlAndFileProxyPac_throwsError`() {
+        val json = """{
+                 "run": { "ping_test": "ping -c 3 google.com" },
+                 "url-proxypac": "http://proxy.corp.com/proxy.pac",
+                 "file-proxypac": "/sdcard/Downloads/proxy.pac"
+             }"""
+
+        assertThrows<IllegalArgumentException> {
+            parseBulkConfig(json)
+           }
+       }
+
+       @Test
+    fun `parseConfigWithBlankFileProxyPac_returnsNull`() {
+        val json = """{
+                 "run": { "ping_test": "ping -c 3 google.com" },
+                 "file-proxypac": ""
+             }"""
+
+        val config = parseBulkConfig(json)
+        assertNull(config.fileProxyPac)
+       }
+
+       @Test
+    fun `parseConfigWithMissingFileProxyPac_returnsNull`() {
+        val json = """{
+                 "run": { "ping_test": "ping -c 3 google.com" }
+             }"""
+
+        val config = parseBulkConfig(json)
+        assertNull(config.fileProxyPac)
+       }
+
+       @Test
+    fun `parseConfigWithUrlProxyPacAndFileProxyPacPreservesOtherFields_throws`() {
+          // Test that mutual exclusion error is thrown, not silent failure
+        val json = """{
+                 "output-file": "/tmp/test.txt",
+                 "url-proxypac": "http://proxy.corp.com/proxy.pac",
+                 "file-proxypac": "/sdcard/Downloads/proxy.pac",
+                 "log-proxy": true,
+                 "run": { "ping_test": "ping -c 3 google.com" }
+             }"""
+
+        assertThrows<IllegalArgumentException> {
+            parseBulkConfig(json)
+           }
+       }
+
+       @Test
+    fun `parseConfigWithFileProxyPac_andTilde_expands_whenAppContextSet`() {
+          // Set appContext for tilde expansion (mirrors BulkConfigParser behavior)
+        val mockCtx = mockk<Context>(relaxed = true)
+        every { mockCtx.applicationContext.filesDir.absolutePath } returns "/data/user/0/app/files"
+
+        try {
+            BulkConfigParser.appContext = mockCtx
+
+            val json = """{
+                     "run": { "ping_test": "ping -c 3 google.com" },
+                     "file-proxypac": "~/proxy.pac"
+                 }"""
+
+            val config = parseBulkConfig(json)
+            assertEquals("/data/user/0/app/files/proxy.pac", config.fileProxyPac)
+          } finally {
+            BulkConfigParser.appContext = null
+           }
+       }
+
+       @Test
+    fun `parseConfigWithFileProxyPac_noTilde_returnsUnchanged`() {
+        val json = """{
+                 "run": { "ping_test": "ping -c 3 google.com" },
+                 "file-proxypac": "/sdcard/Downloads/proxy.pac"
+             }"""
+
+        val config = parseBulkConfig(json)
+        assertEquals("/sdcard/Downloads/proxy.pac", config.fileProxyPac)
+       }
+
+       // ────────────────────────────────────────────────────────────────
+       // Helper: assertThrows for JUnit 4 compatibility
+       // ────────────────────────────────────────────────────────────────
+
+    private inline fun <reified T : Throwable> assertThrows(block: () -> Unit) {
+        try {
+            block()
+            throw AssertionError("Expected ${T::class.java.simpleName} to be thrown")
+           } catch (e: Throwable) {
+            if (e is T) return
+            throw e
+           }
+        }
 }
