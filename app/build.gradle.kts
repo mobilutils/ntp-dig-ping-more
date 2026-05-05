@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.gradle.testing.jacoco.tasks.JacocoReport
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -8,16 +9,24 @@ plugins {
 }
 
 android {
+    val signingProps = file("signing.properties")
     val releaseKeystore = file(".keystore/my-release.keystore")
-    if (releaseKeystore.exists()) {
+
+    if (signingProps.exists() && releaseKeystore.exists()) {
+        val props = Properties().apply {
+            signingProps.inputStream().use { load(it) }
+        }
         signingConfigs {
             create("release") {
                 storeFile = releaseKeystore
-                storePassword = "1PassIs1PassWaitNoMaybe?"
-                keyAlias = "my-release-key"
+                storePassword = props.getProperty("RELEASE_STORE_PASSWORD") ?: ""
+                keyAlias = props.getProperty("RELEASE_KEY_ALIAS") ?: ""
             }
         }
+    } else if (!signingProps.exists()) {
+        println("WARNING: signing.properties not found. Release builds will fail.")
     }
+
     namespace = "io.github.mobilutils.ntp_dig_ping_more"
     compileSdk = 37
 
@@ -62,7 +71,7 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/LICENSE*"
             excludes += "META-INF/NOTICE*"
-            excludes += "META-INF/INDEX.LIST"       // dnsjava
+            excludes += "META-INF/INDEX.LIST"        // dnsjava
             excludes += "META-INF/io.netty.versions.properties" // netty (transitive)
         }
     }
@@ -78,18 +87,18 @@ tasks.register("jacocoUnitTestReport", JacocoReport::class) {
     dependsOn("createDebugUnitTestCoverageReport")
     group = "verification"
     description = "Generate JaCoCo coverage reports"
-    
+
     reports {
         html.required.set(true)
         xml.required.set(true)
     }
-    
+
     // Configure the execution data file
     executionData.setFrom(fileTree("app/build/jacoco/"))
-    
+
     // Configure class directories
     classDirectories.setFrom(fileTree("app/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/"))
-    
+
     // Configure source directories
     sourceDirectories.setFrom(fileTree("app/src/main/java/"))
 }
