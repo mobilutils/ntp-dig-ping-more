@@ -215,6 +215,7 @@ fun AppRoot(
                         AppScreen.GoogleTimeSync.route,
                         AppScreen.HttpsCert.route,
                         AppScreen.DeviceInfo.route,
+                        AppScreen.BulkActions.route,
                         AppScreen.Settings.route,
                         AppScreen.MoreTools.route
                     )
@@ -287,13 +288,9 @@ fun AppRoot(
                 MoreToolsScreen(
                     onNavigate = { route ->
                         navController.navigate(route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                            popUpTo(AppScreen.MoreTools.route) {}
+                         }
+                     }
                 )
             }
             composable(AppScreen.BulkActions.route) {
