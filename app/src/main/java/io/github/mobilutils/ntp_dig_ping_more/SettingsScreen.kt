@@ -1,5 +1,7 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +23,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -40,6 +44,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsKeys
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -54,8 +59,8 @@ import java.util.Locale
  * Displays:
  *  1. A numeric text field to configure the operation timeout applied to all
  *     network-based tools.
- *  2. A Proxy/PAC configuration section with toggle, PAC URL input, logging
- *     toggle, log viewer, and a "Test Proxy/PAC" button.
+ *  2. A Proxy/PAC configuration section with toggle, PAC URL/File segmented toggle,
+ *      PAC input field, logging toggle, log viewer, and a "Test Proxy/PAC" button.
  *
  * Changes are saved immediately on valid input. If the timeout field loses
  * focus while invalid, the value is reverted to the last known-good setting.
@@ -69,29 +74,38 @@ fun SettingsScreen() {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context))
     val uiState by viewModel.uiState.collectAsState()
 
+      // SAF launcher for PAC file selection
+    val pacFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        uri?.let { selectedUri ->
+            viewModel.onPacFileSelected(selectedUri)
+          }
+     }
+
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 20.dp),
+             .fillMaxSize()
+             .verticalScroll(rememberScrollState())
+             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),
-    ) {
+     ) {
 
-        // ── Network Configuration section ─────────────────────────────────────
+          // ── Network Configuration section ─────────────────────────────────────
         SettingsSectionCard(title = "Network Configuration") {
 
-            // Timeout field
+              // Timeout field
             OutlinedTextField(
                 value = uiState.timeoutInput,
                 onValueChange = viewModel::onTimeoutChange,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { focusState ->
-                        // Revert if focus leaves while input is still invalid
+                     .fillMaxWidth()
+                     .onFocusChanged { focusState ->
+                          // Revert if focus leaves while input is still invalid
                         if (!focusState.isFocused && uiState.isError) {
                             viewModel.revert()
-                        }
-                    },
+                         }
+                     },
                 label = { Text("Operation Timeout (seconds)") },
                 placeholder = { Text(SettingsKeys.DEFAULT_TIMEOUT_SECONDS.toString()) },
                 singleLine = true,
@@ -100,55 +114,97 @@ fun SettingsScreen() {
                     if (uiState.isError) {
                         Text(
                             text = "Must be between ${SettingsKeys.MIN_TIMEOUT_SECONDS} " +
-                                   "and ${SettingsKeys.MAX_TIMEOUT_SECONDS}",
+                                    "and ${SettingsKeys.MAX_TIMEOUT_SECONDS}",
                             color = MaterialTheme.colorScheme.error,
-                        )
-                    } else {
+                         )
+                     } else {
                         Text(
                             text = "Applies to total duration of scans/requests.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
+                         )
+                     }
+                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            )
-        }
+             )
+         }
 
-        // ── Proxy Configuration section ───────────────────────────────────────
+          // ── Proxy Configuration section ───────────────────────────────────────
         SettingsSectionCard(title = "Proxy Configuration") {
 
-            // Enable/disable toggle
+              // Enable/disable toggle
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-            ) {
+             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Enable Proxy",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                    )
+                     )
                     Text(
                         text = "Route traffic through a PAC-resolved proxy",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                     )
+                  }
                 Switch(
                     checked = uiState.proxyEnabled,
                     onCheckedChange = viewModel::onProxyEnabledChange,
-                )
-            }
+                 )
+             }
 
             Spacer(Modifier.height(16.dp))
 
-            // PAC URL input
+              // PAC source mode toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+             ) {
+                FilterChip(
+                    selected = uiState.pacSourceMode == PacSourceMode.URL,
+                    onClick = { viewModel.onPacSourceModeChange(PacSourceMode.URL) },
+                    label = { Text("URL") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                      ),
+                  )
+
+                FilterChip(
+                    selected = uiState.pacSourceMode == PacSourceMode.FILE,
+                    onClick = { viewModel.onPacSourceModeChange(PacSourceMode.FILE) },
+                    label = { Text("File") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                      ),
+                  )
+             }
+
+            Spacer(Modifier.height(8.dp))
+
+              // PAC URL/File input — mode-aware
             OutlinedTextField(
                 value = uiState.proxyPacUrl,
                 onValueChange = viewModel::onProxyPacUrlChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("PAC URL") },
-                placeholder = { Text("http://proxy.corp.com/proxy.pac") },
+                label = {
+                    Text(
+                        when (uiState.pacSourceMode) {
+                            PacSourceMode.URL -> "PAC URL"
+                            PacSourceMode.FILE -> "PAC File"
+                          }
+                      )
+                  },
+                placeholder = {
+                    Text(
+                        when (uiState.pacSourceMode) {
+                            PacSourceMode.URL -> "http://proxy.corp.com/proxy.pac"
+                            PacSourceMode.FILE -> "/data/user/0/app/files/saved-pac.pac"
+                          }
+                      )
+                  },
                 singleLine = true,
                 enabled = uiState.proxyEnabled,
                 isError = uiState.proxyPacUrlError != null,
@@ -157,91 +213,120 @@ fun SettingsScreen() {
                         uiState.proxyPacUrlError != null -> Text(
                             text = uiState.proxyPacUrlError!!,
                             color = MaterialTheme.colorScheme.error,
-                        )
+                         )
+                        uiState.proxyEnabled && uiState.pacSourceMode == PacSourceMode.FILE &&
+                             uiState.proxyPacUrl.isNotBlank() && !uiState.proxyPacUrl.startsWith("content://") -> {
+                            val fileName = File(uiState.proxyPacUrl).name
+                            Text(
+                                text = "Local file: $fileName",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                              )
+                           }
+                        uiState.proxyEnabled && uiState.pacSourceMode == PacSourceMode.FILE -> Text(
+                            text = "Browse to select a local .pac file",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                          )
                         uiState.proxyEnabled -> Text(
                             text = "URL to an auto-configuration (.pac) script",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            )
+                          )
+                      }
+                  },
+                keyboardOptions = when (uiState.pacSourceMode) {
+                    PacSourceMode.URL -> KeyboardOptions(keyboardType = KeyboardType.Uri)
+                    PacSourceMode.FILE -> KeyboardOptions(keyboardType = KeyboardType.Text)
+                  },
+                trailingIcon = when (uiState.pacSourceMode) {
+                    PacSourceMode.URL -> null         // No trailing icon for URL mode
+                    PacSourceMode.FILE -> {
+                        if (uiState.proxyEnabled) {
+                            {
+                                TextButton(
+                                    onClick = { pacFilePickerLauncher.launch("*/*") },
+                                  ) {
+                                    Text("Browse")
+                                   }
+                              }
+                          } else null
+                      }
+                  },
+             )
 
             Spacer(Modifier.height(8.dp))
 
-            // ── Proxy logging toggle ──────────────────────────────────────────
+              // ── Proxy logging toggle ──────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-            ) {
+             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Enable Proxy Logging",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                    )
+                     )
                     Text(
                         text = "Logs PAC fetches, resolutions, and errors to memory & file",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                     )
+                  }
                 Switch(
                     checked = uiState.proxyLoggingEnabled,
                     onCheckedChange = viewModel::onProxyLoggingEnabledChange,
                     enabled = uiState.proxyEnabled,
-                )
-            }
+                 )
+             }
 
-            // Log action buttons
+              // Log action buttons
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
+                     .fillMaxWidth()
+                     .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+             ) {
                 TextButton(
                     onClick = viewModel::onViewLogs,
                     enabled = uiState.proxyEnabled,
-                ) {
+                  ) {
                     Text("View Logs")
-                }
+                  }
                 TextButton(
                     onClick = viewModel::onClearLogs,
                     enabled = uiState.proxyEnabled,
-                ) {
+                  ) {
                     Text("Clear Logs")
-                }
-            }
+                  }
+             }
 
             Spacer(Modifier.height(8.dp))
 
-            // Test Proxy/PAC button
+              // Test Proxy/PAC button
             Button(
                 onClick = viewModel::testProxy,
                 enabled = uiState.proxyEnabled &&
                         uiState.proxyPacUrl.isNotBlank() &&
                         uiState.proxyPacUrlError == null &&
-                        !uiState.isTestingProxy,
+                         !uiState.isTestingProxy,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.secondary,
-                ),
-            ) {
+                  ),
+             ) {
                 if (uiState.isTestingProxy) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
                         color = MaterialTheme.colorScheme.onSecondary,
-                    )
+                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Testing…")
-                } else {
+                  } else {
                     Text("Test Proxy/PAC", fontWeight = FontWeight.Medium)
-                }
-            }
+                  }
+             }
 
-            // Last test result
+              // Last test result
             if (uiState.proxyTestResult != null) {
                 Spacer(Modifier.height(12.dp))
 
@@ -251,22 +336,22 @@ fun SettingsScreen() {
                     style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     color = if (isSuccess) MaterialTheme.colorScheme.secondary
                             else MaterialTheme.colorScheme.error,
-                )
+                 )
 
                 if (uiState.proxyLastTested > 0) {
                     val formatted = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault())
-                        .format(Date(uiState.proxyLastTested))
+                         .format(Date(uiState.proxyLastTested))
                     Text(
                         text = "Last tested: $formatted",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
+                      )
+                  }
+              }
+         }
+     }
 
-    // ── Log viewer dialog ─────────────────────────────────────────────────────
+      // ── Log viewer dialog ─────────────────────────────────────────────────────
     if (uiState.showLogDialog) {
         AlertDialog(
             onDismissRequest = viewModel::onDismissLogDialog,
@@ -277,30 +362,30 @@ fun SettingsScreen() {
                         text = "No logs recorded yet.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
+                     )
+                  } else {
                     LazyColumn(
                         modifier = Modifier.height(400.dp),
-                    ) {
+                      ) {
                         items(uiState.proxyLogs) { line ->
                             Text(
                                 text = line,
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontFamily = FontFamily.Monospace,
-                                ),
+                                  ),
                                 modifier = Modifier.padding(vertical = 1.dp),
-                            )
-                        }
-                    }
-                }
-            },
+                              )
+                          }
+                      }
+                  }
+              },
             confirmButton = {
                 TextButton(onClick = viewModel::onDismissLogDialog) {
                     Text("Close")
-                }
-            },
-        )
-    }
+                  }
+              },
+          )
+      }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -322,22 +407,22 @@ private fun SettingsSectionCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
+          ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-    ) {
+     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
-            )
+              )
             Spacer(Modifier.height(8.dp))
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f),
-            )
+              )
             Spacer(Modifier.height(16.dp))
             content()
-        }
-    }
+          }
+      }
 }

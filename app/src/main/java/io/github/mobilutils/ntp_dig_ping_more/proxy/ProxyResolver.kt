@@ -1,10 +1,12 @@
 package io.github.mobilutils.ntp_dig_ping_more.proxy
 
+import android.content.Context
 import io.github.mobilutils.ntp_dig_ping_more.settings.ProxyConfig
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -28,6 +30,31 @@ data class ProxyTestResult(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FileSystemIO abstraction
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Abstracts file system operations for PAC script loading.
+ *
+ * Enables unit testing by allowing a mock implementation that returns
+ * fake PAC content without touching the real filesystem.
+ */
+interface FileSystemIO {
+    fun canRead(path: String): Boolean
+    fun isFile(path: String): Boolean
+    fun exists(path: String): Boolean
+    fun readText(path: String): String
+}
+
+/** Default production implementation wrapping [java.io.File]. */
+internal object DefaultFileSystemIO : FileSystemIO {
+    override fun canRead(path: String) = File(path).canRead()
+    override fun isFile(path: String) = File(path).isFile
+    override fun exists(path: String) = File(path).exists()
+    override fun readText(path: String) = File(path).readText(Charsets.UTF_8)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Proxy resolver
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -36,8 +63,8 @@ data class ProxyTestResult(
  * evaluating a PAC script from the user's configured PAC URL.
  *
  * **Caching:**
- *  - The PAC script body is cached for [PAC_CACHE_TTL_MS] (5 minutes).
- *  - Resolved proxy results are cached per host for the same TTL.
+ *   - The PAC script body is cached for [PAC_CACHE_TTL_MS] (5 minutes).
+ *   - Resolved proxy results are cached per host for the same TTL.
  *
  * **Failure handling:** Any failure (network, JS eval, parse) silently
  * returns `null`, meaning the caller should use a DIRECT connection.
@@ -46,13 +73,16 @@ data class ProxyTestResult(
  * @param jsEngine            JS engine used to evaluate `FindProxyForURL`.
  * @param staticPacUrl        Optional PAC URL override. When non-null, the resolver
  *                            uses this URL directly instead of reading from
- *                            [settingsRepository]. Used by BulkActions for
+ *                             [settingsRepository]. Used by BulkActions for
  *                            config-level `url-proxypac` without touching persisted settings.
  * @param logger              Optional [ProxyPacLogger] for high-level event logging.
  *                            When `null`, no logging occurs regardless of [forceLogging].
  * @param forceLogging        When `true`, logging is enabled even if [ProxyPacLogger.enabled]
  *                            is `false`. Used by BulkActions when `"log-proxy": true` is set
  *                            in the JSON config.
+ * @param appContext          Application context for file-based PAC support. When non-null,
+ *                            the resolver can load PAC scripts from local filesystem paths
+ *                             (in addition to HTTP/HTTPS URLs).
  */
 class ProxyResolver(
     private val settingsRepository: SettingsRepository,
@@ -60,11 +90,12 @@ class ProxyResolver(
     private val staticPacUrl: String? = null,
     private val logger: ProxyPacLogger? = null,
     private val forceLogging: Boolean = false,
+    private val appContext: Context? = null,
 ) {
 
     companion object {
         /** Cache TTL for both the PAC script body and per-host resolutions. */
-        private const val PAC_CACHE_TTL_MS = 5 * 60 * 1000L   // 5 minutes
+        private const val PAC_CACHE_TTL_MS = 5 * 60 * 1000L    // 5 minutes
 
         /** Connectivity-check URL used by [testProxy]. */
         private const val TEST_URL = "http://connectivitycheck.gstatic.com/generate_204"
@@ -87,7 +118,7 @@ class ProxyResolver(
          */
         fun forStaticPacUrl(
             pacUrl: String,
-            context: android.content.Context,
+            context: Context,
             jsEngine: JsEngine = QuickJsEngine(),
             logger: ProxyPacLogger? = null,
             forceLogging: Boolean = false,
@@ -97,6 +128,35 @@ class ProxyResolver(
             staticPacUrl = pacUrl,
             logger = logger,
             forceLogging = forceLogging,
+        )
+
+        /**
+         * Creates a [ProxyResolver] without file-based PAC support.
+         *
+         * Use this to migrate existing call sites; eventually remove after migration.
+         *
+         * @deprecated Use the constructor with Context for file-based PAC, or use [forStaticPacUrl].
+         */
+        @Deprecated(
+            message = "Use constructor with Context for file-based PAC, or forStaticPacUrl()",
+            replaceWith = ReplaceWith(
+                "ProxyResolver(settingsRepository, jsEngine, staticPacUrl, logger, forceLogging, appContext)",
+                "io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver",
+            ),
+        )
+        fun withoutFileSupport(
+            settingsRepository: SettingsRepository,
+            jsEngine: JsEngine,
+            staticPacUrl: String? = null,
+            logger: ProxyPacLogger? = null,
+            forceLogging: Boolean = false,
+        ): ProxyResolver = ProxyResolver(
+            settingsRepository = settingsRepository,
+            jsEngine = jsEngine,
+            staticPacUrl = staticPacUrl,
+            logger = logger,
+            forceLogging = forceLogging,
+            appContext = null,
         )
     }
 
@@ -133,7 +193,7 @@ class ProxyResolver(
      * Resolves the proxy to use for [targetUrl].
      *
      * @return A [Proxy] instance, or `null` if the connection should be DIRECT
-     *         (proxy disabled, resolution failure, or PAC says DIRECT).
+     *          (proxy disabled, resolution failure, or PAC says DIRECT).
      */
     suspend fun resolveProxy(targetUrl: String): Proxy? = withContext(Dispatchers.IO) {
         try {
@@ -158,8 +218,19 @@ class ProxyResolver(
                 }
             }
 
-            // Fetch (or use cached) PAC script
-            val pacScript = fetchPacScript(effectivePacUrl) ?: return@withContext null
+            // Fetch (or use cached) PAC script — dispatch by source type
+            val pacScript = when {
+                effectivePacUrl.startsWith("http://") || effectivePacUrl.startsWith("https://") ->
+                    fetchPacScript(effectivePacUrl)
+                else ->
+                    // Treat as filesystem path — requires Context for file access
+                    if (appContext != null) {
+                        fetchPacFromFile(effectivePacUrl)
+                    } else {
+                        logIfEnabled("PAC_FETCH_FAIL reason=no Context for file access")
+                        null
+                    }
+            } ?: return@withContext null
 
             // Evaluate FindProxyForURL
             val pacResult = try {
@@ -221,8 +292,8 @@ class ProxyResolver(
                 val via = if (proxy != null && proxy.type() != Proxy.Type.DIRECT) "via ${proxy.address()}" else "DIRECT"
                 logIfEnabled("PROXY_TEST result=SUCCESS latency=${latencyMs}ms via=$via")
                 ProxyTestResult(
-                    success   = true,
-                    message   = "✓ HTTP $code $via (${latencyMs}ms)",
+                    success    = true,
+                    message    = "✓ HTTP $code $via (${latencyMs}ms)",
                     latencyMs = latencyMs,
                 )
             } else {
@@ -298,6 +369,44 @@ class ProxyResolver(
     }
 
     /**
+     * Fetches a PAC script from an absolute filesystem path.
+     * Uses the same caching contract as fetchPacScript().
+     *
+     * @param filePath Absolute path to the .pac file.
+     * @param fs       FileSystemIO abstraction (default: [DefaultFileSystemIO]).
+     * @return The PAC script content, or `null` if the file is inaccessible.
+     */
+    internal fun fetchPacFromFile(
+        filePath: String,
+        fs: FileSystemIO = DefaultFileSystemIO,
+    ): String? {
+        if (!fs.exists(filePath) || !fs.isFile(filePath) || !fs.canRead(filePath)) {
+            logIfEnabled("PAC_FETCH_FAIL path=$filePath reason=file not accessible")
+            return null
+        }
+
+        val now = System.currentTimeMillis()
+        if (cachedPacScript != null && cachedPacUrl == filePath &&
+            now - pacFetchedAt < PAC_CACHE_TTL_MS
+        ) {
+            return cachedPacScript
+        }
+
+        return try {
+            val script = fs.readText(filePath)
+
+            cachedPacScript = script
+            cachedPacUrl = filePath
+            pacFetchedAt = now
+            logIfEnabled("PAC_FETCH_SUCCESS path=$filePath")
+            script
+        } catch (e: Exception) {
+            logIfEnabled("PAC_FETCH_FAIL path=$filePath reason=${e.message}")
+            null
+        }
+    }
+
+    /**
      * Extracts the hostname from a URL string.
      */
     private fun extractHost(url: String): String? = try {
@@ -314,10 +423,10 @@ class ProxyResolver(
      * Parses a PAC result string into a [Proxy].
      *
      * Supports:
-     *  - `"DIRECT"` → returns `null`
-     *  - `"PROXY host:port"` → returns [Proxy.Type.HTTP]
-     *  - `"SOCKS host:port"` → returns [Proxy.Type.SOCKS]
-     *  - Fallback chains separated by `;` — uses the first valid entry
+     *   - `"DIRECT"` → returns `null`
+     *   - `"PROXY host:port"` → returns [Proxy.Type.HTTP]
+     *   - `"SOCKS host:port"` → returns [Proxy.Type.SOCKS]
+     *   - Fallback chains separated by `;` — uses the first valid entry
      *
      * @return A [Proxy] or `null` (meaning DIRECT).
      */

@@ -1,5 +1,7 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
+import android.content.Context
+import android.net.Uri
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyPacLogger
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyTestResult
@@ -21,6 +23,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -30,7 +33,7 @@ import org.junit.Test
  * Unit tests for [SettingsViewModel].
  *
  * Tests both the existing timeout functionality and the new proxy/PAC
- * configuration and logging features.
+ * configuration, logging, and file-based PAC features.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
@@ -52,7 +55,7 @@ class SettingsViewModelTest {
         coEvery { settingsRepository.proxyConfigFlow } returns flowOf(ProxyConfig())
         every { proxyPacLogger.getLogs() } returns emptyList()
 
-        viewModel = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger)
+        viewModel = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger, appContext = null)
     }
 
     @After
@@ -98,7 +101,7 @@ class SettingsViewModelTest {
             )
         )
 
-        val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger)
+        val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger, appContext = null)
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(vm.uiState.value.proxyEnabled)
@@ -114,7 +117,7 @@ class SettingsViewModelTest {
             ProxyConfig(loggingEnabled = true)
         )
 
-        val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger)
+        val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger, appContext = null)
         testDispatcher.scheduler.advanceUntilIdle()
 
         verify { proxyPacLogger.enabled = true }
@@ -357,5 +360,87 @@ class SettingsViewModelTest {
         viewModel.onDismissLogDialog()
 
         assertFalse(viewModel.uiState.value.showLogDialog)
+    }
+
+    // ── PAC source mode ──────────────────────────────────────────────────────
+
+    @Test
+    fun `initial state has URL as default source mode`() = runTest {
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(PacSourceMode.URL, viewModel.uiState.value.pacSourceMode)
+    }
+
+    @Test
+    fun `onPacSourceModeChange switches to FILE and clears URL`() = runTest {
+        // Set a URL first
+        viewModel.onProxyPacUrlChange("http://proxy.corp.com/proxy.pac")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Switch to FILE mode
+        viewModel.onPacSourceModeChange(PacSourceMode.FILE)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(PacSourceMode.FILE, viewModel.uiState.value.pacSourceMode)
+        assertEquals("", viewModel.uiState.value.proxyPacUrl)
+        assertNull(viewModel.uiState.value.proxyPacUrlError)
+        io.mockk.verify { proxyResolver.clearCache() }
+        coVerify { settingsRepository.saveProxyConfig(any()) }
+    }
+
+    @Test
+    fun `onPacSourceModeChange switches to URL and clears file path`() = runTest {
+        // Set a file path
+        viewModel.onPacSourceModeChange(PacSourceMode.FILE)
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.onProxyPacUrlChange("/data/user/0/app/files/saved-pac.pac")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Switch back to URL mode
+        viewModel.onPacSourceModeChange(PacSourceMode.URL)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(PacSourceMode.URL, viewModel.uiState.value.pacSourceMode)
+        assertEquals("", viewModel.uiState.value.proxyPacUrl)
+    }
+     // ── PAC file selection (copy-to-storage) ─────────────────────────────────
+     // NOTE: onPacFileSelected requires Android ContentResolver APIs (Uri.parse, openInputStream).
+     // These are tested via instrumented tests or cannot be unit-tested without Robolectric.
+     // The copy-to-storage logic is integration-tested through the SettingsScreen composable.
+
+     // ── Validation: FILE mode ────────────────────────────────────────────────
+
+     @Test
+    fun `validatePacUrl in FILE mode accepts internal private storage path`() {
+        val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger, appContext = null)
+          // Internal paths from copy-to-storage are always valid (no existence check at validate time)
+        assertNull(vm.validatePacUrl("/data/user/0/app/files/saved-pac.pac", PacSourceMode.FILE))
+         }
+
+     @Test
+    fun `validatePacUrl in FILE mode rejects empty path`() {
+        val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger, appContext = null)
+        val error = vm.validatePacUrl("/", PacSourceMode.FILE)
+        assertTrue(error != null && error.contains("Invalid"))
+         }
+
+     @Test
+    fun `validatePacUrl in FILE mode accepts absolute path with special chars`() {
+        val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger, appContext = null)
+          // Paths with dots and hyphens are valid
+        assertNull(vm.validatePacUrl("/data/user/0/app/files/my-saved.pac", PacSourceMode.FILE))
+         }
+
+     // ── Validation: URL mode (unchanged) ─────────────────────────────────────
+
+
+    @Test
+    fun `validatePacUrl in URL mode accepts valid HTTP URL`() {
+        assertNull(viewModel.validatePacUrl("http://proxy.corp.com/proxy.pac", PacSourceMode.URL))
+    }
+
+    @Test
+    fun `validatePacUrl in URL mode rejects FTP URL`() {
+        val error = viewModel.validatePacUrl("ftp://proxy.corp.com/proxy.pac", PacSourceMode.URL)
+        assertTrue(error != null && error.contains("http"))
     }
 }
