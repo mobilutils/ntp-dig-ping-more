@@ -186,16 +186,28 @@ object BulkConfigParser {
                     )
             }
 
-            // Validate file-proxypac exists and is readable (parse-time validation, skippable in tests)
+             // Validate file-proxypac exists and is readable (parse-time validation, skippable in tests)
         if (!fileProxyPac.isNullOrBlank() && !skipFileValidation) {
             val file = java.io.File(fileProxyPac)
-            if (!file.exists() || !file.isFile || !file.canRead()) {
+            if (!file.exists()) {
                 throw IllegalArgumentException(
-                            "file-proxypac points to inaccessible file: $fileProxyPac. " +
-                                "Ensure the file exists and is readable."
-                        )
-                    }
-            }
+                              "file-proxypac file not found: $fileProxyPac. " +
+                                  "Ensure the file exists and is readable by the app."
+                         )
+                     }
+            if (!file.canRead()) {
+                throw IllegalArgumentException(
+                              "file-proxypac is not readable: $fileProxyPac. " +
+                                  "The app cannot access /sdcard/Download/ directly. " +
+                                  "Solutions:\n" +
+                                  "   1. Move the .pac file to the app's private dir via ADB:\n" +
+                                  "     adb shell run-as io.github.mobilutils.ntp_dig_ping_more cp /sdcard/Download/factorized_proxy.pac files/\n" +
+                                  "     Then set \"file-proxypac\": \"files/factorized_proxy.pac\"\n" +
+                                  "   2. Use url-proxypac instead (HTTP/HTTPS URL).\n" +
+                                  "   3. When using the ADB script, it auto-copies /sdcard/ PAC files to the app's private dir."
+                         )
+                     }
+             }
 
         val logProxy: Boolean? = if (root.has("log-proxy")) {
             runCatching { root.optBoolean("log-proxy", false) }.getOrNull()
@@ -373,8 +385,9 @@ class BulkActionsRepository(
         cancellationToken: AtomicBoolean = AtomicBoolean(false),
         onProgress: ((BulkProgress) -> Unit)? = null,
     ): List<BulkCommandResult> {
-        // Set up proxy resolver from config-level PAC URL (if any)
-        bulkProxyResolver = config.urlProxyPac?.let {
+        // Set up proxy resolver from whichever PAC source is available (url or file)
+        val pacSource = config.urlProxyPac ?: config.fileProxyPac
+        bulkProxyResolver = pacSource?.let {
             buildProxyResolver(it, forceLogging = config.logProxy == true)
         }
 

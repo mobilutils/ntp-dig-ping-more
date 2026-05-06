@@ -166,6 +166,33 @@ echo "  Push path:      $PUSH_PATH"
 echo "  Results dir:    $RESULTS_DIR"
 echo "================================================================"
 
+# -- Helper: push a PAC file to app's private dir -------------------
+# When the config references a PAC file at /sdcard/..., copy it on-device
+# (the file exists on the device, not on the host). Returns the new path.
+push_pac_file() {
+    local pac_path="$1"
+       # Only handle /sdcard/ paths — HTTP(S) URLs are fetched over network
+    case "$pac_path" in
+          /sdcard/*)
+            local filename
+            filename="$(basename "$pac_path")"
+            local private_pac="$PRIVATE_DIR/$filename"
+               # Check if already present; skip copy if so
+            if ! adb shell "run-as $APP_ID test -f '$private_pac'" 2>/dev/null | grep -q "true"; then
+                echo "    Copying PAC file (on-device): $pac_path -> $private_pac" >&2
+                # File is on device — use adb shell cat to read it, pipe to run-as for writing
+                adb shell "cat '$pac_path'" | adb shell "run-as $APP_ID sh -c 'cat > $private_pac'" ||                     echo "    WARNING: Failed to copy PAC file to private dir." >&2
+            fi
+              # Print ONLY the result path to stdout (everything else goes to stderr)
+            echo "$private_pac"
+               ;;
+          *)
+            echo "$pac_path"
+               ;;
+    esac
+}
+
+
 # -- 1. Ensure emulator is running ----------------------------------
 if [ "$REAL_DEVICE" = true ]; then
     echo ""
@@ -199,16 +226,39 @@ else
     echo "[1/8] Device/emulator already running"
 fi
 
-# -- 2. Push config file to app's private directory -----------------
+# -- 2. Push config file + any referenced PAC files -----------------
 echo ""
 echo "[2/8] Pushing config file..."
+
+# Extract and push file-proxypac (if present) — the app can't read /sdcard/ directly
+PAC_PATH=$(json_str_field "$CONFIG_SOURCE" "file-proxypac")
+if [ -n "$PAC_PATH" ]; then
+    echo "  Resolving PAC file: $PAC_PATH"
+    PRIVATE_PAC_PATH=$(push_pac_file "$PAC_PATH")
+    if [ "$PRIVATE_PAC_PATH" != "$PAC_PATH" ]; then
+        echo "  PAC relocated to private dir: $PRIVATE_PAC_PATH"
+        # Rewrite the config JSON with the corrected PAC path before pushing
+        sed "s|$PAC_PATH|$PRIVATE_PAC_PATH|g" "$CONFIG_SOURCE" > "${CONFIG_SOURCE}.tmp"
+        CONFIG_TMP="${CONFIG_SOURCE}.tmp"
+    else
+        CONFIG_TMP="$CONFIG_SOURCE"
+    fi
+else
+    CONFIG_TMP="$CONFIG_SOURCE"
+fi
+
 # FIX 2 + 3: ADB cannot write directly to app's private dir (shell user has no permission).
 # Host-side cat pipes file content into a single adb shell that runs as the app's UID via run-as.
 # This avoids both the shell-user permission issue (push) and the /sdcard/ issue (run-as can't
 # read /sdcard because it runs in the app's mount namespace).
 # a substituted command would look like :
 # cat notes/config-files_bulk-actions/blkacts_single_ping_only.json | adb shell "run-as io.github.mobilutils.ntp_dig_ping_more sh -c 'cat > /data/user/0/io.github.mobilutils.ntp_dig_ping_more/files/blkacts_single_ping_only.json'"
-cat "$CONFIG_SOURCE" | adb shell "run-as $APP_ID sh -c 'cat > $PUSH_PATH'"
+cat "$CONFIG_TMP" | adb shell "run-as $APP_ID sh -c 'cat > $PUSH_PATH'"
+
+# Clean up temp file if we created one
+if [ "${CONFIG_TMP}" != "$CONFIG_SOURCE" ]; then
+    rm -f "${CONFIG_SOURCE}.tmp"
+fi
 
 # -- 3. Verify file was written -------------------------------------
 echo ""
@@ -316,7 +366,7 @@ if [ -n "$OUTPUT_FILE" ]; then
         DEVICE_OUTPUT_FILE="$OUTPUT_FILE"
     fi
 
-    TIMESTAMP=$(date '+%Y%m%d-%H:%M:%S')
+    TIMESTAMP=$(date '+%Y%m%d-%H%M%S')
     LOCAL_OUTPUT="$RESULTS_DIR/${TIMESTAMP}_$(basename "$DEVICE_OUTPUT_FILE")"
      # LOCAL_OUTPUT="$RESULTS_DIR/$(basename "$DEVICE_OUTPUT_FILE")"
 
