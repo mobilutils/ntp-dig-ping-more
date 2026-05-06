@@ -565,6 +565,82 @@ fun BulkActionsScreen(
             }
         }
 
+         // ── Config parse error (always visible when config failed to load) ──
+        AnimatedVisibility(
+            visible = !uiState.configLoaded && uiState.validationMessage is BulkActionsViewModel.ValidationMessage.Error,
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(200)),
+         ) {
+            val errorMsg = (uiState.validationMessage as? BulkActionsViewModel.ValidationMessage.Error)?.text ?: ""
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                 ),
+             ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                     ) {
+                        Icon(
+                            imageVector = Icons.Filled.Error,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(20.dp),
+                         )
+                        Text(
+                            text = "Config error",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                         )
+                     }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = errorMsg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                     )
+                 }
+             }
+         }
+
+         // ── Config info (e.g. output-file fallback suggestion) ──
+        AnimatedVisibility(
+            visible = uiState.validationMessage is BulkActionsViewModel.ValidationMessage.Info,
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(200)),
+         ) {
+            val infoMsg = (uiState.validationMessage as? BulkActionsViewModel.ValidationMessage.Info)?.text ?: ""
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                 ),
+             ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                 ) {
+                    Icon(
+                        imageVector = Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(20.dp),
+                     )
+                    Text(
+                        text = infoMsg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                     )
+                 }
+             }
+         }
+
         // ── Error banner ──
         AnimatedVisibility(
             visible = uiState.outputFileWritten == false,
