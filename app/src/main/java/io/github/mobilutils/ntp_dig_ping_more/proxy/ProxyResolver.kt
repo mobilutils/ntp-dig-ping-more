@@ -128,6 +128,7 @@ class ProxyResolver(
             staticPacUrl = pacUrl,
             logger = logger,
             forceLogging = forceLogging,
+            appContext = context,
         )
 
         /**
