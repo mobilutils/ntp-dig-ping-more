@@ -201,8 +201,8 @@ fun HttpsCertScreen(
                 exit    = fadeOut(tween(200)),
             ) {
                 when (val state = uiState) {
-                    is HttpsCertUiState.Success        -> CertResultContent(info = state.info, warning = null, onRetry = { vm.fetchCert() })
-                    is HttpsCertUiState.PartialSuccess -> CertResultContent(info = state.info, warning = state.warningMessage, onRetry = { vm.fetchCert() })
+                    is HttpsCertUiState.Success        -> CertResultContent(info = state.info, chain = listOf(state.info), warning = null, onRetry = { vm.fetchCert() })
+                    is HttpsCertUiState.PartialSuccess -> CertResultContent(info = state.chain.first(), chain = state.chain, warning = state.warningMessage, onRetry = { vm.fetchCert() })
                     is HttpsCertUiState.Error          -> CertErrorCard(message = state.message, onRetry = { vm.fetchCert() })
                     else                               -> {}
                 }
@@ -235,6 +235,7 @@ fun HttpsCertScreen(
 @Composable
 private fun CertResultContent(
     info:    CertificateInfo,
+    chain:   List<CertificateInfo>,
     warning: String?,
     onRetry: () -> Unit,
 ) {

@@ -765,8 +765,20 @@ class BulkActionsRepository(
                         }
                     is HttpsCertResult.UntrustedChain -> {
                         lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: UNTRUSTED - ${result.reason} (${duration}ms)")
+                        result.chain.forEachIndexed { index, ci ->
+                            val tag = when {
+                                index == 0 -> "[Leaf]"
+                                index == result.chain.size - 1 -> "[Root]"
+                                else -> "[Intermediate $index]"
+                               }
+                            lines.add("         $tag Subject: CN=${ci.subject.cn ?: "(none)"}")
+                            lines.add("          Issuer:  CN=${ci.issuer.cn ?: "(none)"}")
+                            lines.add("          Valid:          ${ci.notBefore} to ${ci.notAfter}")
+                            lines.add("          SHA256:         ${ci.sha256Fingerprint}")
+                            if (index < result.chain.size - 1) lines.add("               ---")
+                           }
                         warningResult = BulkCommandWarning(name, cmd, lines, duration)
-                        }
+                         }
                     is HttpsCertResult.Error ->
                         lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: ERROR - ${result.message} (${duration}ms)")
                     }
