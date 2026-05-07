@@ -59,9 +59,11 @@ enum class CertValidityStatus {
 }
 
 /**
- * All metadata extracted from a leaf X.509 TLS certificate.
+ * All metadata extracted from an X.509 TLS certificate in the chain.
  *
  * All date strings are ISO-8601 formatted in UTC.
+ *
+ * @param chainPosition 0-based index in the chain (0 = leaf, 1 = first intermediate, etc.)
  */
 data class CertificateInfo(
     val host: String,
@@ -81,6 +83,7 @@ data class CertificateInfo(
     val version:            Int,     // X.509 certificate version (1, 2, or 3)
     val signatureAlgorithm: String,  // e.g. "SHA256withRSA"
     val chainDepth:         Int,     // number of certs in chain (1 = leaf only)
+    val chainPosition:      Int,      // 0-based index (0 = leaf)
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,10 +111,10 @@ sealed class HttpsCertResult {
 
     /**
       * The certificate chain is not trusted by the system (e.g. untrusted root,
-      * unknown CA). The full certificate data is always extracted and exposed
-      * so the UI can display it with a warning.
+      * unknown CA). The full certificate chain data is always extracted and exposed
+      * so the UI can display each cert in the chain with a warning.
       */
-    data class UntrustedChain(val info: CertificateInfo, val reason: String) : HttpsCertResult()
+    data class UntrustedChain(val chain: List<CertificateInfo>, val reason: String) : HttpsCertResult()
 
      /** Any other error during the handshake or parsing phase. */
     data class Error(val message: String) : HttpsCertResult()
@@ -232,27 +235,27 @@ class HttpsCertRepository(
                 ?: socket.session.peerCertificates.filterIsInstance<X509Certificate>().toTypedArray()
             if (chain.isEmpty()) return@withContext HttpsCertResult.Error("No certificate in chain")
 
-            val info = parseCertificate(host, port, chain)
-            HttpsCertResult.Success(info)
+            val chainInfo = parseChain(host, port, chain)
+            HttpsCertResult.Success(chainInfo.first())
 
         } catch (e: CertificateExpiredException) {
             // Chain was recorded before PKIX expiry check — always available.
-            val info = parseCertificate(host, port, recorder.chain!!)
-            HttpsCertResult.CertExpired(info)
+            val chainInfo = parseChain(host, port, recorder.chain!!)
+            HttpsCertResult.CertExpired(chainInfo.first())
 
         } catch (e: SSLHandshakeException) {
             // Could be self-signed, wrong host, or other trust failure.
             // Chain was recorded before PKIX validation — always available.
-            val info = parseCertificate(host, port, recorder.chain!!)
+            val chainInfo = parseChain(host, port, recorder.chain!!)
             val reason = e.localizedMessage ?: "TLS handshake failed"
 
             // Distinguish expired specifically (PKIX embeds it in the handshake ex)
             val causeIsExpiry = generateSequence(e.cause) { it.cause }
                 .any { it is CertificateExpiredException }
             if (causeIsExpiry) {
-                HttpsCertResult.CertExpired(info)
+                HttpsCertResult.CertExpired(chainInfo.first())
             } else {
-                HttpsCertResult.UntrustedChain(info, reason)
+                HttpsCertResult.UntrustedChain(chainInfo, reason)
             }
 
         } catch (e: SocketTimeoutException) {
@@ -359,43 +362,48 @@ class HttpsCertRepository(
 
     // ── Certificate parsing ───────────────────────────────────────────────────
 
-    private fun parseCertificate(
+     /**
+       * Parses every certificate in the chain and returns a list ordered
+       * leaf → intermediate(s) → root.
+       */
+    private fun parseChain(
         host: String,
         port: Int,
         chain: Array<out X509Certificate>,
-    ): CertificateInfo {
-        val leaf = chain[0]
+     ): List<CertificateInfo> {
+        return chain.mapIndexed { index, cert ->
+            val now = Date()
+            val notAfter = cert.notAfter
+            val isExpired = now.after(notAfter)
+            val daysLeft = TimeUnit.MILLISECONDS.toDays(notAfter.time - now.time)
+            val status = when {
+                isExpired -> CertValidityStatus.EXPIRED
+                daysLeft <= EXPIRY_WARN_DAYS -> CertValidityStatus.EXPIRING_SOON
+                else -> CertValidityStatus.VALID
+             }
 
-        val now      = Date()
-        val notAfter = leaf.notAfter
-        val isExpired = now.after(notAfter)
-        val daysLeft  = TimeUnit.MILLISECONDS.toDays(notAfter.time - now.time)
-        val status = when {
-            isExpired                  -> CertValidityStatus.EXPIRED
-            daysLeft <= EXPIRY_WARN_DAYS -> CertValidityStatus.EXPIRING_SOON
-            else                       -> CertValidityStatus.VALID
-        }
-
-        return CertificateInfo(
-            host                = host,
-            port                = port,
-            subject             = parseDn(leaf.subjectX500Principal),
-            issuer              = parseDn(leaf.issuerX500Principal),
-            notBefore           = "${ISO_FMT.format(leaf.notBefore)} UTC",
-            notAfter            = "${ISO_FMT.format(leaf.notAfter)} UTC",
-            validityStatus      = status,
-            daysUntilExpiry     = daysLeft,
-            serialNumber        = leaf.serialNumber.toString(16).uppercase(),
-            sha256Fingerprint   = fingerprint(leaf, "SHA-256"),
-            sha1Fingerprint     = fingerprint(leaf, "SHA-1"),
-            subjectAltNames     = parseSans(leaf),
-            keyAlgorithm        = leaf.publicKey.algorithm,
-            keySize             = keySize(leaf),
-            version             = leaf.version,
-            signatureAlgorithm  = leaf.sigAlgName,
-            chainDepth          = chain.size,
-        )
-    }
+            CertificateInfo(
+                host = host,
+                port = port,
+                subject = parseDn(cert.subjectX500Principal),
+                issuer = parseDn(cert.issuerX500Principal),
+                notBefore = "${ISO_FMT.format(cert.notBefore)} UTC",
+                notAfter = "${ISO_FMT.format(cert.notAfter)} UTC",
+                validityStatus = status,
+                daysUntilExpiry = daysLeft,
+                serialNumber = cert.serialNumber.toString(16).uppercase(),
+                sha256Fingerprint = fingerprint(cert, "SHA-256"),
+                sha1Fingerprint = fingerprint(cert, "SHA-1"),
+                subjectAltNames = parseSans(cert),
+                keyAlgorithm = cert.publicKey.algorithm,
+                keySize = keySize(cert),
+                version = cert.version,
+                signatureAlgorithm = cert.sigAlgName,
+                chainDepth = chain.size,
+                chainPosition = index,
+             )
+         }
+     }
 
     /** Parses a [X500Principal] into its component parts. */
     private fun parseDn(principal: X500Principal): DistinguishedName {

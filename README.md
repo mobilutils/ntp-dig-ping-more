@@ -103,15 +103,15 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 
 ### 🔒 HTTPS Certificate Inspector
 - Enter any hostname and port (defaults to `google.com:443`)
-- Performs a real TLS handshake and extracts the peer's leaf certificate
+- Performs a real TLS handshake and extracts the peer's certificate chain
 - Displays:
-  - Subject / Issuer distinguished names (CN, O, OU, C)
-  - Validity period (Not Before / Not After) with days-until-expiry
-  - Validity status: ✅ Valid · ⚠️ Expiring Soon · ❌ Expired
-  - Serial number, SHA-256 and SHA-1 fingerprints (tap to copy)
-  - Subject Alternative Names (SANs)
-  - Key algorithm, key size, signature algorithm, chain depth
-- Detects untrusted chains and self-signed certificates without bypassing security
+   - Subject / Issuer distinguished names (CN, O, OU, C) for each cert in the chain
+   - Validity period (Not Before / Not After) with days-until-expiry
+   - Validity status: ✅ Valid · ⚠️ Expiring Soon · ❌ Expired · ⚠️ Untrusted
+   - Serial number, SHA-256 and SHA-1 fingerprints (tap to copy)
+   - Subject Alternative Names (SANs)
+   - Key algorithm, key size, signature algorithm, chain depth
+- For **untrusted** or **expired** certificates, displays the **full chain** — leaf → intermediate(s) → root — with `[Leaf]`, `[Intermediate N]`, and `[Root]` markers so you can inspect each cert's details even when trust validation fails
 - Last 5 inspected hosts kept as clickable history (persisted across app restarts)
 - Supports SSL tunneling through HTTP CONNECT when Proxy PAC is enabled
 
@@ -377,7 +377,7 @@ adb shell am start -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
 
 ## Testing
 
-This project includes a unit test suite (334 tests) covering business logic, ViewModels, proxy resolution, and data parsing.
+This project includes a unit test suite (340+ tests) covering business logic, ViewModels, proxy resolution, data parsing, and certificate chain display formatting.
 
 ```bash
 # Run all unit tests
