@@ -225,7 +225,7 @@ class HttpsCertViewModelTest {
 
         viewModel.onHostChange("expired.com")
         coEvery { repository.fetchCertificate("expired.com", 443) } returns
-            HttpsCertResult.CertExpired(expiredCert)
+            HttpsCertResult.CertExpired(listOf(expiredCert), "Certificate expired 2025-01-01 00:00:00 UTC")
 
         viewModel.fetchCert()
         testDispatcher.scheduler.advanceUntilIdle()
@@ -557,7 +557,7 @@ class HttpsCertViewModelTest {
         )
 
         coEvery { repository.fetchCertificate("expired.com", 443) } returns
-            HttpsCertResult.CertExpired(expiredCert)
+            HttpsCertResult.CertExpired(listOf(expiredCert), "Certificate expired 2025-01-01 00:00:00 UTC")
 
         viewModel.fetchCert()
         testDispatcher.scheduler.advanceUntilIdle()

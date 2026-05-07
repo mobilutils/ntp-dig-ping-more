@@ -116,8 +116,8 @@ class HttpsCertViewModel(
 
                 is HttpsCertResult.CertExpired ->
                     HttpsCertUiState.PartialSuccess(
-                        chain = listOf(result.info),
-                        warningMessage = "⚠️ Certificate expired ${-result.info.daysUntilExpiry} day(s) ago",
+                        chain = result.chain,
+                        warningMessage = "⚠️ Certificate expired — ${result.reason}",
                     )
 
                 is HttpsCertResult.UntrustedChain ->

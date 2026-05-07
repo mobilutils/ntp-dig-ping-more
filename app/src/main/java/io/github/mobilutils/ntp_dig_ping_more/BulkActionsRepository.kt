@@ -757,7 +757,7 @@ class BulkActionsRepository(
                         lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: TIMEOUT - ${result.host} (${duration}ms)")
                     is HttpsCertResult.CertExpired -> {
                         lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: CERT EXPIRED (${duration}ms)")
-                        result.info?.let {
+                        result.chain.firstOrNull()?.let {
                             lines.add("  Subject: CN=${it.subject.cn}")
                             lines.add("  Expired: ${it.notAfter}")
                             }
