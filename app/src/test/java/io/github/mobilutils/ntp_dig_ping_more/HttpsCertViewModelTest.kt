@@ -45,6 +45,7 @@ class HttpsCertViewModelTest {
         version = 3,
         signatureAlgorithm = "SHA256withRSA",
         chainDepth = 3,
+        chainPosition = 0,
     )
 
     @Before
@@ -233,19 +234,21 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.PartialSuccess)
 
         val partialState = state as HttpsCertUiState.PartialSuccess
-        assertEquals(expiredCert.host, partialState.info.host)
-        assertEquals(expiredCert.port, partialState.info.port)
-        assertEquals(expiredCert.validityStatus, partialState.info.validityStatus)
-        assertEquals(expiredCert.daysUntilExpiry, partialState.info.daysUntilExpiry)
+        val leaf = partialState.chain.first()
+        assertEquals(expiredCert.host, leaf.host)
+        assertEquals(expiredCert.port, leaf.port)
+        assertEquals(expiredCert.validityStatus, leaf.validityStatus)
+        assertEquals(expiredCert.daysUntilExpiry, leaf.daysUntilExpiry)
         assertTrue(partialState.warningMessage.contains("expired"))
     }
 
     @Test
-    fun `fetchCert handles UntrustedChain with info`() = runTest {
+    fun `fetchCert handles UntrustedChain with chain`() = runTest {
+        val chain = listOf(sampleCertificateInfo)
         viewModel.onHostChange("self-signed.com")
         coEvery { repository.fetchCertificate("self-signed.com", 443) } returns
             HttpsCertResult.UntrustedChain(
-                info = sampleCertificateInfo,
+                chain = chain,
                 reason = "Self-signed certificate"
             )
 
@@ -256,10 +259,11 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.PartialSuccess)
 
         val partialState = state as HttpsCertUiState.PartialSuccess
-        assertEquals(sampleCertificateInfo.host, partialState.info.host)
-        assertEquals(sampleCertificateInfo.port, partialState.info.port)
-        assertEquals(sampleCertificateInfo.validityStatus, partialState.info.validityStatus)
-        assertEquals(sampleCertificateInfo.daysUntilExpiry, partialState.info.daysUntilExpiry)
+        val leaf = partialState.chain.first()
+        assertEquals(sampleCertificateInfo.host, leaf.host)
+        assertEquals(sampleCertificateInfo.port, leaf.port)
+        assertEquals(sampleCertificateInfo.validityStatus, leaf.validityStatus)
+        assertEquals(sampleCertificateInfo.daysUntilExpiry, leaf.daysUntilExpiry)
         assertTrue(partialState.warningMessage.contains("Untrusted"))
     }
 
@@ -283,11 +287,12 @@ class HttpsCertViewModelTest {
             version              = 3,
             signatureAlgorithm   = "SHA256withRSA",
             chainDepth           = 1,
+            chainPosition             = 0,
          )
         viewModel.onHostChange("broken.com")
         coEvery { repository.fetchCertificate("broken.com", 443) } returns
             HttpsCertResult.UntrustedChain(
-                info     = info,
+                chain = listOf(info),
                 reason = "TLS handshake failed"
              )
 
@@ -299,8 +304,64 @@ class HttpsCertViewModelTest {
 
         val partialState = state as HttpsCertUiState.PartialSuccess
         assertTrue(partialState.warningMessage.contains("Untrusted"))
-        assertEquals(info, partialState.info)
+        assertEquals(info, partialState.chain.first())
     }
+
+    @Test
+    fun `fetchCert handles UntrustedChain with multi-cert chain`() = runTest {
+        val leaf = CertificateInfo(
+            host = "app.example.com", port = 443,
+            subject = DistinguishedName(cn = "app.example.com", o = null, ou = null, c = null),
+            issuer = DistinguishedName(cn = "Intermediate CA", o = null, ou = null, c = null),
+            notBefore = "2025-01-01 00:00:00 UTC", notAfter = "2027-01-01 00:00:00 UTC",
+            validityStatus = CertValidityStatus.VALID, daysUntilExpiry = 500,
+            serialNumber = "01", sha256Fingerprint = "AA:BB", sha1Fingerprint = "CC:DD",
+            subjectAltNames = emptyList(), keyAlgorithm = "RSA", keySize = 2048,
+            version = 3, signatureAlgorithm = "SHA256withRSA", chainDepth = 3, chainPosition = 0,
+        )
+        val intermediate = CertificateInfo(
+            host = "app.example.com", port = 443,
+            subject = DistinguishedName(cn = "Intermediate CA", o = null, ou = null, c = null),
+            issuer = DistinguishedName(cn = "Root CA", o = "My Org", ou = null, c = "US"),
+            notBefore = "2020-01-01 00:00:00 UTC", notAfter = "2035-01-01 00:00:00 UTC",
+            validityStatus = CertValidityStatus.VALID, daysUntilExpiry = 5000,
+            serialNumber = "02", sha256Fingerprint = "11:22", sha1Fingerprint = "33:44",
+            subjectAltNames = emptyList(), keyAlgorithm = "ECDSA", keySize = 256,
+            version = 3, signatureAlgorithm = "SHA256withECDSA", chainDepth = 3, chainPosition = 1,
+        )
+        val root = CertificateInfo(
+            host = "app.example.com", port = 443,
+            subject = DistinguishedName(cn = "Root CA", o = "My Org", ou = null, c = "US"),
+            issuer = DistinguishedName(cn = "Root CA", o = "My Org", ou = null, c = "US"),
+            notBefore = "2015-01-01 00:00:00 UTC", notAfter = "2045-01-01 00:00:00 UTC",
+            validityStatus = CertValidityStatus.VALID, daysUntilExpiry = 10000,
+            serialNumber = "03", sha256Fingerprint = "AA:BB:CC", sha1Fingerprint = "DD:EE:FF",
+            subjectAltNames = emptyList(), keyAlgorithm = "RSA", keySize = 4096,
+            version = 3, signatureAlgorithm = "SHA256withRSA", chainDepth = 3, chainPosition = 2,
+        )
+        val chain = listOf(leaf, intermediate, root)
+
+        viewModel.onHostChange("untrusted.example.com")
+        coEvery { repository.fetchCertificate("untrusted.example.com", 443) } returns
+            HttpsCertResult.UntrustedChain(chain = chain, reason = "Untrusted root")
+
+        viewModel.fetchCert()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state is HttpsCertUiState.PartialSuccess)
+
+        val partialState = state as HttpsCertUiState.PartialSuccess
+        assertEquals(3, partialState.chain.size)
+        assertEquals("app.example.com", partialState.chain[0].subject.cn)
+        assertEquals("Intermediate CA", partialState.chain[1].subject.cn)
+        assertEquals("Root CA", partialState.chain[2].subject.cn)
+        assertEquals(0, partialState.chain[0].chainPosition)
+        assertEquals(1, partialState.chain[1].chainPosition)
+        assertEquals(2, partialState.chain[2].chainPosition)
+        assertTrue(partialState.warningMessage.contains("Untrusted"))
+    }
+
 
     @Test
     fun `fetchCert handles NoNetwork result`() = runTest {

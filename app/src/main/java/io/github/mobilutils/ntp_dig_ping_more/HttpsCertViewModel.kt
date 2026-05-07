@@ -32,7 +32,7 @@ sealed class HttpsCertUiState {
      * or untrusted CA). The cert data is still shown with a warning banner.
      */
     data class PartialSuccess(
-        val info: CertificateInfo,
+        val chain: List<CertificateInfo>,
         val warningMessage: String,
     ) : HttpsCertUiState()
 
@@ -116,13 +116,13 @@ class HttpsCertViewModel(
 
                 is HttpsCertResult.CertExpired ->
                     HttpsCertUiState.PartialSuccess(
-                        info           = result.info,
+                        chain = listOf(result.info),
                         warningMessage = "⚠️ Certificate expired ${-result.info.daysUntilExpiry} day(s) ago",
                     )
 
                 is HttpsCertResult.UntrustedChain ->
                     HttpsCertUiState.PartialSuccess(
-                        info             = result.info,
+                        chain = result.chain,
                         warningMessage = "⚠️ Untrusted chain — ${result.reason}",
                     )
 
@@ -174,10 +174,10 @@ class HttpsCertViewModel(
                 CertHistoryStatus.VALID to "${info.keyAlgorithm} ${info.keySize} · $validLabel"
             }
             is HttpsCertUiState.PartialSuccess -> {
-                val info = state.info
-                when (info.validityStatus) {
+                val leaf = state.chain.first()
+                when (leaf.validityStatus) {
                     CertValidityStatus.EXPIRED ->
-                        CertHistoryStatus.EXPIRED to "expired ${-info.daysUntilExpiry}d ago"
+                        CertHistoryStatus.EXPIRED to "expired ${-leaf.daysUntilExpiry}d ago"
                     else ->
                         CertHistoryStatus.UNTRUSTED to "untrusted chain"
                 }
