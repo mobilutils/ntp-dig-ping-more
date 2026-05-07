@@ -14,7 +14,7 @@ The app uses **ADB intent extras** for headless automation — configs can be pu
 |---|---|
 | `./gradlew assembleDebug` | Build debug APK |
 | `./gradlew installDebug` | Build + install debug APK on connected device/emulator |
-| `./gradlew test` | Run all unit tests (~334 tests) |
+| `./gradlew test` | Run all unit tests (~365 tests) |
 | `./gradlew test --tests "ClassName"` | Run a single test class |
 | `./gradlew testDebugUnitTest` | Run debug unit tests only |
 | `./gradlew connectedDebugAndroidTest` | Run instrumented tests on connected device |
@@ -65,7 +65,7 @@ Located in `app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/`.
 | Test Class | Count | Covers |
 |---|---|---|
 | History store tests | 30+ | All history store parsers (backward compat, edge cases) |
-| HttpsCertViewModelTest | 36 | All cert result variants, full chain in PartialSuccess, history, state transitions |
+| HttpsCertViewModelTest | 38+ | All cert result variants, full chain in PartialSuccess (collapsible intermediate/root with [Leaf]/[Intermediate N]/[Root] markers), history, state transitions |
 | BulkActionsCheckcertTest | 4 | checkcert UntrustedChain output formatting ([Leaf], [Intermediate N], [Root] markers) |
 | LanScannerViewModelTest | 21 | Subnet sweep, quick/full modes, progress, error handling |
 | NtpViewModelTest | 14 | State mutations, repo mocking, error paths, history |

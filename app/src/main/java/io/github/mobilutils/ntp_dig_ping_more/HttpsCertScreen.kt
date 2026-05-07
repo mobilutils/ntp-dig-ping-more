@@ -39,6 +39,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -240,60 +242,63 @@ private fun CertResultContent(
     onRetry: () -> Unit,
 ) {
     val clipboardManager = LocalClipboardManager.current
-    // Track copy state per key string (fingerprints, SANs) with 2-second auto-reset
+     // Track copy state per key string (fingerprints, SANs) with 2-second auto-reset
     val copiedKeys = remember { mutableStateMapOf<String, Boolean>() }
 
     fun copyToClipboard(key: String, value: String) {
         clipboardManager.setText(AnnotatedString(value))
         copiedKeys[key] = true
-    }
+     }
 
-    // Auto-reset each copied state after 2 seconds
+     // Auto-reset each copied state after 2 seconds
     val currentlyCopied = copiedKeys.filter { it.value }.keys.toList()
     currentlyCopied.forEach { key ->
         LaunchedEffect(key) {
             delay(2_000)
             copiedKeys[key] = false
-        }
-    }
+         }
+     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
-        // ── Warning banner (expired / untrusted) ───────────────────────
+         // ── Warning banner (expired / untrusted) ───────────────────────
         if (warning != null) {
             WarningBanner(message = warning)
-        }
+         }
 
-        // ── Validity status chip ───────────────────────────────────────
-        ValidityChip(info = info, trustWarning = warning)
+         // ── Chain depth indicator (only when chain has multiple certs) ──
+        if (chain.size > 1) {
+            ChainDepthBanner(depth = chain.size)
+         }
 
-        // ── Subject ───────────────────────────────────────────────────
+         // ── Leaf cert (index 0) ────────────────────────────────────────
+         // ── Subject ───────────────────────────────────────────────────
         CertSection(title = "Subject", icon = Icons.Filled.Badge) {
             DnRows(info.subject)
-        }
+         }
 
-        // ── Issuer ────────────────────────────────────────────────────
+         // ── Issuer ────────────────────────────────────────────────────
         CertSection(title = "Issuer", icon = Icons.Filled.AccountBalance) {
             DnRows(info.issuer)
-        }
+         }
 
-        // ── Validity period ───────────────────────────────────────────
+         // ── Validity period ───────────────────────────────────────────
         CertSection(title = "Validity Period", icon = Icons.Filled.DateRange) {
             CertRow(label = "Not Before", value = info.notBefore)
             Spacer(Modifier.height(6.dp))
             CertRow(label = "Not After",  value = info.notAfter)
-        }
+         }
 
-        // ── Public key ────────────────────────────────────────────────
+         // ── Public key ────────────────────────────────────────────────
         CertSection(title = "Public Key", icon = Icons.Filled.Key) {
             CertRow(label = "Algorithm", value = info.keyAlgorithm)
             if (info.keySize > 0) {
                 Spacer(Modifier.height(6.dp))
                 CertRow(label = "Key Size", value = "${info.keySize} bits")
-            }
-        }
+             }
+         }
 
-        // ── Certificate metadata ───────────────────────────────────────
+         // ── Certificate metadata ───────────────────────────────────────
         CertSection(title = "Certificate Info", icon = Icons.Filled.Info) {
             CertRow(label = "Version",             value = "X.509 v${info.version}")
             Spacer(Modifier.height(6.dp))
@@ -302,54 +307,232 @@ private fun CertResultContent(
             CertRow(label = "Signature Algorithm", value = info.signatureAlgorithm)
             Spacer(Modifier.height(6.dp))
             CertRow(label = "Chain Depth",         value = "${info.chainDepth} cert(s)")
-        }
+         }
 
-        // ── Subject Alternative Names ──────────────────────────────────
+         // ── Subject Alternative Names ──────────────────────────────────
         if (info.subjectAltNames.isNotEmpty()) {
             CertSection(title = "Subject Alternative Names (${info.subjectAltNames.size})", icon = Icons.Filled.Public) {
                 info.subjectAltNames.forEachIndexed { index, san ->
                     if (index > 0) Spacer(Modifier.height(4.dp))
                     CopyableRow(
-                        label    = san.type,
-                        value    = san.value,
-                        copied   = copiedKeys[san.value] == true,
-                        onCopy   = { copyToClipboard(san.value, san.value) },
-                    )
-                }
-            }
-        }
+                        label     = san.type,
+                        value     = san.value,
+                        copied    = copiedKeys[san.value] == true,
+                        onCopy    = { copyToClipboard(san.value, san.value) },
+                     )
+                 }
+             }
+         }
 
-        // ── Fingerprints ───────────────────────────────────────────────
+         // ── Fingerprints ───────────────────────────────────────────────
         CertSection(title = "Fingerprints", icon = Icons.Filled.Fingerprint) {
             CopyableRow(
-                label  = "SHA-256",
-                value  = info.sha256Fingerprint,
+                label   = "SHA-256",
+                value   = info.sha256Fingerprint,
                 copied = copiedKeys["sha256"] == true,
                 onCopy = { copyToClipboard("sha256", info.sha256Fingerprint) },
-            )
+             )
             Spacer(Modifier.height(8.dp))
             CopyableRow(
-                label  = "SHA-1",
-                value  = info.sha1Fingerprint,
+                label   = "SHA-1",
+                value   = info.sha1Fingerprint,
                 copied = copiedKeys["sha1"] == true,
                 onCopy = { copyToClipboard("sha1", info.sha1Fingerprint) },
-            )
-        }
+             )
+         }
 
-        // ── Re-check button ────────────────────────────────────────────
+         // ── Additional chain certificates (intermediate / root) ─────────
+        if (chain.size > 1) {
+            CollapsibleChainSection(chain = chain.drop(1), copiedKeys = copiedKeys)
+         }
+
+         // ── Re-check button ────────────────────────────────────────────
         OutlinedButton(
-            onClick  = onRetry,
+            onClick   = onRetry,
             modifier = Modifier.fillMaxWidth(),
-            shape    = RoundedCornerShape(10.dp),
-        ) {
+            shape     = RoundedCornerShape(10.dp),
+         ) {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
             Text("Re-check")
+         }
+     }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chain depth banner
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ChainDepthBanner(depth: Int) {
+    Card(
+        modifier   = Modifier.fillMaxWidth(),
+        shape      = RoundedCornerShape(12.dp),
+        colors     = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation  = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Row(
+            modifier           = Modifier.padding(10.dp),
+            verticalAlignment  = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector         = Icons.Filled.Info,
+                contentDescription = null,
+                tint                = MaterialTheme.colorScheme.primary,
+                modifier            = Modifier.size(16.dp),
+            )
+            Text(
+                text        = "Certificate chain: $depth cert(s)",
+                style       = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color       = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Collapsible chain section (intermediate + root certs)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun CollapsibleChainSection(
+    chain:    List<CertificateInfo>,
+    copiedKeys: MutableMap<String, Boolean>,
+) {
+    // One expanded state per chain cert index (relative to drop(1))
+    val expandedStates = remember { chain.mapIndexed { i, _ -> i to true }.toMap().toMutableMap() }
+
+    Card(
+        modifier   = Modifier.fillMaxWidth(),
+        shape      = RoundedCornerShape(16.dp),
+        colors     = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation  = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment      = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier           = Modifier
+                        .size(32.dp)
+                        .background(
+                            color   = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            shape   = CircleShape,
+                        ),
+                    contentAlignment   = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector         = Icons.Filled.Fingerprint,
+                        contentDescription = null,
+                        tint                = MaterialTheme.colorScheme.primary,
+                        modifier            = Modifier.size(16.dp),
+                    )
+                }
+                Text(
+                    text        = "Certificate Chain (${chain.size} additional)",
+                    style       = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color       = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f))
+            Spacer(Modifier.height(10.dp))
+
+            chain.forEachIndexed { idx, cert ->
+                if (idx > 0) Spacer(Modifier.height(12.dp))
+
+                val isExpanded = expandedStates[idx] ?: true
+                val label = when {
+                    idx == chain.size - 1 -> "[Root]"
+                    else                   -> "[Intermediate $idx]"
+                }
+
+                CollapsibleCertEntry(
+                    label      = label,
+                    cert       = cert,
+                    isExpanded = isExpanded,
+                    onToggle   = { expandedStates[idx] = !isExpanded },
+                    copiedKeys = copiedKeys,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollapsibleCertEntry(
+    label:      String,
+    cert:       CertificateInfo,
+    isExpanded: Boolean,
+    onToggle:   () -> Unit,
+    copiedKeys: MutableMap<String, Boolean>,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(vertical = 4.dp),
+    ) {
+        // Header row (always visible)
+        Row(
+            modifier           = Modifier.fillMaxWidth(),
+            verticalAlignment  = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text        = label,
+                style       = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color       = MaterialTheme.colorScheme.primary,
+            )
+            Icon(
+                imageVector         = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                tint                = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier            = Modifier.size(20.dp),
+            )
+        }
+
+        AnimatedVisibility(visible = isExpanded) {
+            Column(modifier = Modifier.padding(top = 4.dp)) {
+                CertRow(label = "Subject", value = dnToString(cert.subject))
+                Spacer(Modifier.height(4.dp))
+                CertRow(label = "Issuer",  value = dnToString(cert.issuer))
+                Spacer(Modifier.height(4.dp))
+                CertRow(label = "Valid",     value = "${cert.notBefore} to ${cert.notAfter}")
+                Spacer(Modifier.height(4.dp))
+                CopyableRow(
+                    label    = "SHA-256",
+                    value    = cert.sha256Fingerprint,
+                    copied = copiedKeys["sha256_$cert.chainPosition"] == true,
+                    onCopy = {
+                        copiedKeys["sha256_$cert.chainPosition"] = true
+                        copiedKeys["sha256_$cert.chainPosition"] = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun dnToString(dn: DistinguishedName): String {
+    val parts = listOfNotNull(
+        dn.cn?.let { "CN=$it" },
+        dn.o?.let { ", O=$it" },
+        dn.ou?.let { ", OU=$it" },
+        dn.c?.let { ", C=$it" },
+    )
+    return parts.joinToString("").ifEmpty { "(none)" }
+}
+
 // Validity chip
 // ─────────────────────────────────────────────────────────────────────────────
 
