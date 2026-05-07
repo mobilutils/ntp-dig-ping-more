@@ -104,10 +104,10 @@ sealed class HttpsCertResult {
     data class Timeout(val host: String) : HttpsCertResult()
 
     /**
-     * The leaf certificate is expired. The cert data is still extracted
-     * and exposed so the UI can display it with a warning banner.
+     * The leaf certificate is expired. The full chain is still extracted
+     * and exposed so the UI can display each cert in the chain with a warning.
      */
-    data class CertExpired(val info: CertificateInfo) : HttpsCertResult()
+    data class CertExpired(val chain: List<CertificateInfo>, val reason: String) : HttpsCertResult()
 
     /**
       * The certificate chain is not trusted by the system (e.g. untrusted root,
@@ -241,7 +241,7 @@ class HttpsCertRepository(
         } catch (e: CertificateExpiredException) {
             // Chain was recorded before PKIX expiry check — always available.
             val chainInfo = parseChain(host, port, recorder.chain!!)
-            HttpsCertResult.CertExpired(chainInfo.first())
+            HttpsCertResult.CertExpired(chainInfo, "Certificate expired ${chainInfo.first().notAfter}")
 
         } catch (e: SSLHandshakeException) {
             // Could be self-signed, wrong host, or other trust failure.
@@ -253,7 +253,7 @@ class HttpsCertRepository(
             val causeIsExpiry = generateSequence(e.cause) { it.cause }
                 .any { it is CertificateExpiredException }
             if (causeIsExpiry) {
-                HttpsCertResult.CertExpired(chainInfo.first())
+                HttpsCertResult.CertExpired(chainInfo, "Certificate expired ${chainInfo.first().notAfter}")
             } else {
                 HttpsCertResult.UntrustedChain(chainInfo, reason)
             }

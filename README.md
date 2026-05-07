@@ -377,7 +377,7 @@ adb shell am start -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
 
 ## Testing
 
-This project includes a unit test suite (340+ tests) covering business logic, ViewModels, proxy resolution, data parsing, and certificate chain display formatting.
+This project includes a unit test suite (365+ tests) covering business logic, ViewModels, proxy resolution, data parsing, and certificate chain display formatting.
 
 ```bash
 # Run all unit tests
