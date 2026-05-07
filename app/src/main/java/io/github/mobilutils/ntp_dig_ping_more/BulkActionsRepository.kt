@@ -511,14 +511,29 @@ class BulkActionsRepository(
         return withContext(Dispatchers.IO) {
             try {
                 val t0 = System.currentTimeMillis()
-                // Parse: dig @server fqdn [-t timeout]
+                 // Parse: dig @server fqdn OR dig fqdn @server, with optional -t N timeout
                 val parts = cmd.split(Regex("\\s+"))
-                val serverIdx = parts.indexOfFirst { it == "@" }
-                val (server, fqdn) = if (serverIdx > 0 && serverIdx < parts.size - 1) {
-                    parts[serverIdx + 1] to parts[serverIdx + 2]
-                } else {
-                    "8.8.8.8" to parts.last()
-                }
+                val serverIdx = parts.indexOfFirst { it.startsWith("@") }
+                val (server, fqdn) = if (serverIdx >= 0 && serverIdx < parts.size - 1) {
+                     // Extract server (strip @ prefix) and fqdn
+                    val serverHost = parts[serverIdx].substring(1) // Remove leading @
+                     // Find FQDN index, skipping any -t N pairs
+                    val fqdnIdx = if (serverIdx == 1) {
+                         // Format: dig @server [-t N] fqdn
+                        var i = serverIdx + 1
+                        while (i < parts.size - 1 && parts[i] == "-t" && i + 1 < parts.size) {
+                            i += 2 // Skip -t and its numeric value
+                         }
+                        i
+                     } else {
+                         // Format: dig fqdn @server [-t N] -> FQDN is right before @server
+                        serverIdx - 1
+                     }
+                    serverHost to parts[fqdnIdx]
+                 } else {
+                     // No @ found, use default server and last part as FQDN
+                     "8.8.8.8" to parts.last()
+                 }
 
                 val result = digRepo.resolve(server, fqdn)
                 val duration = System.currentTimeMillis() - t0
