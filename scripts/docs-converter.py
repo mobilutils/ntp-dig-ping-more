@@ -195,19 +195,19 @@ def main():
         content = replace_image_paths(content, image_files)
         
         # Write wiki page
-        outpath = output_path / 'pages' / f"{slug}.wiki"
+        outpath = output_path / 'pages' / f"{slug}.md"
         outpath.parent.mkdir(parents=True, exist_ok=True)
         outpath.write_text(f"# {title}\n\n{content}", encoding='utf-8')
         
         page_count += 1
     
-    # ── Homepage (index.wiki) ──────────────────────────────────────────────
+    # ── Homepage (index.md) ──────────────────────────────────────────────
     index_file = source_path / 'index.md'
     if index_file.is_file():
         text = index_file.read_text(encoding='utf-8')
         metadata, content = parse_frontmatter(text)
         
-        outpath = output_path / 'pages' / 'Home.wiki'
+        outpath = output_path / 'pages' / 'Home.md'
         outpath.write_text(content, encoding='utf-8')
         page_count += 1
     
