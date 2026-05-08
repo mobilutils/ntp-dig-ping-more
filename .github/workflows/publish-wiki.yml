@@ -46,9 +46,11 @@ jobs:
                 mkdir wiki-repo
                 cd wiki-repo
                 git init
-          git config  user.name "github-actions[bot]"
-          git config  user.email "github-actions[bot]@users.noreply.github.com"
             fi
+
+            # Always set identity before any commit operation
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
 
             # Copy converted pages and images
           cp -r ../pages/* . 2>/dev/null || true
@@ -61,5 +63,5 @@ jobs:
                 exit 0
             fi
 
-          git commit -m "docs: update wiki from docs/ [ci skip]"
-          git push "https://x-access-token:${WIKI_TOKEN}@github.com/${{ github.repository }}.wiki.git" master
+            git commit -m "docs: update wiki from docs/ [ci skip]"
+            git push "https://x-access-token:${WIKI_TOKEN}@github.com/${{ github.repository }}.wiki.git" master
