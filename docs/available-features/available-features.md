@@ -5,10 +5,10 @@ slug: getting-started/available-features.md
 
 ## Features
 
-
-
-
-
+NTP: [NTP](./Screen_ntp-check.md)
+DIG: [DIG](./Screen_dig.md)
+PING: [PING](./Screen_ping.md)
+TRACEROUTE: [TRACEROUTE](./Screen_traceroute.md)
 
 
 
