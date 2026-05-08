@@ -46,7 +46,7 @@ captures/
 
 # -- Me related -----------------------------------------------------------------
 troubleshooting/
-wikioutput/
+wiki-output/
 .wiki-repo/
 
 # -- QWEN RELATED ---------------------------------------------------------------
