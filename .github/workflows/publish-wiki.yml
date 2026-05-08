@@ -1,0 +1,65 @@
+name: Publish Wiki
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-wiki:
+    runs-on: ubuntu-latest
+    steps:
+       - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+       - name: Set up Python for image dimensions
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+       - name: Install Pillow for image processing
+        run: pip install Pillow
+
+       - name: Convert docs to wiki format
+        run: |
+          chmod +x ./scripts/docs-converter.sh
+          ./scripts/docs-converter.sh docs wiki-output
+
+       - name: Push to wiki repo
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_PAT }}
+        run: |
+          cd wiki-output
+
+           # Clone or init the wiki repo
+          if git ls-remote --heads "https://x-access-token:${WIKI_TOKEN}@github.com/${{ github.repository }}.wiki.git" 2>/dev/null | grep -q .; then
+            git clone "https://x-access-token:${WIKI_TOKEN}@github.com/${{ github.repository }}.wiki.git" wiki-repo
+            cd wiki-repo
+            rm -rf *
+          else
+            mkdir wiki-repo
+            cd wiki-repo
+            git init
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+          fi
+
+           # Copy converted pages and images
+          cp -r ../pages/* . 2>/dev/null || true
+          cp -r ../images/* . 2>/dev/null || true
+
+           # Stage and commit
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "docs: update wiki from docs/ [ci skip]"
+          git push "https://x-access-token:${WIKI_TOKEN}@github.com/${{ github.repository }}.wiki.git" master
