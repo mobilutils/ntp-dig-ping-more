@@ -13,3 +13,4 @@ From project main page :
 You can find last Releases here :
 - [https://github.com/mobilutils/ntp-dig-ping-more/releases](https://github.com/mobilutils/ntp-dig-ping-more/releases)
 
+List of available screens :

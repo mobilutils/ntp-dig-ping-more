@@ -1,6 +1,6 @@
 ---
 title: DIG (Domain Information Groper)
-slug: available-features/
+slug: available-features/Screen_DIG.md
 ---
 
 # 🔍 DIG Test

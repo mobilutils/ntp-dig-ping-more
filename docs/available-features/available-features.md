@@ -10,6 +10,10 @@ DIG: [DIG](./Screen_dig.md)
 PING: [PING](./Screen_ping.md)
 TRACEROUTE: [TRACEROUTE](./Screen_traceroute.md)
 
+Port Scanner
+LAN Scanner
+Google Time Sync
+HTTPS Certificate 
 
 
 ### 🕵️ Port Scanner
