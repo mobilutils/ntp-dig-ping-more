@@ -514,14 +514,14 @@ class BulkActionsRepository(
                  // Parse: dig @server fqdn OR dig fqdn @server, with optional -t N timeout
                 val parts = cmd.split(Regex("\\s+"))
                 val serverIdx = parts.indexOfFirst { it.startsWith("@") }
-                val (server, fqdn) = if (serverIdx >= 0 && serverIdx < parts.size - 1) {
+                val (server, fqdn) = if (serverIdx >= 0 && serverIdx < parts.size && (serverIdx > 1 || serverIdx + 1 < parts.size)) {
                      // Extract server (strip @ prefix) and fqdn
                     val serverHost = parts[serverIdx].substring(1) // Remove leading @
                      // Find FQDN index, skipping any -t N pairs
                     val fqdnIdx = if (serverIdx == 1) {
                          // Format: dig @server [-t N] fqdn
                         var i = serverIdx + 1
-                        while (i < parts.size - 1 && parts[i] == "-t" && i + 1 < parts.size) {
+                        while (i < parts.size && parts[i] == "-t" && i + 1 < parts.size) {
                             i += 2 // Skip -t and its numeric value
                          }
                         i
