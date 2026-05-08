@@ -10,15 +10,16 @@ Usage:
 
 Workflow:
     1. Reads all .md files in source_dir/** (excluding index.md → homepage)
-    2. Parses YAML frontmatter (title, slug, tags)
+    2. Parses YAML frontmatter (title, slug, tags, description)
     3. Strips frontmatter from content
     4. Copies images/docs/images/ → output/images/ as wiki attachments
-    5. Outputs clean markdown to output/pages/<slug>.wiki
+    5. Outputs clean markdown to output/pages/<slug>.md
 
 Wiki repo layout (what gets pushed):
    pages/
-     getting-started/install.wiki
-     user-guide/bulk-actions.wiki
+     getting-started/install.md
+     user-guide/bulk-actions.md
+     available-features/index.md       ← auto-generated section index
    images/
      ntp-screenshot.png
 """
@@ -38,32 +39,32 @@ except ImportError:
 def parse_frontmatter(text):
     """Parse YAML frontmatter and return (metadata_dict, content_without_frontmatter)."""
     metadata = {}
-    
+
     # Match frontmatter block between --- delimiters
     match = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)', text, re.DOTALL)
     if not match:
         return metadata, text
-    
+
     fm_block = match.group(1)
     content = match.group(2)
-    
+
     # Parse key: value pairs
     for line in fm_block.split('\n'):
         line = line.strip()
         if ':' not in line:
             continue
-        
+
         key, _, value = line.partition(':')
         key = key.strip().lower()
         value = value.strip()
-        
+
         # Strip surrounding quotes
         if (value.startswith('"') and value.endswith('"')) or \
-           (value.startswith("'") and value.endswith("'")):
+             (value.startswith("'") and value.endswith("'")):
             value = value[1:-1]
-        
+
         metadata[key] = value
-    
+
     return metadata, content
 
 
@@ -71,24 +72,24 @@ def get_image_dimensions(img_path):
     """Get image width x height in pixels."""
     if Image is None:
         return 0, 0
-    
+
     try:
         with Image.open(img_path) as img:
-            return img.size  # (width, height)
+            return img.size    # (width, height)
     except Exception:
         return 0, 0
 
 
 def replace_image_paths(content, image_files):
     """Replace markdown image paths with wiki attachment paths and apply size control."""
-    
-    # Pattern to match markdown images: ![alt](path) or ![alt]( relative/path)
+
+    # Pattern to match markdown images: ![alt](path) or ![alt](relative/path)
     img_pattern = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
-    
+
     def replace_img(match):
         alt = match.group(1)
         path = match.group(2).strip()
-        
+
         # Check if this image is in our images directory
         for img_rel in image_files:
             # Match various path forms: images/foo.png, ../images/foo.png, ./images/foo.png
@@ -98,12 +99,12 @@ def replace_image_paths(content, image_files):
                 f'./images/{img_rel}',
                 f'../../images/{img_rel}',
             ]
-            
+
             if any(path.endswith(p) for p in patterns_to_try):
                 # This is a wiki image — replace with <img> tag
                 img_path = os.path.join('docs', 'images', img_rel)
                 width, height = get_image_dimensions(img_path)
-                
+
                 if width > 0 and height > 0:
                     # Apply size control (max 600px width)
                     max_width = 600
@@ -118,40 +119,130 @@ def replace_image_paths(content, image_files):
                 else:
                     # No dimensions available
                     return f'<img src="../images/{img_rel}" alt="{alt}">'
-        
+
         # Not a wiki image, leave as-is
         return match.group(0)
-    
+
     return img_pattern.sub(replace_img, content)
+
+
+def generate_section_index(section_dir, output_pages_dir):
+    """Auto-generate an index.md for a docs/ subdirectory listing its pages.
+
+    Scans all .md files in the section directory (excluding index.md and template.md),
+    parses their frontmatter titles/descriptions, and generates a markdown table of contents.
+
+    Args:
+        section_dir: Path to the docs/ subdirectory (e.g., docs/available-features)
+        output_pages_dir: Path to wiki-output/pages where index.md will be written
+
+    Returns:
+        True if index was created, False if no pages found
+    """
+    md_files = sorted(section_dir.glob('*.md'))
+    # Filter out index.md and template-like files
+    md_files = [f for f in md_files if f.name not in ('index.md', 'template.md')]
+
+    if not md_files:
+        return False
+
+    # Parse frontmatter from all files to extract titles and descriptions
+    entries = []
+    for md_file in md_files:
+        text = md_file.read_text(encoding='utf-8')
+        metadata, content = parse_frontmatter(text)
+        title = metadata.get('title', '')
+        if not title:
+            title = md_file.stem.replace('-', ' ').replace('_', ' ').title()
+
+        # Slug is the filename without extension (used as wiki link)
+        slug = md_file.stem
+
+        # Description from frontmatter or first line of content
+        description = metadata.get('description', '')
+        if not description:
+            # Extract first meaningful line from content
+            lines = [l.strip() for l in content.split('\n') if l.strip()]
+            for line in lines[:5]:
+                if not line.startswith('#'):
+                    description = line[:120]
+                    break
+
+        entries.append((title, slug, description))
+
+    # Sort by title (case-insensitive)
+    entries.sort(key=lambda e: e[0].lower())
+
+    # Build index content
+    section_name = section_dir.name.replace('-', ' ').replace('_', ' ').title()
+    lines = [f"# {section_name}", ""]
+
+    # Table of contents
+    lines.append("## Pages")
+    lines.append("")
+    lines.append("| Page | Description |")
+    lines.append("|------|-------------|")
+    for title, slug, desc in entries:
+        desc = desc.replace('|', '\\|').replace('\n', ' ') if desc else '-'
+        lines.append(f"| [{title}]({slug}) | {desc} |")
+
+    lines.append("")
+    outpath = output_pages_dir / section_dir.name / 'index.md'
+    outpath.parent.mkdir(parents=True, exist_ok=True)
+    outpath.write_text('\n'.join(lines), encoding='utf-8')
+
+    return True
+
+
+def clean_slug(slug, source_path, md_file):
+    """Clean up a slug: strip trailing slashes, .md extension, and validate path."""
+    # Strip trailing slashes
+    slug = slug.rstrip('/')
+
+    # Strip .md extension if present (so we don't get double .md.md)
+    slug = re.sub(r'\.md$', '', slug)
+
+    # If slug is empty after cleanup, use default relative path
+    if not slug:
+        slug = str(md_file.relative_to(source_path)).replace('.md', '')
+        return slug
+
+     # If slug equals the section directory name only (e.g., "available-features" from slug "available-features/"),
+     # it should be a file inside that directory, not at root level. Append filename stem.
+    parent_dir = md_file.parent.name
+    if slug == parent_dir:
+        slug = f"{parent_dir}/{md_file.stem}"
+
+    return slug
 
 
 def main():
     source_dir = sys.argv[1] if len(sys.argv) > 1 else 'docs'
     output_dir = sys.argv[2] if len(sys.argv) > 2 else 'wiki-output'
-    
+
     source_path = Path(source_dir)
     output_path = Path(output_dir)
-    
+
     if not source_path.is_dir():
         print(f"ERROR: Source directory '{source_dir}' not found.")
         sys.exit(1)
-    
+
     # Clean & recreate output dirs
     if output_path.exists():
         shutil.rmtree(output_path)
     (output_path / 'images').mkdir(parents=True, exist_ok=True)
-    
+
     print("=== docs-converter ===")
     print(f"  Source : {source_dir}")
     print(f"  Output : {output_dir}")
     print()
-    
+
     page_count = 0
     img_count = 0
-    
+
     # ── Collect images first ───────────────────────────────────────────────
-    image_files = []  # relative paths from docs/images/
-    
+    image_files = []    # relative paths from docs/images/
+
     images_dir = source_path / 'images'
     if images_dir.is_dir():
         for ext in ('*.png', '*.jpg', '*.jpeg', '*.gif', '*.svg', '*.webp'):
@@ -163,60 +254,69 @@ def main():
                 shutil.copy2(img_file, dest)
                 image_files.append(rel)
                 img_count += 1
-    
+
     print(f"  Images copied : {img_count}")
-    
+
     # ── Process each .md file ──────────────────────────────────────────────
     md_files = sorted(source_path.rglob('*.md'))
-    
+
     for md_file in md_files:
-        # Skip index.md → homepage
-        if md_file.name == 'index.md':
+        # Skip index.md and template.md → not actual pages
+        if md_file.name in ('index.md', 'template.md'):
             continue
-        
+
         text = md_file.read_text(encoding='utf-8')
-        
+
         # Parse frontmatter
         metadata, content = parse_frontmatter(text)
-        
+
         # Defaults
         title = metadata.get('title', '')
         slug = metadata.get('slug', '')
-        
+
         if not title:
             # Derive from filename: "bulk-actions.md" → "Bulk Actions"
-            title = md_file.stem.replace('-', ' ').title()
-        
-        if not slug:
-            # Default: relative path from source dir, no extension
-            slug = str(md_file.relative_to(source_path)).replace('.md', '')
-        
+            title = md_file.stem.replace('-', ' ').replace('_', ' ').title()
+
+        # Clean up slug: strip trailing slashes and .md extension to avoid double .md
+        slug = clean_slug(slug, source_path, md_file)
+
         # Replace image paths with wiki attachment paths
         content = replace_image_paths(content, image_files)
-        
+
         # Write wiki page
-        outpath = output_path / 'pages' / f"{slug}.wiki"
+        outpath = output_path / 'pages' / f"{slug}.md"
         outpath.parent.mkdir(parents=True, exist_ok=True)
         outpath.write_text(f"# {title}\n\n{content}", encoding='utf-8')
-        
+
         page_count += 1
-    
-    # ── Homepage (index.wiki) ──────────────────────────────────────────────
+
+    # ── Generate section indexes ───────────────────────────────────────
+    sections_created = 0
+    for item in sorted(source_path.iterdir()):
+        if item.is_dir() and item.name != 'images':
+            if generate_section_index(item, output_path / 'pages'):
+                sections_created += 1
+                print(f"  Section index: {item.name}/")
+
+    # ── Homepage (index.md) ──────────────────────────────────────────────
     index_file = source_path / 'index.md'
     if index_file.is_file():
         text = index_file.read_text(encoding='utf-8')
         metadata, content = parse_frontmatter(text)
-        
-        outpath = output_path / 'pages' / 'index.wiki'
+
+        outpath = output_path / 'pages' / 'Home.md'
         outpath.write_text(content, encoding='utf-8')
         page_count += 1
-    
+
     print(f"  Pages created : {page_count}")
+    if sections_created:
+        print(f"  Section indexes: {sections_created}")
     print()
     print("=== Done ===")
     print(f"Wiki files are in: {output_dir}/")
-    print("  pages/      → markdown wiki pages (.wiki extension)")
-    print("  images/     → attachment images for inline use")
+    print("  pages/          → markdown wiki pages (.md extension)")
+    print("  images/         → attachment images for inline use")
 
 
 if __name__ == '__main__':
