@@ -205,6 +205,13 @@ def clean_slug(slug, source_path, md_file):
     # If slug is empty after cleanup, use default relative path
     if not slug:
         slug = str(md_file.relative_to(source_path)).replace('.md', '')
+        return slug
+
+     # If slug equals the section directory name only (e.g., "available-features" from slug "available-features/"),
+     # it should be a file inside that directory, not at root level. Append filename stem.
+    parent_dir = md_file.parent.name
+    if slug == parent_dir:
+        slug = f"{parent_dir}/{md_file.stem}"
 
     return slug
 
