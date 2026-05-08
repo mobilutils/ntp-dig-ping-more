@@ -41,3 +41,9 @@ the only feature that does is GoogleTimeSync, i'll come back to that later.
 @PhPeteur
 
 
+
+## Wiki Home
+- [Getting Started](getting-started/getting-started)
+
+
+

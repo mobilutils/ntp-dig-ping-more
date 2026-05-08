@@ -46,8 +46,9 @@ captures/
 
 # -- Me related -----------------------------------------------------------------
 troubleshooting/
-wikioutput/
+wiki-output/
 .wiki-repo/
+docs/available-features/template.md
 
 # -- QWEN RELATED ---------------------------------------------------------------
 .qwen/
