@@ -207,7 +207,7 @@ def main():
         text = index_file.read_text(encoding='utf-8')
         metadata, content = parse_frontmatter(text)
         
-        outpath = output_path / 'pages' / 'index.wiki'
+        outpath = output_path / 'pages' / 'Home.wiki'
         outpath.write_text(content, encoding='utf-8')
         page_count += 1
     
