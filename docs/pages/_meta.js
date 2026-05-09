@@ -1,10 +1,7 @@
 export default {
   index: 'Home',
    'getting-started': 'Getting Started',
-   'available-features': {
-     title: 'Available Features',
-     type: 'folder',
-   },
+   'available-features': 'Available Features',
    'pseudo-commands': 'Pseudo-Commands',
    github: {
      title: 'GitHub',

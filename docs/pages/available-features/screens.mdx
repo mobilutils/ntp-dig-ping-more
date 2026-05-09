@@ -13,43 +13,39 @@ description: All screens available in the app.
 | Google Time Sync | Check Cert | Device Info |
 | ![Google Time Sync](/images/10_screencap_ggtimesync.png) | ![Check Cert](/images/11_screencap_checkcert.png) | ![Device Info](/images/12_screencap_deviceinfo.png) |
 
+---
+
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+  <div style={{ flex: 1 }}>
+    <p><strong>NTP Check</strong></p>
+    - Enter any NTP server address and port defaults to pool.ntp.org:123
+      Displays:
+      - ✅ / ❌ Reachability status
+      - Server Time
+      - Clock Offset (ms)
+      - Round-Trip Delay (ms)
+      
+    - Last 5 queries kept as clickable history (persisted across app restarts)
+    - Graceful error handling: DNS failure, timeout, no network
+
+  </div>
+  <div style={{width: '50%' }}>
+    <img src="/images/1_screencap_ntp.png" alt="NTP Check" style={{ height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+  </div>
+</div>
 
 
-| NTP Check | Screen |
-|---|---|
-|- Enter any NTP server address and port (defaults to `pool.ntp.org:123`)
-- Displays:
-  - ✅ / ❌ Reachability status
-  - 🕒 Server Time
-  - ⏱ Clock Offset (ms)
-  - 📡 Round-Trip Delay (ms)
-- Last 5 queries kept as clickable history (persisted across app restarts)
-- Graceful error handling: DNS failure, timeout, no network | ![NTP Check](/images/1_screencap_ntp.png) |
-|---|---|
-|- Enter a DNS server (IP or FQDN, e.g. `8.8.8.8`) and a name to resolve
-- Query goes directly to the specified DNS server (API 29+), not the system resolver
-- Displays a real `dig`-style answer section with aligned columns:
-
-```
-;; SERVER: 8.8.8.8
-
-;; QUESTION SECTION:
-;www.mobilutils.eu.    IN    A
-
-;; ANSWER SECTION:
-www.mobilutils.eu.      10800  IN  CNAME  connect.hostinger.com.
-connect.hostinger.com.    120  IN  A       34.120.137.41
-```
-
-- Full CNAME chain resolution included
-- Graceful error handling: NXDOMAIN, resolver unreachable, no network| ![DIG](/images/2_screencap_dig.png) |
-|---|---|
-|- Enter any hostname or IP address
-- Tap **Ping** to start — button turns red and becomes **Stop** while running
-- Output streams live in a scrolling monospace terminal card
-- Sends up to 100 ICMP packets (`ping -c 100`); can be stopped at any time
-- History icon reflects the outcome:
-  - ✅ All packets went through
-  - 🤷‍♂️ At least one succeeded but some were lost
-  - ❌ No reply received
-- Last 5 pinged hosts kept as clickable history (persisted across app restarts) | ![Ping](/images/3_screencap_ping.png) |
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+    <div style={{ flex: 1 }}>
+    <img src="/images/2_screencap_dig.png" alt="NTP Check" style={{ height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+  </div>
+  <div style={{ width: '50%' }} >
+    <p><strong>DIG Domain Information Groper</strong></p>
+    - DIG Test
+    - Enter a DNS server (IP or FQDN, e.g. `8.8.8.8`) and a name to resolve
+    - Query goes directly to the specified DNS server (API 29+), not the system resolver
+    - Displays a real `dig`-style answer section with aligned columns:
+    - Full CNAME chain resolution included
+    - Graceful error handling: NXDOMAIN, resolver unreachable, no network
+  </div>
+</div>
