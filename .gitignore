@@ -53,8 +53,8 @@ docs/content/available-features/template.md
 # -- QWEN RELATED ---------------------------------------------------------------
 .qwen/
 node_modules/
-package.json
-package-lock.json
+./package.json
+./package-lock.json
 
 
 
