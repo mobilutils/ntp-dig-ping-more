@@ -1,0 +1,27 @@
+# --- NEXTRA ------------------------------------------------------------------
+
+# docs/.gitignore
+
+# Dépendances
+node_modules/
+
+# Build & cache
+.next/
+.nextra/
+.swc/
+out/
+
+# Logs & env
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env.local
+.env*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
