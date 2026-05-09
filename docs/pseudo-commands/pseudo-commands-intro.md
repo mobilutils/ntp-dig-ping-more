@@ -1,4 +1,8 @@
-# Pseudo-Commands
+---
+title: pseudo-command-intro
+slug: pseudo-command/pseudo-commands-intro.md
+---
+# Pseudo-Commands Intro
 
 ## Overview
 
