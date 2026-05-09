@@ -1,13 +1,12 @@
 ---
 title: Available Features
-slug: getting-started/available-features.md
+description: Here we'll cover the visible piece of the iceberg :)
 ---
-
-# All Screen at once
 
 ## Features
 
-### 🕐 NTP Check
+### NTP Check
+
 - Enter any NTP server address and port (defaults to `pool.ntp.org:123`)
 - Displays:
   - ✅ / ❌ Reachability status
@@ -17,7 +16,8 @@ slug: getting-started/available-features.md
 - Last 5 queries kept as clickable history (persisted across app restarts)
 - Graceful error handling: DNS failure, timeout, no network
 
-### 🔍 DIG Test
+### DIG Test
+
 - Enter a DNS server (IP or FQDN, e.g. `8.8.8.8`) and a name to resolve
 - Query goes directly to the specified DNS server (API 29+), not the system resolver
 - Displays a real `dig`-style answer section with aligned columns:
@@ -29,14 +29,15 @@ slug: getting-started/available-features.md
 ;www.mobilutils.eu.    IN    A
 
 ;; ANSWER SECTION:
-www.mobilutils.eu.     10800  IN  CNAME  connect.hostinger.com.
-connect.hostinger.com.   120  IN  A      34.120.137.41
+www.mobilutils.eu.      10800  IN  CNAME  connect.hostinger.com.
+connect.hostinger.com.    120  IN  A       34.120.137.41
 ```
 
 - Full CNAME chain resolution included
 - Graceful error handling: NXDOMAIN, resolver unreachable, no network
 
-### 📡 Ping
+### Ping
+
 - Enter any hostname or IP address
 - Tap **Ping** to start — button turns red and becomes **Stop** while running
 - Output streams live in a scrolling monospace terminal card
@@ -47,7 +48,8 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
   - ❌ No reply received
 - Last 5 pinged hosts kept as clickable history (persisted across app restarts)
 
-### 🛤 Traceroute
+### Traceroute
+
 - Enter any hostname or IP address
 - Tap **Traceroute** to start — button turns red and becomes **Stop** while running
 - Output streams live hop-by-hop in a scrolling monospace terminal card
@@ -60,7 +62,8 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
   - ❌ No hop replied at all
 - Last 5 traced hosts kept as clickable history (persisted across app restarts)
 
-### 🕵️ Port Scanner
+### Port Scanner
+
 - Check which TCP or UDP ports are open on a specific IP or hostname
 - Define custom start and end port ranges
 - Select between TCP or UDP scanning protocols
@@ -68,7 +71,8 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 - Concurrently scans ports to ensure high performance
 - Last 5 scans kept as clickable history (persisted across app restarts)
 
-### 🖥️ LAN Scanner
+### LAN Scanner
+
 - Discover active devices on your local Wi-Fi or Ethernet subnet
 - Custom scanning ranges with pre-populated values for your current subnet
 - Quick Scan (common IPs) or Full Scan (custom range sweep)
@@ -76,7 +80,8 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 - Tracks scan progress with a stop/cancel capability
 - History of past scans persisted across app restarts
 
-### 🌐 Google Time Sync
+### Google Time Sync
+
 - Queries `http://clients2.google.com/time/1/current` over HTTP and parses Google's time response
 - Strips the `)]}'` XSSI protection prefix before JSON parsing
 - Computes full NTP-style time synchronisation metrics:
@@ -89,21 +94,23 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 - Idle / Loading / Success / Error states survive rotation and config changes
 - Supports optional proxy routing when Proxy PAC is enabled in Settings
 
-### 🔒 HTTPS Certificate Inspector
+### HTTPS Certificate Inspector
+
 - Enter any hostname and port (defaults to `google.com:443`)
 - Performs a real TLS handshake and extracts the peer's certificate chain
 - Displays:
-   - Subject / Issuer distinguished names (CN, O, OU, C) for each cert in the chain
-   - Validity period (Not Before / Not After) with days-until-expiry
-   - Validity status: ✅ Valid · ⚠️ Expiring Soon · ❌ Expired · ⚠️ Untrusted
-   - Serial number, SHA-256 and SHA-1 fingerprints (tap to copy)
-   - Subject Alternative Names (SANs)
-   - Key algorithm, key size, signature algorithm, chain depth
+  - Subject / Issuer distinguished names (CN, O, OU, C) for each cert in the chain
+  - Validity period (Not Before / Not After) with days-until-expiry
+  - Validity status: ✅ Valid · ⚠️ Expiring Soon · ❌ Expired · ⚠️ Untrusted
+  - Serial number, SHA-256 and SHA-1 fingerprints (tap to copy)
+  - Subject Alternative Names (SANs)
+  - Key algorithm, key size, signature algorithm, chain depth
 - For **untrusted** or **expired** certificates, displays the **full chain** — leaf → intermediate(s) → root — with `[Leaf]`, `[Intermediate N]`, and `[Root]` markers so you can inspect each cert's details even when trust validation fails
 - Last 5 inspected hosts kept as clickable history (persisted across app restarts)
 - Supports SSL tunneling through HTTP CONNECT when Proxy PAC is enabled
 
-### ⚙️ Settings
+### Settings
+
 - **Operation Timeout** — global timeout (1–60 s) applied to all network tools
   - Changes saved immediately on valid input; reverts on focus-loss if invalid
 - **Proxy PAC Configuration** — app-level proxy override (independent of system proxy)
@@ -117,7 +124,8 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
   - Applied to Google Time Sync (HTTP) and HTTPS Certificate Inspector (SSL CONNECT tunnel)
   - All failures fall back silently to DIRECT — proxy issues never block normal usage
 
-### 📱 Device Info
+### Device Info
+
 - Comprehensive read-only view of device identity, network, battery, and security
 - Displays: Device Name, IMEI, Serial Number, ICCID, Android Version, API Level, CPU Architecture
 - Current Device Time (auto-updating), Time Since Boot, Time Since Screen-Off
@@ -130,7 +138,8 @@ connect.hostinger.com.   120  IN  A      34.120.137.41
 - Handles Android 10+ API restrictions with clear fallback messages (e.g., "Restricted by Android 10+")
 - Runtime permission requests via `ActivityResultContracts`; rationale shown if denied
 
-### ⚡ Bulk Actions
+### Bulk Actions
+
 - Load a JSON configuration file defining multiple diagnostic commands to execute in sequence
 - Supports built-in command types: `ping`, `dig`, `ntp`, `port-scan`, `checkcert`, `device-info`, `tracert`, `google-timesync`, `lan-scan`
 - Unknown command prefixes fall back to raw shell execution
