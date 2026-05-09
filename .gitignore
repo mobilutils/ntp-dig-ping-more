@@ -48,7 +48,7 @@ captures/
 troubleshooting/
 wiki-output/
 .wiki-repo/
-docs/available-features/template.md
+docs/content/available-features/template.md
 
 # -- QWEN RELATED ---------------------------------------------------------------
 .qwen/
@@ -56,3 +56,37 @@ node_modules/
 package.json
 package-lock.json
 
+
+
+# -- NEXTRA RELATED ----------------------------------------------------------------------
+
+# === Documentation Nextra (/docs) ===
+
+# Dépendances Node de la doc
+docs/node_modules/
+
+# Cache et fichiers de build Next.js/Nextra
+docs/.next/
+docs/.nextra/
+docs/.swc/
+docs/out/                 # ← Build statique (si déployé via GitHub Actions)
+
+# Logs et fichiers temporaires
+docs/npm-debug.log*
+docs/yarn-debug.log*
+docs/yarn-error.log*
+docs/.npm/
+docs/.yarn/
+
+# Variables d'environnement locales (sensibles)
+docs/.env.local
+docs/.env*.local
+docs/.env.development.local
+docs/.env.production.local
+
+# IDE / OS (optionnel mais recommandé)
+docs/.vscode/
+docs/.idea/
+docs/*.log
+docs/Thumbs.db
+docs/.DS_Store
