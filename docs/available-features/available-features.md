@@ -3,18 +3,62 @@ title: Available Features
 slug: getting-started/available-features.md
 ---
 
+# All Screen at once
+
 ## Features
 
-NTP: [NTP](./Screen_ntp-check.md)
-DIG: [DIG](./Screen_dig.md)
-PING: [PING](./Screen_ping.md)
-TRACEROUTE: [TRACEROUTE](./Screen_traceroute.md)
+### 🕐 NTP Check
+- Enter any NTP server address and port (defaults to `pool.ntp.org:123`)
+- Displays:
+  - ✅ / ❌ Reachability status
+  - 🕒 Server Time
+  - ⏱ Clock Offset (ms)
+  - 📡 Round-Trip Delay (ms)
+- Last 5 queries kept as clickable history (persisted across app restarts)
+- Graceful error handling: DNS failure, timeout, no network
 
-Port Scanner
-LAN Scanner
-Google Time Sync
-HTTPS Certificate 
+### 🔍 DIG Test
+- Enter a DNS server (IP or FQDN, e.g. `8.8.8.8`) and a name to resolve
+- Query goes directly to the specified DNS server (API 29+), not the system resolver
+- Displays a real `dig`-style answer section with aligned columns:
 
+```
+;; SERVER: 8.8.8.8
+
+;; QUESTION SECTION:
+;www.mobilutils.eu.    IN    A
+
+;; ANSWER SECTION:
+www.mobilutils.eu.     10800  IN  CNAME  connect.hostinger.com.
+connect.hostinger.com.   120  IN  A      34.120.137.41
+```
+
+- Full CNAME chain resolution included
+- Graceful error handling: NXDOMAIN, resolver unreachable, no network
+
+### 📡 Ping
+- Enter any hostname or IP address
+- Tap **Ping** to start — button turns red and becomes **Stop** while running
+- Output streams live in a scrolling monospace terminal card
+- Sends up to 100 ICMP packets (`ping -c 100`); can be stopped at any time
+- History icon reflects the outcome:
+  - ✅ All packets went through
+  - 🤷‍♂️ At least one succeeded but some were lost
+  - ❌ No reply received
+- Last 5 pinged hosts kept as clickable history (persisted across app restarts)
+
+### 🛤 Traceroute
+- Enter any hostname or IP address
+- Tap **Traceroute** to start — button turns red and becomes **Stop** while running
+- Output streams live hop-by-hop in a scrolling monospace terminal card
+- Implemented via `ping -c 1 -t <TTL>` probing (no `traceroute` binary required)
+- Each hop that responds with ICMP Time Exceeded reveals its IP and round-trip time
+- Probes up to 30 hops; stops automatically when the destination replies
+- History icon reflects the outcome:
+  - ✅ Destination reached (all or most hops replied)
+  - 🤷‍♂️ Some hops replied but destination not reached
+  - ❌ No hop replied at all
+- Last 5 traced hosts kept as clickable history (persisted across app restarts)
 
 ### 🕵️ Port Scanner
 - Check which TCP or UDP ports are open on a specific IP or hostname
