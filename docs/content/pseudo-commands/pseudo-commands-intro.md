@@ -10,15 +10,16 @@ A **pseudo-command** is a built-in command keyword recognized by the Bulk Action
 
 | Keyword | Purpose |
 |---|---|
+| `sleep` | any pseudo-command system needs it |
 | `ping` | ICMP ping |
 | `dig` | DNS resolution (via dnsjava) |
 | `ntp` | NTP time query |
 | `port-scan` | TCP port scan |
 | `checkcert` | HTTPS certificate inspection |
-| `device-info` | Device identity info |
 | `tracert` | Traceroute (TTL probing) |
 | `google-timesync` | Google Time Sync |
 | `lan-scan` | LAN subnet ping sweep |
+| `device-info` | Device identity info |
 
 Unrecognized keywords fall through to a raw `Runtime.exec()` fallback.
 
