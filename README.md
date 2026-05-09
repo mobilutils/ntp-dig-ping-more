@@ -10,11 +10,13 @@ A modern Android app for network diagnostics: **NTP reachability testing**, **DN
 
 | NTP Check| DIG | PING |
 |---|---|---|
-|![NTP](screenshots/v2.2/Screenshot_20260307_123547.png)|![DIG](screenshots/v2.2/Screenshot_20260307_123659.png)|![PING](screenshots/v2.2/Screenshot_20260307_123719.png)|
-|Port Scanner|Traceroute| |
-|![Port Scanner](screenshots/v2.2/Screenshot_20260307_125815.png)|![Traceroute](screenshots/v2.2/Screenshot_20260307_123802.png)| ![LAN Scanner](screenshots/v2.2/Screenshot_20260307_130032.png)|
-| Overlay menu (MORE)| | |
-|![Overlay menu](screenshots/v2.2/Screenshot_20260307_123727.png)| | |
+|![NTP Check](./docs/images/1_screencap_ntp.png)|![dig](./docs/images/2_screencap_dig.png)|![ping](./docs/images/3_screencap_ping.png)|
+|More menu|Settings|BulkActions|
+|![more](./docs/images/4_screencap_more.png)|![settings](./docs/images/5_screencap_settings.png)|![bulkactions](./docs/images/6_screencap_bulkactions.png)|
+|TRACEROUTE|Port Scan|LAN Scan|
+|![traceroute](./docs/images/7_screencap_traceroute.png)|![portscan](./docs/images/8_screencap_portscan.png)|![LANSCAN](./docs/images/9_screencap_lanscan.png)|
+|Google Timesync|Checkcert|DeviceInfos|
+|![ggtimesync](./docs/images/10_screencap_ggtimesync.png)|![checkcert](./docs/images/11_screencap_checkcert.png)|![deviceinfo](./docs/images/12_screencap_deviceinfo.png)|
 
 
 #### Supported Pseudo-Commands
