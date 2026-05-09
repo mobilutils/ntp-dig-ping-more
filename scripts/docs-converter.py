@@ -291,13 +291,13 @@ def main():
 
         page_count += 1
 
-    # ── Generate section indexes ───────────────────────────────────────
-    sections_created = 0
-    for item in sorted(source_path.iterdir()):
-        if item.is_dir() and item.name != 'images':
-            if generate_section_index(item, output_path / 'pages'):
-                sections_created += 1
-                print(f"  Section index: {item.name}/")
+#     # ── Generate section indexes ───────────────────────────────────────
+#     sections_created = 0
+#     for item in sorted(source_path.iterdir()):
+#         if item.is_dir() and item.name != 'images':
+#             if generate_section_index(item, output_path / 'pages'):
+#                 sections_created += 1
+#                 print(f"  Section index: {item.name}/")
 
     # ── Homepage (index.md) ──────────────────────────────────────────────
     index_file = source_path / 'index.md'
@@ -310,8 +310,8 @@ def main():
         page_count += 1
 
     print(f"  Pages created : {page_count}")
-    if sections_created:
-        print(f"  Section indexes: {sections_created}")
+#     if sections_created:
+#         print(f"  Section indexes: {sections_created}")
     print()
     print("=== Done ===")
     print(f"Wiki files are in: {output_dir}/")
