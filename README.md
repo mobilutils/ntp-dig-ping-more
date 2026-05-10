@@ -18,6 +18,8 @@ A modern Android app for network diagnostics: **NTP reachability testing**, **DN
 |Google Timesync|Checkcert|DeviceInfos|
 |![ggtimesync](./docs/images/10_screencap_ggtimesync.png)|![checkcert](./docs/images/11_screencap_checkcert.png)|![deviceinfo](./docs/images/12_screencap_deviceinfo.png)|
 
+More to Github pages : [Github Pages](https://mobilutils.github.io/ntp-dig-ping-more/available-features/screens)
+
 
 #### Supported Pseudo-Commands
 
