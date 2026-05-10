@@ -17,36 +17,36 @@ description: All screens available in the app.
 import Image from 'next/image'
 
 <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
-  <div style={{ flex: 1 }}>
-    <p><strong>NTP Check</strong></p>
-    - Enter any NTP server address and port defaults to pool.ntp.org:123
+   <div style={{ flex: 1 }}>
+      <p><strong>NTP Check</strong></p>
+      - Enter any NTP server address and port defaults to pool.ntp.org:123
       Displays:
-      - ✅ / ❌ Reachability status
-      - Server Time
-      - Clock Offset (ms)
-      - Round-Trip Delay (ms)
-      
-    - Last 5 queries kept as clickable history (persisted across app restarts)
-    - Graceful error handling: DNS failure, timeout, no network
+        - ✅ / ❌ Reachability status
+        - Server Time
+        - Clock Offset (ms)
+        - Round-Trip Delay (ms)
 
-  </div>
-  <div style={{width: '50%' }}>
-    <Image src="/images/1_screencap_ntp.png" alt="NTP Check" width='300' height="400" style={{ maxWidth: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
-  </div>
+      - Last 5 queries kept as clickable history (persisted across app restarts)
+      - Graceful error handling: DNS failure, timeout, no network
+
+   </div>
+   <div style={{width: '50%' }}>
+      <Image src="/images/1_screencap_ntp.png" alt="NTP Check" width='300' height="400" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+   </div>
 </div>
 
 
 <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
-    <div style={{ flex: 1 }}>
-    <Image src="./public/images/2_screencap_dig.png" alt="NTP Check" style={{ height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
-  </div>
-  <div style={{ width: '50%' }} >
-    <p><strong>DIG Domain Information Groper</strong></p>
-    - DIG Test
-    - Enter a DNS server (IP or FQDN, e.g. `8.8.8.8`) and a name to resolve
-    - Query goes directly to the specified DNS server (API 29+), not the system resolver
-    - Displays a real `dig`-style answer section with aligned columns:
-    - Full CNAME chain resolution included
-    - Graceful error handling: NXDOMAIN, resolver unreachable, no network
-  </div>
+      <div style={{ flex: 1 }}>
+      <Image src="/images/2_screencap_dig.png" alt="DIG" width={300} height={400} style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+   </div>
+   <div style={{ width: '50%' }} >
+      <p><strong>DIG Domain Information Groper</strong></p>
+      - DIG Test
+      - Enter a DNS server (IP or FQDN, e.g. `8.8.8.8`) and a name to resolve
+      - Query goes directly to the specified DNS server (API 29+), not the system resolver
+      - Displays a real `dig`-style answer section with aligned columns:
+      - Full CNAME chain resolution included
+      - Graceful error handling: NXDOMAIN, resolver unreachable, no network
+   </div>
 </div>
