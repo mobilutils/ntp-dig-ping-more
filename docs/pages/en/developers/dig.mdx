@@ -2,12 +2,13 @@
 title: DIG (DNS) — Implementation Deep Dive
 description: How our DIG works dnsjava resolution, NXDOMAIN detection, and dig-style output formatting
 ---
+# DIG (DNS) — Implementation Deep Dive
 
 ## Overview
 
 The DIG Test screen performs DNS lookups using **dnsjava** — a pure-Java DNS client library that bypasses the OS resolver entirely. This means the app can query arbitrary DNS servers (8.8.8.8, 1.1.1.1, custom resolvers) and see raw answer-section records with TTL, class, type, and rdata.
 
-The feature reports:
+The feature rxeports:
 
 - **QUESTION section** — the query that was sent (e.g. `pool.ntp.org.    IN    A`)
 - **ANSWER section** — all resolved records (A + AAAA), formatted like `dig` CLI output
