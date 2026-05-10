@@ -1,0 +1,568 @@
+---
+title: Traceroute — Deep Dive
+description: How the Traceroute screen works, TTL probing via ping, hop classification, and status computation
+---
+
+# Traceroute — Implementation Deep Dive
+## Overview
+
+The Traceroute screen implements traceroute by **probing with `ping -c 1 -t <TTL>`** for incrementing TTL values (1, 2, …, 30). Since Android devices typically don't ship with a `traceroute` binary, this approach uses the ICMP Time Exceeded mechanism to discover each hop along the path.
+
+For each TTL:
+
+- **Intermediate router** — receives a packet with TTL=0 and sends back an ICMP "Time to live exceeded" message. The router's IP is captured as the hop.
+- **Destination** — the target itself replies (ICMP Echo Reply). We've reached the end.
+- **Timeout** — no ICMP reply within 2 seconds. Displayed as `* * *`.
+
+The feature reports:
+
+- **Live hop output** — each TTL line as it's probed (e.g. `01   192.168.1.1   12 ms`)
+- **Status summary** — derived from the collected hops:
+      - **ALL_SUCCESS** ✅ — destination reached
+      - **PARTIAL** 🤷 — some hops replied but destination not reached / stopped early
+      - **ALL_FAILED** ❌ — no hop replied at all
+
+The feature is implemented across **three files** (no separate Repository — the subprocess logic lives directly in the ViewModel):
+
+| File | Role |
+|---|---|
+| `TracerouteViewModel.kt` | State management + TTL probing — `StateFlow<TracerouteUiState>`, `Runtime.exec()` |
+| `TracerouteHistoryStore.kt` | Persistence — DataStore-backed history (last 5 entries) |
+| `TracerouteScreen.kt` | UI — Jetpack Compose screen with terminal output card and custom scrollbar |
+
+## TracerouteViewModel — TTL Probing
+
+**File:** `app/src/main/java/.../TracerouteViewModel.kt`
+
+```kotlin
+class TracerouteViewModel(
+    private val historyStore: TracerouteHistoryStore,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(TracerouteUiState())
+    val uiState: StateFlow<TracerouteUiState> = _uiState.asStateFlow()
+
+    private var traceJob: Job? = null
+
+      // "From 192.168.1.1 icmp_seq=…  Time to live exceeded"
+    private val ttlExceededIpRegex = Regex("""From (\S+).*[Tt]ime to live exceeded""")
+      // "64 bytes from 142.251.12.100:"
+    private val destinationReplyRegex = Regex("""bytes from (\S+):""")
+      // Alternative: some Android pings say "From x.x.x.x: ..."
+    private val ttlExceededAltRegex = Regex("""From (\S+):.*ttl""", RegexOption.IGNORE_CASE)
+```
+
+### UI State
+
+```kotlin
+data class TracerouteUiState(
+    val host: String = "",
+    val isRunning: Boolean = false,
+    val outputLines: List<String> = emptyList(),
+    val history: List<TracerouteHistoryEntry> = emptyList(),
+)
+```
+
+Same structure as Ping: includes `outputLines: List<String>` for streaming hop output.
+
+### The `startTraceroute()` lifecycle
+
+```kotlin
+fun startTraceroute() {
+    val host = _uiState.value.host.trim()
+    if (host.isBlank() || _uiState.value.isRunning) return
+
+        _uiState.value = _uiState.value.copy(
+        isRunning    = true,
+        outputLines = emptyList(),
+        )
+
+    traceJob = viewModelScope.launch {
+        appendLine("traceroute to $host, 30 hops max")
+
+        val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+        var reachableHops = 0
+        var destinationReached = false
+
+        try {
+            withTimeout(timeoutMs) {
+                for (ttl in 1..30) {
+                    if (!isActive) break
+
+                    val hopResult = withContext(Dispatchers.IO) { probeHop(host, ttl) }
+                    appendLine(hopResult.displayLine)
+
+                    if (hopResult.isReachable) reachableHops++
+                    if (hopResult.isDestination) {
+                        destinationReached = true
+                        break
+                         }
+                      }
+                  }
+              } catch (_: TimeoutCancellationException) {
+            appendLine("--- Timed out after ${timeoutMs / 1000}s ---")
+              }
+
+        val status = when {
+            reachableHops == 0 -> TracerouteStatus.ALL_FAILED
+            destinationReached -> TracerouteStatus.ALL_SUCCESS
+            else                -> TracerouteStatus.PARTIAL
+             }
+
+        val wasRunning = _uiState.value.isRunning
+         _uiState.value = _uiState.value.copy(isRunning = false)
+        if (wasRunning) saveHistory(host, status)
+          }
+      }
+```
+
+### Key implementation details
+
+1. **No-op if already running** — `if (host.isBlank() || _uiState.value.isRunning) return` prevents duplicate traces.
+
+2. **TTL loop** — `for (ttl in 1..30)` probes up to 30 hops (standard traceroute maximum). Each iteration:
+       - Calls `probeHop(host, ttl)` on the IO dispatcher
+       - Appends the display line to `outputLines` on the main thread
+       - Breaks early if `isDestination` (destination reached)
+
+3. **`isActive` check** — `if (!isActive) break` inside the loop checks coroutine cancellation on each iteration. This is the primary way `stopTraceroute()` halts the trace.
+
+4. **`withTimeout()` wrapping the entire loop** — the user-configurable timeout applies to the *entire traceroute*, not individual hops. If the total time exceeds the limit, a timeout marker is appended and the loop exits.
+
+5. **`appendLine()`** — a private helper that updates `outputLines` on the main thread:
+    ```kotlin
+    private fun appendLine(line: String) {
+         _uiState.value = _uiState.value.copy(
+        outputLines = _uiState.value.outputLines + line,
+           )
+        }
+    ```
+    This is called from the coroutine's default context (which is `Dispatchers.IO` for `viewModelScope`), so it implicitly switches to `Dispatchers.Main` via the `copy` call.
+
+6. **Status computation** — after the loop exits (timeout, destination reached, or stopped):
+       - `reachableHops == 0` → `ALL_FAILED`
+       - `destinationReached == true` → `ALL_SUCCESS`
+       - Otherwise → `PARTIAL`
+
+### The `stopTraceroute()` method
+
+```kotlin
+fun stopTraceroute() {
+    traceJob?.cancel()
+    val lines     = _uiState.value.outputLines
+    val hopLines = lines.filter { it.trimStart().firstOrNull()?.isDigit() == true }
+    val timeouts = hopLines.count { "* * *" in it }
+    val replied   = hopLines.size - timeouts
+    val status = when {
+        replied == 0   -> TracerouteStatus.ALL_FAILED
+        timeouts == 0 -> TracerouteStatus.ALL_SUCCESS
+        else           -> TracerouteStatus.PARTIAL
+         }
+         _uiState.value = _uiState.value.copy(isRunning = false)
+    viewModelScope.launch { saveHistory(_uiState.value.host.trim(), status) }
+}
+```
+
+Stops the trace by cancelling the job, then computes status from the *already-collected* output lines:
+- Filters to hop lines (those starting with a digit)
+- Counts timeout lines (`* * *`) vs replied lines
+- Derives status from the counts
+
+### The `probeHop()` method — single TTL probe
+
+```kotlin
+private data class HopResult(
+    val displayLine: String,
+    val isReachable: Boolean,
+    val isDestination: Boolean,
+)
+
+private fun probeHop(host: String, ttl: Int): HopResult {
+    val paddedTtl = ttl.toString().padStart(2)
+    return try {
+        val t0 = System.currentTimeMillis()
+        val process = Runtime.getRuntime().exec(
+            arrayOf("ping", "-c", "1", "-t", ttl.toString(), "-W", "2", host)
+             )
+        val stdout = process.inputStream.bufferedReader().readText()
+        val stderr = process.errorStream.bufferedReader().readText()
+        process.waitFor()
+        val elapsed   = System.currentTimeMillis() - t0
+        val combined = stdout + "\n" + stderr
+
+        when {
+             // Intermediate hop replied with ICMP Time Exceeded
+            ttlExceededIpRegex.containsMatchIn(combined) -> {
+                val ip = ttlExceededIpRegex.find(combined)!!.groupValues[1].trimEnd(':')
+                HopResult("$paddedTtl   $ip   ${elapsed} ms",
+                    isReachable = true, isDestination = false)
+                }
+             // Destination itself replied
+            destinationReplyRegex.containsMatchIn(combined) -> {
+                val ip = destinationReplyRegex.find(combined)!!.groupValues[1].trimEnd(':')
+                val rtt = Regex("""time[=<]([\d.]+) ms""").find(combined)
+                         ?.groupValues?.get(1)?.let { "$it ms" } ?: "${elapsed} ms"
+                HopResult("$paddedTtl   $ip   $rtt",
+                    isReachable = true, isDestination = true)
+                }
+             // Alt Android ping "From x.x.x.x: … ttl …" format
+            ttlExceededAltRegex.containsMatchIn(combined) -> {
+                val ip = ttlExceededAltRegex.find(combined)!!.groupValues[1].trimEnd(':')
+                HopResult("$paddedTtl   $ip   ${elapsed} ms",
+                    isReachable = true, isDestination = false)
+                }
+             // Timeout — no ICMP reply within 2 s
+            else -> HopResult("$paddedTtl   * * *",
+                isReachable = false, isDestination = false)
+                }
+            } catch (_: Exception) {
+        val paddedTtl2 = ttl.toString().padStart(2)
+        HopResult("$paddedTtl2   * * *", isReachable = false, isDestination = false)
+          }
+      }
+```
+
+### Key implementation details
+
+1. **Subprocess command** — `Runtime.getRuntime().exec(arrayOf("ping", "-c", "1", "-t", ttl.toString(), "-W", "2", host))`:
+       - `-c 1` — send exactly 1 packet
+       - `-t <ttl>` — set the TTL to the current hop number
+       - `-W 2` — wait 2 seconds for a reply per packet
+       - Each hop takes ≤ 2 seconds, so 30 hops could take up to ~60 seconds in the worst case
+
+2. **Read both stdout and stderr** — `process.inputStream.bufferedReader().readText()` and `process.errorStream.bufferedReader().readText()` are merged into `combined` for regex matching. Some Android ping implementations write diagnostic messages to stderr.
+
+3. **Three regex patterns** — checked in priority order:
+       - **`ttlExceededIpRegex`** — `From (\S+).*[Tt]ime to live exceeded` — captures the intermediate router's IP from an ICMP Time Exceeded message
+       - **`destinationReplyRegex`** — `bytes from (\S+):` — captures the destination's IP from an Echo Reply
+       - **`ttlExceededAltRegex`** — `From (\S+):.*ttl` (case-insensitive) — alternative format used by some Android pings
+
+4. **TTL display padding** — `ttl.toString().padStart(2)` ensures consistent column alignment (`01`, `02`, …, `30`).
+
+5. **RTT extraction** — for destination replies, the RTT is extracted from `time=<N> ms` or `time= N ms` format. Falls back to the total elapsed time if the pattern doesn't match.
+
+6. **Timeout** — if none of the regexes match (no ICMP reply within 2s), returns `HopResult("$paddedTtl   * * *", isReachable = false, isDestination = false)`.
+
+7. **Exception handling** — any exception during the probe (e.g., `IOException`) returns a timeout result (`* * *`), so a single failed hop doesn't abort the entire trace.
+
+### HopResult data class
+
+```kotlin
+private data class HopResult(
+    val displayLine: String,    // e.g. "01   192.168.1.1   12 ms"
+    val isReachable: Boolean,   // true if any ICMP reply received
+    val isDestination: Boolean, // true if the target host itself replied
+)
+```
+
+Three fields encode all the information needed for both display and status computation.
+
+### Command handlers
+
+| Function | Behavior |
+|---|---|
+| `onHostChange(value)` | Updates `host` |
+| `startTraceroute()` | Validates, probes TTL 1..30, streams output, computes status, saves history |
+| `stopTraceroute()` | Cancels job, computes status from collected lines, saves history |
+| `selectHistoryEntry(entry)` | Stops current trace (if running), populates host, immediately starts new trace |
+
+### Factory delegate
+
+```kotlin
+companion object {
+    fun factory(context: Context): ViewModelProvider.Factory =
+        object : ViewModelProvider.Factory {
+               @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                TracerouteViewModel(
+                    historyStore = TracerouteHistoryStore(context.applicationContext),
+                    settingsRepository = SettingsRepository(context.applicationContext),
+                      ) as T
+              }
+}
+```
+
+Note: Traceroute has **no Repository** — the `Runtime.exec()` call lives directly in the ViewModel. This is one of two screens without a Repository file (the other is Ping).
+
+### `onCleared()` override
+
+```kotlin
+override fun onCleared() {
+    super.onCleared()
+    traceJob?.cancel()
+}
+```
+
+Cancels the in-flight job when the ViewModel is destroyed. Unlike Ping, Traceroute does *not* hold a `Process?` reference for cleanup — the subprocess terminates when the coroutine is cancelled (the IO thread's `readText()` call is blocked but the process is orphaned by the OS).
+
+## TracerouteHistoryStore — Persistence
+
+**File:** `app/src/main/java/.../TracerouteHistoryStore.kt`
+
+### DataStore setup
+
+```kotlin
+private val Context.tracerouteHistoryDataStore: DataStore<Preferences>
+    by preferencesDataStore(name = "traceroute_history")
+```
+
+Each tool has its own named DataStore file. Traceroute uses `"traceroute_history"`.
+
+### Serialization format
+
+A single `String` preference key (`"traceroute_history"`) contains all entries, one per line, fields separated by `|`:
+
+```
+2026/05/10 14:30:00|google.com|ALL_SUCCESS
+2026/05/09 09:15:22|192.168.1.1|PARTIAL
+2026/05/08 18:00:00|nonexistent.host|ALL_FAILED
+```
+
+| Field | Example | Notes |
+|---|---|---|
+| `timestamp` | `2026/05/10 14:30:00` | `yyyy/MM/dd HH:mm:ss` |
+| `host` | `google.com` | Hostname or IP |
+| `status` | `ALL_SUCCESS` | Enum serialized as `.name` |
+
+### Deserialization
+
+```kotlin
+private fun deserialise(raw: String): List<TracerouteHistoryEntry> =
+    raw.split(ENTRY_SEP)
+            .filter { it.isNotBlank() }
+            .mapNotNull { line ->
+            val parts = line.split(FIELD_SEP)
+            if (parts.size >= 2) {
+                val status = when (parts.getOrNull(2)) {
+                         "ALL_SUCCESS" -> TracerouteStatus.ALL_SUCCESS
+                         "PARTIAL"       -> TracerouteStatus.PARTIAL
+                        else               -> TracerouteStatus.ALL_FAILED
+                          }
+                TracerouteHistoryEntry(
+                    timestamp = parts[0],
+                    host        = parts[1],
+                    status      = status,
+                      )
+                  } else null
+              }
+              .take(MAX_ENTRIES)
+```
+
+- Requires at least 2 fields (timestamp, host); 3rd field (`status`) defaults to `ALL_FAILED` if missing
+- Empty/blank lines are filtered out
+- `take(MAX_ENTRIES)` acts as a safety net even though the ViewModel caps at 5 before saving
+
+### Reactive history flow
+
+```kotlin
+val historyFlow: Flow<List<TracerouteHistoryEntry>> =
+    context.tracerouteHistoryDataStore.data.map { prefs ->
+        prefs[KEY]?.let { raw -> deserialise(raw) } ?: emptyList()
+         }
+```
+
+The ViewModel's `init` block reads the first emission:
+
+```kotlin
+init {
+    viewModelScope.launch {
+        val saved = historyStore.historyFlow.first()
+             _uiState.value = _uiState.value.copy(history = saved.take(5))
+          }
+      }
+```
+
+Note: `.take(5)` is applied both in the `init` block and in `saveHistory()`, providing a double cap.
+
+## UI — TracerouteScreen
+
+**File:** `app/src/main/java/.../TracerouteScreen.kt`
+
+The Traceroute screen uses the **same layout strategy as Ping**: pinned input area + scrollable output terminal that fills all remaining space:
+
+```
+┌─────────────────────────────────────────┐
+│ [Hostname / IP                     ]        │ ← pinned, always visible
+├─────────────────────────────────────────┤
+│ [🛤 Route    Traceroute                ]    │ ← pinned, always visible
+├─────────────────────────────────────────┤
+│ ┌─ Terminal output (scrollable) ─────┐   │
+│ │ traceroute to google.com, 30 hops max│   │
+│ │ 01   192.168.1.1   12 ms            │   │
+│ │ 02   10.0.0.1    24 ms              │   │
+│ │ 03   * * *                          │   │
+│ │ ... (fills remaining space)         │   │
+│ │                                     │   │ ← custom scrollbar
+│ └────────────────────────────────────┘   │
+├─────────────────────────────────────────┤
+│ ┌─ Recent Traceroutes ─────────────┐     │
+│ │ 2026/05/10 14:30:00   google.com   ✅│     │
+│ └──────────────────────────────────┘     │
+└─────────────────────────────────────────┘
+```
+
+### Screen structure
+
+```kotlin
+@Composable
+fun TracerouteScreen() {
+    val context = LocalContext.current
+    val vm: TracerouteViewModel = viewModel(factory = TracerouteViewModel.factory(context))
+    val uiState by vm.uiState.collectAsState()
+    val focusManager = LocalFocusManager.current
+
+      // Scroll state for the output area – auto-scroll to the bottom on new lines
+    val outputScrollState = rememberScrollState()
+    LaunchedEffect(uiState.outputLines.size) {
+        outputScrollState.animateScrollTo(outputScrollState.maxValue)
+          }
+
+    Column(
+        modifier = Modifier
+              .fillMaxSize()
+              .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+          ) {
+              // ── Hostname field
+            OutlinedTextField(/* host, KeyboardType.Uri, ImeAction.Go */)
+
+              // ── Traceroute / Stop button
+            Button(/* ... */)
+
+              // ── Output terminal card (weight(1f) = fills remaining space)
+            AnimatedVisibility(
+                visible = uiState.outputLines.isNotEmpty(),
+                modifier = Modifier.weight(1f),
+                enter = fadeIn(tween(300)),
+                exit   = fadeOut(tween(200)),
+                  ) {
+                Card {
+                    Box {
+                         Column(
+                             modifier = Modifier
+                                   .fillMaxSize()
+                                   .padding(end = 10.dp)
+                                   .verticalScroll(outputScrollState)
+                                   .verticalScrollbar(outputScrollState),
+                              ) {
+                                uiState.outputLines.forEach { line ->
+                                    Text(line, /* monospace, 12sp */)
+                                    }
+                                  }
+                               }
+                           }
+                       }
+
+              // ── Traceroute History
+            AnimatedVisibility(visible = uiState.history.isNotEmpty()) {
+                TracerouteHistorySection(entries = uiState.history, /* ... */)
+                  }
+               }
+}
+```
+
+### Key UI details
+
+- **Auto-scroll** — `LaunchedEffect(uiState.outputLines.size)` triggers `animateScrollTo(maxValue)` on every new line, keeping the terminal scrolled to the bottom
+- **Custom scrollbar** — identical `verticalScrollbar` modifier as PingScreen (draws a thin rounded rect on the right edge)
+- **Toggle button** — same Ping pattern: "Traceroute" (route icon) ↔ "Stop" (stop icon, red background)
+- **Button enabled states** — enabled when either running (always) or host is non-blank (ready to start)
+- **IME action** — "Go" key toggles trace start/stop, same as Ping
+
+### Hop output styling
+
+```kotlin
+uiState.outputLines.forEach { line ->
+    Text(
+        text = line,
+        style = MaterialTheme.typography.bodySmall.copy(
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+              ),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+           )
+}
+```
+
+Each hop line is rendered in monospace font at 12sp with 18sp line height — compact enough to fit many hops in the terminal card while remaining readable.
+
+## Status Computation Comparison
+
+### During normal completion (`startTraceroute`)
+
+```kotlin
+val status = when {
+    reachableHops == 0 -> TracerouteStatus.ALL_FAILED
+    destinationReached -> TracerouteStatus.ALL_SUCCESS
+    else                -> TracerouteStatus.PARTIAL
+         }
+```
+
+- `reachableHops` — count of hops where `isReachable == true`
+- `destinationReached` — set to `true` when `isDestination == true` on any hop
+
+### During manual stop (`stopTraceroute`)
+
+```kotlin
+val hopLines = lines.filter { it.trimStart().firstOrNull()?.isDigit() == true }
+val timeouts = hopLines.count { "* * *" in it }
+val replied   = hopLines.size - timeouts
+val status = when {
+    replied == 0   -> TracerouteStatus.ALL_FAILED
+    timeouts == 0 -> TracerouteStatus.ALL_SUCCESS
+    else           -> TracerouteStatus.PARTIAL
+         }
+```
+
+- Filters to hop lines (those starting with a digit)
+- Counts timeout lines (`* * *`) vs replied lines
+- Derives status from the counts (no `destinationReached` flag available since the loop was interrupted)
+
+## Test Coverage
+
+The Traceroute feature has dedicated unit tests in `TracerouteViewModelTest` (~16 tests) covering:
+
+- Input validation (blank host guard, no-op when already running)
+- History save after query (success and partial)
+- State transitions (loading → done)
+- Coroutine control with `StandardTestDispatcher` + `advanceUntilIdle()`
+- `stopTraceroute()` status computation from collected lines
+
+## Data Flow Summary
+
+```
+User enters host → taps "Traceroute" / presses "Go"
+           │
+           ├─ Validates (non-blank, not already running)
+           ├─ _uiState.value = isRunning = true, outputLines = []
+           ├─ appendLine("traceroute to $host, 30 hops max")
+           │
+           └─ viewModelScope.launch {
+                  withTimeout(userSetting * 1000) {
+                      for (ttl in 1..30) {
+                          if (!isActive) break
+                           │
+                           └─ probeHop(host, ttl)
+                                 │
+                                 ├─ Runtime.exec(["ping", "-c", "1", "-t", ttl, "-W", "2", host])
+                                 ├─ read stdout + stderr
+                                 ├─ Match regex:
+                                 │    ├─ ttlExceededIpRegex     → intermediate hop
+                                 │    ├─ destinationReplyRegex  → destination reached
+                                 │    ├─ ttlExceededAltRegex    → alternative format
+                                 │    └─ else                   → * * *
+                                 └─ HopResult(displayLine, isReachable, isDestination)
+                            │
+                          ├─ appendLine(hopResult.displayLine)
+                          ├─ if (isDestination) break
+                          └─ reachableHops++
+                         }
+                      }
+                   │
+                  val status = ALL_SUCCESS / PARTIAL / ALL_FAILED
+                  saveHistory(host, status)
+               }
+           }
+```
