@@ -1,0 +1,428 @@
+---
+title: NTP Client — Implementation Deep Dive
+description: How the NTP Check screen works Repository, ViewModel, UI, and persistence
+---
+
+## Overview
+
+The NTP Check screen queries an NTP server via UDP (port 123, RFC 5905) and reports:
+
+- **Server transmit timestamp** — when the server sent its response
+- **Clock offset** — estimated difference between local and server time (milliseconds)
+- **Round-trip delay** — time for the UDP packet to travel there and back
+
+The feature is implemented across **four files** that follow the project's standard screen module pattern:
+
+| File | Role |
+|---|---|
+| `NtpRepository.kt` | Network I/O — `NTPUDPClient` from Apache Commons Net |
+| `NtpViewModel.kt` | State management — `StateFlow<NtpUiState>`, coroutine orchestration |
+| `NtpHistoryStore.kt` | Persistence — DataStore-backed history (last 5 entries) |
+| `MainActivity.kt` (line 308) | UI — `NtpCheckScreen()` composable (no separate Screen file) |
+
+> **Note:** The NTP screen lives inside `MainActivity.kt` rather than a separate `NtpScreen.kt` file. This is the only screen in the app that follows this pattern — all other screens have their own `*Screen.kt` files.
+
+## NtpRepository — Network I/O
+
+**File:** `app/src/main/java/.../NtpRepository.kt`
+
+The Repository is a thin wrapper around `org.apache.commons.net.ntp.NTPUDPClient`. All logic is in a single `suspend fun query()`:
+
+```kotlin
+suspend fun query(host: String, port: Int = NTP_PORT): NtpResult = withContext(Dispatchers.IO) {
+    val client = NTPUDPClient()
+    client.setDefaultTimeout(TIMEOUT)        // Duration.ofSeconds(5)
+    try {
+        client.open()
+
+           // 1. DNS resolution
+        val address: InetAddress = try {
+            InetAddress.getByName(host)
+          } catch (e: UnknownHostException) {
+            return@withContext NtpResult.DnsFailure(host)
+          }
+
+           // 2. NTP exchange
+        val info: TimeInfo = try {
+            client.getTime(address, port)
+          } catch (e: SocketException) {
+            val msg = e.message ?: ""
+            return@withContext if (msg.contains("unreachable", ignoreCase = true) ||
+                msg.contains("connect failed", ignoreCase = true)
+              ) {
+                NtpResult.NoNetwork
+              } else {
+                NtpResult.Timeout(host)
+              }
+          } catch (e: SocketTimeoutException) {
+            return@withContext NtpResult.Timeout(host)
+          }
+
+           // 3. Compute offset & delay from NTP timestamps
+        info.computeDetails()
+        val offset: Long = info.offset
+        val delay: Long     = info.delay
+
+           // 4. Format server transmit time
+        val transmitTime = info.message.transmitTimeStamp?.time
+                 ?: System.currentTimeMillis()
+        val serverTime = SimpleDateFormat(DATE_PATTERN, Locale.getDefault())
+                 .format(Date(transmitTime))
+
+        NtpResult.Success(serverTime, offset, delay)
+      } catch (e: Exception) {
+        NtpResult.Error(e.localizedMessage ?: "Unknown error")
+      } finally {
+        client.close()
+      }
+}
+```
+
+### Key implementation details
+
+1. **`withContext(Dispatchers.IO)`** — the function *does not* switch dispatchers itself; the caller remains in control. In practice it's always called from a `viewModelScope.launch` coroutine which defaults to `Dispatchers.IO`.
+
+2. **`NTPUDPClient.open()`** — opens a UDP socket. No binding to a specific local port; the OS assigns one.
+
+3. **`client.setDefaultTimeout(Duration.ofSeconds(5))`** — this is the *socket-level* timeout. The ViewModel layer adds a *second* timeout via `withTimeout()` (user-configurable, default 5s from Settings). So the effective timeout is `min(5s, userSetting)`.
+
+4. **Error classification** — `SocketException` messages are inspected for `"unreachable"` or `"connect failed"` to produce `NtpResult.NoNetwork` (distinct from `Timeout`). All other socket errors and `SocketTimeoutException` produce `Timeout`.
+
+5. **`info.computeDetails()`** — Apache Commons Net computes offset and delay from the four NTP timestamps (`T1`, `T2`, `T3`, `T4`):
+       - **Offset** = `((T2 - T1) + (T3 - T4)) / 2`
+       - **Delay** = `(T4 - T1) - (T3 - T2)`
+
+### Result sealed hierarchy
+
+```kotlin
+sealed class NtpResult {
+    data class Success(val serverTime: String, val offsetMs: Long, val delayMs: Long) : NtpResult()
+    data class DnsFailure(val host: String) : NtpResult()
+    data class Timeout(val host: String) : NtpResult()
+    object NoNetwork : NtpResult()
+    data class Error(val message: String) : NtpResult()
+}
+```
+
+Five variants cover all possible outcomes: success, DNS failure, timeout, no network, and generic errors.
+
+## NtpViewModel — State Management
+
+**File:** `app/src/main/java/.../NtpViewModel.kt`
+
+```kotlin
+class SimpleNtpViewModel(
+    private val repository: NtpRepository = NtpRepository(),
+    private val historyStore: NtpHistoryStore,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(NtpUiState())
+    val uiState: StateFlow<NtpUiState> = _uiState.asStateFlow()
+
+    private var checkJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            val savedHistory = historyStore.historyFlow.first()
+               _uiState.value = _uiState.value.copy(history = savedHistory)
+          }
+      }
+```
+
+### UI State
+
+```kotlin
+data class NtpUiState(
+    val serverAddress: String = "pool.ntp.org",
+    val port: String = "123",
+    val isLoading: Boolean = false,
+    val result: NtpResult? = null,
+    val history: List<NtpHistoryEntry> = emptyList(),
+)
+```
+
+The data class approach uses a nullable `result` field and an `isLoading` boolean. (Other screens like Google Time Sync and HTTPS Cert use sealed class UI states for explicit state transitions.)
+
+### Command handlers
+
+| Function | Behavior |
+|---|---|
+| `onServerAddressChange(newValue)` | Updates `serverAddress`, clears `result` (so old result is hidden) |
+| `onPortChange(newValue)` | Filters to digits only, caps at 5 chars, clears `result` |
+| `checkReachability()` | Cancels previous job, sets `isLoading = true`, launches coroutine |
+| `selectHistoryEntry(entry)` | Populates server/port from history entry, immediately runs `checkReachability()` |
+
+### The `checkReachability()` lifecycle
+
+```kotlin
+fun checkReachability() {
+    val host = _uiState.value.serverAddress.trim()
+    if (host.isEmpty()) return
+    val port = _uiState.value.port.toIntOrNull()?.takeIf { it in 1..65535 } ?: 123
+
+    checkJob?.cancel()                        // cancel in-flight request
+       _uiState.value = _uiState.value.copy(isLoading = true, result = null)
+
+    checkJob = viewModelScope.launch {
+        val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+        val result = try {
+            withTimeout(timeoutMs) {
+                repository.query(host, port)
+              }
+          } catch (_: TimeoutCancellationException) {
+            NtpResult.Timeout(host)           // ViewModel-level timeout
+          }
+
+            // Build history entry
+        val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
+        val newEntry = NtpHistoryEntry(timestamp, host, port, result is NtpResult.Success)
+
+            // Deduplicate: remove old entry with same (server, port), prepend new one
+        val updatedHistory = (listOf(newEntry) + _uiState.value.history
+                  .filter { it.server != host || it.port != port })
+                  .take(5)
+
+         _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            result = result,
+            history = updatedHistory,
+          )
+        historyStore.save(updatedHistory)       // persist to DataStore
+      }
+}
+```
+
+Key behaviors:
+1. **Input validation** — empty host returns early; invalid port defaults to 123
+2. **Job cancellation** — `checkJob?.cancel()` prevents overlapping requests
+3. **Dual timeout** — `withTimeout()` in ViewModel (user-configurable, default 5s) wraps `repository.query()` which has its own 5s socket timeout
+4. **History deduplication** — old entries with the same (server, port) are removed before prepending the new entry, so the history list never contains duplicates
+5. **Persistence** — `historyStore.save()` is called at the end of the coroutine, so history is only saved when a query completes (success or failure)
+
+### Factory delegate
+
+```kotlin
+companion object {
+    fun factory(context: Context): ViewModelProvider.Factory =
+        object : ViewModelProvider.Factory {
+               @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                SimpleNtpViewModel(
+                    repository = NtpRepository(),
+                    historyStore = NtpHistoryStore(context.applicationContext),
+                    settingsRepository = SettingsRepository(context.applicationContext),
+                  ) as T
+          }
+}
+```
+
+Uses `context.applicationContext` to avoid leaking the Activity context.
+
+## NtpHistoryStore — Persistence
+
+**File:** `app/src/main/java/.../NtpHistoryStore.kt`
+
+### DataStore setup
+
+```kotlin
+private val Context.historyDataStore: DataStore<Preferences>
+    by preferencesDataStore(name = "ntp_history")
+```
+
+Each tool has its own named DataStore file. NTP uses `"ntp_history"`.
+
+### Serialization format
+
+A single `String` preference key (`"history"`) contains all entries, one per line, fields separated by `|`:
+
+```
+2026/05/10 14:30:00|pool.ntp.org|123|true
+2026/05/09 09:15:22|time.google.com|123|false
+```
+
+| Field | Example | Notes |
+|---|---|---|
+| `timestamp` | `2026/05/10 14:30:00` | `yyyy/MM/dd HH:mm:ss` |
+| `server` | `pool.ntp.org` | Hostname or IP |
+| `port` | `123` | Integer |
+| `success` | `true` / `false` | Added in a later version; older entries may lack this field |
+
+### Deserialization with backward compatibility
+
+```kotlin
+private fun deserialise(raw: String): List<NtpHistoryEntry> =
+    raw.split("\n")
+          .filter { it.isNotBlank() }
+          .mapNotNull { line ->
+            val parts = line.split("|")
+            if (parts.size >= 3) {
+                val port = parts[2].toIntOrNull() ?: return@mapNotNull null
+                val success = parts.getOrNull(3)?.toBooleanStrictOrNull() ?: false
+                NtpHistoryEntry(timestamp = parts[0], server = parts[1], port = port, success = success)
+              } else null
+          }
+          .take(MAX_ENTRIES)
+```
+
+- Requires at least 3 fields (port was the original minimum); 4th field (`success`) is optional via `getOrNull(3)` with a default of `false`
+- Entries with unparseable ports are silently skipped (`mapNotNull`)
+- `take(MAX_ENTRIES)` acts as a safety net even though the ViewModel caps at 5 before saving
+
+### Reactive history flow
+
+```kotlin
+val historyFlow: Flow<List<NtpHistoryEntry>> = context.historyDataStore.data.map { prefs ->
+    prefs[KEY]?.let { raw } ?: emptyList()
+}
+```
+
+The ViewModel's `init` block reads the first emission:
+
+```kotlin
+init {
+    viewModelScope.launch {
+        val savedHistory = historyStore.historyFlow.first()
+           _uiState.value = _uiState.value.copy(history = savedHistory)
+       }
+}
+```
+
+This means history is restored immediately on ViewModel construction — including after process death and device reboots, since DataStore files survive on disk.
+
+## UI — NtpCheckScreen
+
+**File:** `app/src/main/java/.../MainActivity.kt` (line 308)
+
+The NTP screen is the only one in the app without a separate `*Screen.kt` file. It lives as a file-scoped composable inside `MainActivity.kt`:
+
+```kotlin
+@Composable
+fun NtpCheckScreen() {
+    val context = LocalContext.current
+    val viewModel: SimpleNtpViewModel = viewModel(factory = SimpleNtpViewModel.factory(context))
+    val uiState by viewModel.uiState.collectAsState()
+    val focusManager = LocalFocusManager.current
+
+    Column(
+        modifier = Modifier.fillMaxSize()
+              .padding(horizontal = 16.dp, vertical = 20.dp)
+              .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+      ) {
+           // Server Address + Port Row
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = uiState.serverAddress,
+                onValueChange = viewModel::onServerAddressChange,
+                label = { Text("NTP Server Address") },
+                placeholder = { Text("e.g. pool.ntp.org") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Uri,
+                    imeAction = ImeAction.Next,
+                  ),
+                isError = uiState.result is NtpResult.Error ||
+                          uiState.result is NtpResult.DnsFailure,
+                supportingText = { /* error message */ },
+              )
+            OutlinedTextField(
+                value = uiState.port,
+                onValueChange = viewModel::onPortChange,
+                label = { Text("Port") },
+                placeholder = { Text("123") },
+                singleLine = true,
+                modifier = Modifier.width(90.dp),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Go,
+                  ),
+                keyboardActions = KeyboardActions(onGo = {
+                    focusManager.clearFocus()
+                    viewModel.checkReachability()
+                  }),
+              )
+          }
+
+           // Check Button
+        Button(
+            onClick = { focusManager.clearFocus(); viewModel.checkReachability() },
+            enabled = !uiState.isLoading && uiState.serverAddress.isNotBlank(),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(12.dp),
+          ) {
+            if (uiState.isLoading) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Querying…")
+              } else {
+                Text("Check Reachability", fontWeight = FontWeight.Medium)
+              }
+          }
+
+           // Results Card (animated)
+        AnimatedVisibility(
+            visible = uiState.result != null,
+            enter = fadeIn(tween(300)) + slideInVertically(tween(300) { it / 3 }),
+            exit = fadeOut(tween(200)),
+          ) {
+            uiState.result?.let { ResultCard(it) }
+          }
+
+           // History Section (animated)
+        AnimatedVisibility(
+            visible = uiState.history.isNotEmpty(),
+            enter = fadeIn(tween(400)),
+            exit = fadeOut(tween(200)),
+          ) {
+            HistorySection(entries = uiState.history, onEntryClick = {
+                focusManager.clearFocus()
+                viewModel.selectHistoryEntry(it)
+              })
+          }
+      }
+}
+```
+
+### UI behavior highlights
+
+- **Dual keyboard types** — server address uses `KeyboardType.Uri`, port uses `KeyboardType.Number`
+- **IME actions** — server field shows "Next", port field shows "Go" which triggers `checkReachability()`
+- **Error styling** — `isError = true` on the server field when result is `DnsFailure` or `Error`, with red supporting text
+- **Button disabled states** — disabled when `isLoading` or `serverAddress` is blank
+- **Animated visibility** — result card slides in from below; history fades in. Both use `tween()` easing.
+- **History re-query** — tapping a history entry populates the fields and immediately starts a new check
+
+## Test Coverage
+
+The NTP feature has dedicated unit tests in `NtpViewModelTest` (~14 tests) covering:
+
+- State mutations on input changes (`onServerAddressChange`, `onPortChange`)
+- Repository mocking for `Success`, `Timeout`, `DnsFailure`, `NoNetwork`, `Error`
+- History save after query (success and failure)
+- State transitions (loading → done)
+- Coroutine control with `StandardTestDispatcher` + `advanceUntilIdle()`
+
+History store parsers are tested in `NtpHistoryStoreTest` with 30+ tests covering backward compatibility, edge cases, and field count variations.
+
+## Data Flow Summary
+
+```
+User taps "Check" → ViewModel.checkReachability()
+         │
+         ├─ Validates input (non-empty host, valid port)
+         ├─ checkJob?.cancel()                  ← cancel in-flight request
+         ├─ _uiState.value = loading
+         │
+         └─ viewModelScope.launch {
+                 ├─ withTimeout(userSetting * 1000) {
+                 │       repository.query(host, port)         ← NTPUDPClient (5s socket timeout)
+                 │        }
+                 │
+                 ├─ Build NtpHistoryEntry (timestamp, server, port, success)
+                 ├─ Deduplicate + prepend + cap at 5
+                 ├─ _uiState.value = result + history
+                 └─ historyStore.save(updatedHistory)        ← DataStore write
+             }
+```
