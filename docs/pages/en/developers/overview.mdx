@@ -1,0 +1,342 @@
+---
+title: App Architecture Overview
+description: MVVM pattern, data persistence, and coroutine usage in ntp_dig_ping_more
+---
+
+This document explains how the app is structured — the MVVM pattern, how data survives across restarts, and how coroutines manage concurrency.
+
+## Architecture Overview
+
+```
+MainActivity.kt                  ← Entry point, NavHost, bottom nav bar, intent extras (configUri + autoRun)
+         │
+         └── AppRoot()                ← Composable with NavHost + NavigationBar
+              │
+              ├── Screen modules (per tool):
+              │       │
+              │       ├── *Screen.kt            ← Jetpack Compose UI (Material 3)
+              │       ├── *ViewModel.kt         ← StateFlow<UiState>, coroutine lifecycle, command dispatch
+              │       ├── *Repository.kt        ← Network I/O (NTPUDPClient, dnsjava, HttpURLConnection, Runtime.exec)
+              │       └── *HistoryStore.kt ← DataStore persistence (last 5–10 entries per tool)
+              │
+              ├── settings/                 ← Global Settings + Proxy PAC configuration
+              │       ├── SettingsDataStore.kt
+              │       └── SettingsRepository.kt
+              └── deviceinfo/               ← Device identity, network, battery, storage
+```
+
+Every screen follows the same **4-file pattern**:
+
+| File | Responsibility |
+|---|---|
+| `XxxScreen.kt` | Compose UI — reads `uiState`, renders Material 3 components, exposes `factory()` for `viewModel()` |
+| `XxxViewModel.kt` | State management — exposes `StateFlow<XxxUiState>`, dispatches commands, manages coroutine lifecycle |
+| `XxxRepository.kt` (optional) | I/O abstraction — `suspend` functions for network calls (`withContext(Dispatchers.IO)`) |
+| `XxxHistoryStore.kt` | Persistence — loads/saves last N entries via AndroidX DataStore Preferences |
+
+## MVVM Pattern
+
+### ViewModel → StateFlow → Compose
+
+Each ViewModel exposes a single source of truth for its UI:
+
+```kotlin
+class DigViewModel(
+    private val repository: DigRepository,
+    private val historyStore: DigHistoryStore,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(DigUiState())
+    val uiState: StateFlow<DigUiState> = _uiState.asStateFlow()
+
+    fun checkReachability() {
+        checkJob = viewModelScope.launch {
+            val result = try {
+                withTimeout(timeoutMs) { repository.resolve(dnsHost, fqdn) }
+               } catch (_: TimeoutCancellationException) {
+                DigResult.Timeout(dnsHost)
+               }
+               _uiState.value = _uiState.value.copy(result = result)
+           }
+       }
+}
+```
+
+The Screen composable reads this flow and reacts to state changes:
+
+```kotlin
+@Composable
+fun DigScreen(onNavigateBack: () -> Unit) {
+    val context = LocalContext.current
+    val viewModel: DigViewModel = viewModel(factory = DigViewModel.factory(context))
+    val uiState by viewModel.uiState.collectAsState()
+
+       // uiState fields drive Compose UI — no imperative state updates
+}
+```
+
+### ViewModel Factory Delegates
+
+Each ViewModel exposes a `companion object` with a `factory()` method so the Screen can create it via `viewModel(factory = ...)`:
+
+```kotlin
+companion object {
+    fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+           @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            val repository = DigRepository()
+            val historyStore = DigHistoryStore(context)
+            val settingsRepository = SettingsRepository(context)
+            return DigViewModel(repository, historyStore, settingsRepository) as T
+           }
+       }
+}
+```
+
+This avoids Hilt/Dagger — all dependencies are constructed inline. The pattern is consistent across all 12 screens.
+
+### UI State: Data Class vs Sealed Class
+
+Two approaches are used:
+
+**1. Data class with nullable result** (most screens — NTP, DIG, Ping, Port Scanner, Traceroute, LAN Scanner):
+
+```kotlin
+data class DigUiState(
+    val dnsServerHost: String = "",
+    val fqdn: String = "",
+    val isLoading: Boolean = false,
+    val result: DigResult? = null,
+    val history: List<DigHistoryEntry> = emptyList(),
+)
+```
+
+**2. Sealed class for explicit state transitions** (Google Time Sync, HTTPS Cert):
+
+```kotlin
+sealed class GoogleTimeSyncUiState {
+    data object Idle : GoogleTimeSyncUiState()
+    data object Loading : GoogleTimeSyncUiState()
+    data class Success(val result: TimeSyncResult) : GoogleTimeSyncUiState()
+    data class Error(val message: String) : GoogleTimeSyncUiState()
+}
+```
+
+This avoids nullable fields and makes invalid states unrepresentable (e.g., you cannot be both `Loading` and have a `result`).
+
+### Result Sealed Hierarchies
+
+Each Repository defines a sealed hierarchy for operation results with 4–7 variants:
+
+```kotlin
+sealed class DigResult {
+    data class Success(val answer: String, val dnsServer: String) : DigResult()
+    data class NxDomain(val host: String) : DigResult()
+    data class Timeout(val server: String) : DigResult()
+    data class NoNetwork(val message: String) : DigResult()
+    data class Error(val message: String) : DigResult()
+}
+```
+
+## Data Persistence
+
+Data survives across app restarts via **AndroidX DataStore Preferences**. There are two categories:
+
+### 1. History Stores (per-tool)
+
+Each tool with query history has its own DataStore file:
+
+| History Store | DataStore Name | Max Entries | Format |
+|---|---|---|---|
+| `NtpHistoryStore` | `"ntp_history"` | 5 | Pipe-delimited |
+| `DigHistoryStore` | `"dig_history"` | 5 | Pipe-delimited |
+| `PingHistoryStore` | `"ping_history"` | 5 | Pipe-delimited |
+| `TracerouteHistoryStore` | `"traceroute_history"` | 5 | Pipe-delimited |
+| `PortScannerHistoryStore` | `"port_scanner_history"` | 5 | Pipe-delimited |
+| `GoogleTimeSyncHistoryStore` | `"google_time_sync_history"` | 5 | Pipe-delimited |
+| `HttpsCertHistoryStore` | `"https_cert_history"` | 5 | Pipe-delimited |
+| `BulkActionsHistoryStore` | `"bulk_actions_history"` | 5 | Pipe-delimited |
+| `LanScannerHistoryStore` | `"lan_scanner_history"` | 10 | JSON (`JSONArray`) |
+
+**Pipe-delimited format** (8 of 9 stores):
+
+A single string preference key contains one entry per line, with fields separated by `|`:
+
+```kotlin
+// Save
+prefs[HISTORY_KEY] = history.joinToString("\n") { entry ->
+       "${entry.timestamp}|${entry.host}|${entry.success}"
+}
+
+// Load
+raw.split("\n")
+       .filter { it.isNotBlank() }
+       .mapNotNull { line ->
+        val parts = line.split("|")
+        if (parts.size >= 3) HistoryEntry(...) else null
+       }
+```
+
+The pipe character `|` was chosen because it does not appear in hostnames, IPs, timestamps, or boolean values.
+
+**JSON format** (LAN Scanner only):
+
+```kotlin
+// LanScannerHistoryStore — the outlier
+val jsonString = prefs[HISTORY_KEY] ?: "[]"
+val array = JSONArray(jsonString)
+// parse each JSONObject into LanScannerHistoryEntry
+```
+
+JSON is used because LAN Scanner history entries contain complex fields like subnet strings (`"192.168.1.0/24"`) that could conflict with the pipe delimiter.
+
+**History lifecycle:**
+
+1. **Load on init:** The ViewModel's `init` block reads the first value from `historyStore.historyFlow` and merges it into `uiState`.
+2. **Save after every operation:** After a successful command, the ViewModel deduplicates by key fields, prepends the new entry, caps at `MAX_ENTRIES`, and writes back to the store.
+3. **Backward compatibility:** Deserializers handle missing fields from older data formats using `getOrNull()` with defaults.
+
+### 2. Settings DataStore (shared)
+
+All global settings live in a single DataStore file named `"app_settings"`:
+
+| Key | Type | Default | Purpose |
+|---|---|---|---|
+| `timeout_seconds` | `Int` | 5 | Global operation timeout (1–60s) |
+| `proxy_enabled` | `Boolean` | false | Proxy routing toggle |
+| `proxy_pac_url` | `String` | `""` | PAC script URL |
+| `proxy_last_tested` | `Long` | `0L` | Last proxy test epoch millis |
+| `proxy_last_test_result` | `String` | `null` | Last proxy test result string |
+| `proxy_logging_enabled` | `Boolean` | false | PAC logging toggle |
+
+```kotlin
+// SettingsRepository provides reactive Flow reads + suspend writes
+class SettingsRepository(private val context: Context) {
+    val timeoutSecondsFlow: Flow<Int> = context.settingsDataStore.data.map { prefs ->
+        prefs[SettingsKeys.TIMEOUT_SECONDS] ?: SettingsKeys.DEFAULT_TIMEOUT_SECONDS
+       }
+
+    suspend fun updateTimeout(seconds: Int) {
+        val clamped = seconds.coerceIn(SettingsKeys.MIN_TIMEOUT_SECONDS, SettingsKeys.MAX_TIMEOUT_SECONDS)
+        context.settingsDataStore.edit { prefs ->
+            prefs[SettingsKeys.TIMEOUT_SECONDS] = clamped
+           }
+       }
+}
+```
+
+Every ViewModel that performs timed network operations reads the timeout via `settingsRepository.timeoutSecondsFlow.first()` before executing.
+
+## Coroutines & Threading
+
+### Dispatchers
+
+All Repository I/O methods are `suspend` functions that internally use `withContext(Dispatchers.IO)`:
+
+```kotlin
+suspend fun resolve(dnsServerHost: String, fqdn: String): DigResult = withContext(Dispatchers.IO) {
+       // dnsjava resolution, HttpURLConnection, Runtime.exec, etc.
+}
+```
+
+This allows Repositories to be called from any coroutine context.
+
+### ViewModel Coroutine Usage
+
+All ViewModels launch coroutines in `viewModelScope` (tied to the ViewModel's lifecycle):
+
+```kotlin
+// History loading
+init {
+    viewModelScope.launch {
+        val saved = historyStore.historyFlow.first()
+           _uiState.value = _uiState.value.copy(history = saved)
+       }
+}
+
+// Operation dispatch
+fun execute() {
+    checkJob = viewModelScope.launch {
+        val result = try {
+            withTimeout(timeoutMs) { repository.query(host, port) }
+           } catch (_: TimeoutCancellationException) {
+            XxxResult.Timeout(host)
+           }
+           _uiState.value = _uiState.value.copy(result = result)
+       }
+}
+```
+
+### Timeout Pattern
+
+Every timed operation uses `withTimeout()` with the user-configurable timeout:
+
+```kotlin
+val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+val result = try {
+    withTimeout(timeoutMs) { repository.query(host, port) }
+} catch (_: TimeoutCancellationException) {
+    XxxResult.Timeout(host)
+}
+```
+
+### UI Thread Updates
+
+For streaming operations (Ping output, LAN scan progress), `withContext(Dispatchers.Main)` updates the UI from IO coroutines:
+
+```kotlin
+// PingViewModel — streaming output line-by-line
+while (isActive && reader.readLine().also { line = it } != null) {
+    withContext(Dispatchers.Main) {
+           _uiState.value = _uiState.value.copy(outputLines = _uiState.value.outputLines + line!!)
+       }
+}
+
+// LanScannerViewModel — progress updates
+withContext(Dispatchers.Main) {
+       _uiState.value = _uiState.value.copy(activeDevices = currentList)
+}
+```
+
+### Concurrency Patterns
+
+**LAN Scanner** — chunked batching with `async/awaitAll`:
+
+```kotlin
+val chunkSize = 20
+val chunks = ipsToScan.chunked(chunkSize)
+for (chunk in chunks) {
+    val deferredResults = chunk.map { ip ->
+        async {
+            val pingTime = repository.ping(ip)
+               // update state
+           }
+       }
+    deferredResults.awaitAll()
+}
+```
+
+**Port Scanner** — `async/awaitAll` with `Mutex` for thread-safe progress:
+
+```kotlin
+val concurrencyLimit = 50
+val mutex = Mutex()
+for (chunk in chunked(portsToScan, concurrencyLimit)) {
+    val deferreds = chunk.map { port ->
+        async {
+            mutex.withLock {
+                scannedCount++
+                   _uiState.value = _uiState.value.copy(progress = currentProgress)
+               }
+           }
+       }
+    deferreds.awaitAll()
+}
+```
+
+### Lifecycle Management
+
+- `onCleared()` is overridden in ViewModels with long-running processes (Ping, Traceroute, Port Scanner, LAN Scanner, Bulk Actions) to destroy subprocesses and cancel jobs.
+- All `viewModelScope` coroutines are automatically cancelled on configuration changes.
+- `Job?` references cancel in-flight operations before starting new ones.
