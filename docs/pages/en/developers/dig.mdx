@@ -1,0 +1,557 @@
+---
+title: DIG (DNS) — Implementation Deep Dive
+description: How our DIG works dnsjava resolution, NXDOMAIN detection, and dig-style output formatting
+---
+
+## Overview
+
+The DIG Test screen performs DNS lookups using **dnsjava** — a pure-Java DNS client library that bypasses the OS resolver entirely. This means the app can query arbitrary DNS servers (8.8.8.8, 1.1.1.1, custom resolvers) and see raw answer-section records with TTL, class, type, and rdata.
+
+The feature reports:
+
+- **QUESTION section** — the query that was sent (e.g. `pool.ntp.org.    IN    A`)
+- **ANSWER section** — all resolved records (A + AAAA), formatted like `dig` CLI output
+- **NXDOMAIN** — when neither A nor AAAA records exist for the FQDN
+- **Resolver errors** — when the DNS server itself is unreachable or times out
+
+The feature is implemented across **four files** that follow the project's standard screen module pattern:
+
+| File | Role |
+|---|---|
+| `DigRepository.kt` | Network I/O — `SimpleResolver` from dnsjava |
+| `DigViewModel.kt` | State management — `StateFlow<DigUiState>`, coroutine orchestration |
+| `DigHistoryStore.kt` | Persistence — DataStore-backed history (last 5 entries) |
+| `DigScreen.kt` | UI — Jetpack Compose screen with Material 3 |
+
+## DigRepository — DNS Resolution
+
+**File:** `app/src/main/java/.../DigRepository.kt`
+
+The Repository wraps `org.xbill.DNS.SimpleResolver` from dnsjava 3.6.2. All logic is in a single `suspend fun resolve()`:
+
+```kotlin
+suspend fun resolve(dnsServerHost: String, fqdn: String): DigResult =
+    withContext(Dispatchers.IO) {
+        val server = dnsServerHost.ifBlank { "8.8.8.8" }
+        try {
+            val resolver = SimpleResolver(server)
+            resolver.setTimeout(TIMEOUT)           // Duration.ofSeconds(5)
+
+                // Ensure the FQDN is absolute (trailing dot)
+            val name: Name = try {
+                val raw = if (fqdn.endsWith(".")) fqdn else "$fqdn."
+                Name.fromString(raw)
+               } catch (e: Exception) {
+                return@withContext DigResult.Error("Invalid FQDN: $fqdn")
+               }
+
+                // Query A records (CNAME chain is included automatically)
+            val questionRecord = Record.newRecord(name, Type.A, DClass.IN)
+            val query = Message.newQuery(questionRecord)
+            val response: Message = resolver.send(query)
+
+            val answerRecords = response.getSection(Section.ANSWER)
+
+                // Build question-section string
+            val questionSection = ";${name}    IN    A"
+
+            if (answerRecords.isNullOrEmpty()) {
+                    // Also try AAAA before declaring NXDOMAIN
+                val query6 = Message.newQuery(Record.newRecord(name, Type.AAAA, DClass.IN))
+                val response6: Message = resolver.send(query6)
+                val aaaa = response6.getSection(Section.ANSWER)
+                if (aaaa.isNullOrEmpty()) {
+                    return@withContext DigResult.NxDomain(fqdn)
+                   }
+                return@withContext DigResult.Success(
+                    questionSection = ";${name}    IN    AAAA",
+                    records = formatRecords(aaaa),
+                    dnsServer = server,
+                   )
+               }
+
+                // Also append AAAA records if present
+            val query6 = Message.newQuery(Record.newRecord(name, Type.AAAA, DClass.IN))
+            val response6: Message = resolver.send(query6)
+            val aaaaRecords = response6.getSection(Section.ANSWER) ?: emptyList()
+
+            val allRecords = (answerRecords + aaaaRecords)
+                    .distinctBy { it.toString() }
+
+            DigResult.Success(
+                questionSection = questionSection,
+                records = formatRecords(allRecords),
+                dnsServer = server,
+               )
+
+           } catch (e: UnknownHostException) {
+                // The DNS *server* host itself can't be resolved
+            DigResult.DnsServerError(
+                  "Cannot reach DNS server \"$dnsServerHost\": ${e.localizedMessage}"
+                )
+           } catch (e: java.net.SocketTimeoutException) {
+            DigResult.DnsServerError(
+                  "DNS server \"$dnsServerHost\" did not respond within ${TIMEOUT.seconds}s"
+                )
+           } catch (e: java.net.SocketException) {
+            val msg = e.message ?: ""
+            if (msg.contains("unreachable", ignoreCase = true) ||
+                msg.contains("connect failed", ignoreCase = true)
+               ) {
+                DigResult.NoNetwork
+               } else {
+                DigResult.DnsServerError("Socket error: $msg")
+               }
+           } catch (e: Exception) {
+            DigResult.Error(e.localizedMessage ?: e.toString())
+           }
+       }
+```
+
+### Key implementation details
+
+1. **Pure-Java DNS** — `SimpleResolver` sends UDP queries directly to the target DNS server. No Android `InetAddress` or system resolver is involved. This means the app works consistently across all API levels and can query servers that the OS resolver might block or redirect.
+
+2. **FQDN normalization** — dnsjava's `Name.fromString()` requires a trailing dot for absolute names. The Repository adds it automatically: `if (!fqdn.endsWith(".")) fqdn + "."`.
+
+3. **Dual A + AAAA query strategy** — after the A query returns empty, the Repository makes a *second* query for AAAA records before declaring NXDOMAIN. This ensures users get IPv6 results even when querying "A" by default. If AAAA also returns empty, `NxDomain` is returned.
+
+4. **CNAME chain inclusion** — dnsjava automatically follows CNAME chains and includes all intermediate records in the ANSWER section. So a query for `pool.ntp.org` → CNAME `ntp.example.com.` → A `1.2.3.4` will show both the CNAME and the final A record.
+
+5. **AAAA appended to A results** — when the A query succeeds, the Repository *also* queries AAAA and merges both result sets (deduplicated by `toString()`). This gives users both IPv4 and IPv6 addresses in a single query.
+
+6. **Error classification** — four distinct error types:
+      - `UnknownHostException` → the DNS server hostname itself is unresolvable → `DnsServerError`
+      - `SocketTimeoutException` → the server didn't respond in 5s → `DnsServerError`
+      - `SocketException` with "unreachable"/"connect failed" → device has no network → `NoNetwork`
+      - Everything else → generic `Error`
+
+### Result sealed hierarchy
+
+```kotlin
+sealed class DigResult {
+    data class Success(val questionSection: String, val records: List<String>, val dnsServer: String) : DigResult()
+    data class NxDomain(val fqdn: String) : DigResult()
+    data class DnsServerError(val detail: String) : DigResult()
+    object NoNetwork : DigResult()
+    data class Error(val message: String) : DigResult()
+}
+```
+
+Five variants cover all possible outcomes: success (with A + AAAA records), NXDOMAIN, resolver error, no network, and generic errors.
+
+### Record formatting
+
+The `formatRecords()` method produces `dig`-style output with proper column alignment:
+
+```kotlin
+private fun formatRecords(records: List<Record>): List<String> {
+    if (records.isEmpty()) return emptyList()
+
+        // Compute column widths from the actual data
+    val nameWidth = records.maxOf { it.name.toString().length }.coerceAtLeast(20)
+    val ttlWidth     = records.maxOf { it.ttl.toString().length }.coerceAtLeast(5)
+    val typeWidth = records.maxOf { Type.string(it.type).length }.coerceAtLeast(5)
+
+    return records.map { record ->
+        val name    = record.name.toString().padEnd(nameWidth)
+        val ttl     = record.ttl.toString().padStart(ttlWidth)
+        val type    = Type.string(record.type).padEnd(typeWidth)
+        val rdata = record.rdataToString()
+            "$name   $ttl  IN   $type   $rdata"
+         }
+}
+```
+
+This produces output like:
+
+```
+pool.ntp.org.          300   IN   A        1.2.3.4
+ntp.example.com.       600   IN   CNAME  pool.ntp.org.
+```
+
+The column widths are computed dynamically from the actual data (minimum 20 chars for name, 5 for TTL and type), ensuring right-aligned TTL values and left-aligned names — matching real `dig` output.
+
+## DigViewModel — State Management
+
+**File:** `app/src/main/java/.../DigViewModel.kt`
+
+```kotlin
+class DigViewModel(
+    private val repository: DigRepository = DigRepository(),
+    private val historyStore: DigHistoryStore,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(DigUiState())
+    val uiState: StateFlow<DigUiState> = _uiState.asStateFlow()
+
+    private var queryJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            val saved = historyStore.historyFlow.first()
+               _uiState.value = _uiState.value.copy(history = saved)
+             }
+         }
+```
+
+### UI State
+
+```kotlin
+data class DigUiState(
+    val dnsServer: String    = "",
+    val fqdn: String         = "",
+    val isLoading: Boolean = false,
+    val result: DigResult? = null,
+       /** Up to 5 most recent distinct queries, newest first. */
+    val history: List<DigHistoryEntry> = emptyList(),
+)
+```
+
+The data class approach uses a nullable `result` field and an `isLoading` boolean.
+
+### Command handlers
+
+| Function | Behavior |
+|---|---|
+| `onDnsServerChange(value)` | Updates `dnsServer`, clears `result` (so old result is hidden) |
+| `onFqdnChange(value)` | Updates `fqdn`, clears `result` |
+| `runDigQuery()` | Cancels previous job, sets `isLoading = true`, launches coroutine |
+| `selectHistoryEntry(entry)` | Populates dnsServer/fqdn from history, immediately runs `runDigQuery()` |
+
+### The `runDigQuery()` lifecycle
+
+```kotlin
+fun runDigQuery() {
+    val server = _uiState.value.dnsServer.trim()
+    val fqdn     = _uiState.value.fqdn.trim()
+    if (fqdn.isBlank()) return
+
+    queryJob?.cancel()
+       _uiState.value = _uiState.value.copy(isLoading = true, result = null)
+
+    queryJob = viewModelScope.launch {
+        val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+        val result = try {
+            withTimeout(timeoutMs) {
+                repository.resolve(server, fqdn)
+               }
+           } catch (_: TimeoutCancellationException) {
+            DigResult.Error("Operation timed out")
+           }
+           _uiState.value = _uiState.value.copy(isLoading = false, result = result)
+        saveHistory(server, fqdn, result)
+         }
+}
+```
+
+Key behaviors:
+1. **Input validation** — empty FQDN returns early; empty DNS server defaults to `8.8.8.8` inside the Repository
+2. **Job cancellation** — `queryJob?.cancel()` prevents overlapping queries
+3. **Dual timeout** — `withTimeout()` in ViewModel (user-configurable, default 5s) wraps `repository.resolve()` which has its own 5s socket timeout
+4. **History deduplication** — old entries with the same (dnsServer, fqdn) pair are removed before prepending the new entry, so the history list never contains duplicates
+5. **Persistence** — `historyStore.save()` is called at the end of the coroutine, so history is saved for both success and failure
+
+### The `saveHistory()` method
+
+```kotlin
+private suspend fun saveHistory(server: String, fqdn: String, result: DigResult) {
+    if (fqdn.isBlank()) return
+    val status = if (result is DigResult.Success) DigStatus.SUCCESS else DigStatus.FAILED
+    val timestamp = LocalDateTime.now()
+           .format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
+    val newEntry = DigHistoryEntry(
+        timestamp = timestamp,
+        dnsServer = server,
+        fqdn         = fqdn,
+        status         = status,
+         )
+          // Deduplicate by (dnsServer, fqdn) pair — keep only the latest
+    val updatedHistory = (listOf(newEntry) + _uiState.value.history
+           .filter { it.dnsServer != server || it.fqdn != fqdn })
+           .take(5)
+       _uiState.value = _uiState.value.copy(history = updatedHistory)
+    historyStore.save(updatedHistory)
+}
+```
+
+### Factory delegate
+
+```kotlin
+companion object {
+    fun factory(context: Context): ViewModelProvider.Factory =
+        object : ViewModelProvider.Factory {
+              @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                DigViewModel(
+                    repository      = DigRepository(),
+                    historyStore    = DigHistoryStore(context.applicationContext),
+                    settingsRepository = SettingsRepository(context.applicationContext),
+                   ) as T
+             }
+}
+```
+
+Uses `context.applicationContext` to avoid leaking the Activity context.
+
+## DigHistoryStore — Persistence
+
+**File:** `app/src/main/java/.../DigHistoryStore.kt`
+
+### DataStore setup
+
+```kotlin
+private val Context.digHistoryDataStore: DataStore<Preferences>
+    by preferencesDataStore(name = "dig_history")
+```
+
+Each tool has its own named DataStore file. DIG uses `"dig_history"`.
+
+### Serialization format
+
+A single `String` preference key (`"dig_history"`) contains all entries, one per line, fields separated by `|`:
+
+```
+2026/05/10 14:30:00|8.8.8.8|pool.ntp.org|SUCCESS
+2026/05/09 09:15:22|1.1.1.1|time.google.com|FAILED
+```
+
+| Field | Example | Notes |
+|---|---|---|
+| `timestamp` | `2026/05/10 14:30:00` | `yyyy/MM/dd HH:mm:ss` |
+| `dnsServer` | `8.8.8.8` | IP or FQDN of resolver used |
+| `fqdn` | `pool.ntp.org` | Domain queried |
+| `status` | `SUCCESS` / `FAILED` | Enum serialized as `.name` |
+
+### Deserialization
+
+```kotlin
+private fun deserialise(raw: String): List<DigHistoryEntry> =
+    raw.split(ENTRY_SEP)
+           .filter { it.isNotBlank() }
+           .mapNotNull { line ->
+            val parts = line.split(FIELD_SEP)
+            if (parts.size >= 3) {
+                val status = when (parts.getOrNull(3)) {
+                        "SUCCESS" -> DigStatus.SUCCESS
+                     else          -> DigStatus.FAILED
+                      }
+                DigHistoryEntry(
+                    timestamp = parts[0],
+                    dnsServer = parts[1],
+                    fqdn           = parts[2],
+                    status         = status,
+                      )
+                 } else null
+             }
+             .take(MAX_ENTRIES)
+```
+
+- Requires at least 3 fields (timestamp, dnsServer, fqdn); 4th field (`status`) defaults to `FAILED` if missing
+- Empty/blank lines are filtered out
+- `take(MAX_ENTRIES)` acts as a safety net even though the ViewModel caps at 5 before saving
+
+### Reactive history flow
+
+```kotlin
+val historyFlow: Flow<List<DigHistoryEntry>> = context.digHistoryDataStore.data.map { prefs ->
+    prefs[KEY]?.let { raw -> deserialise(raw) } ?: emptyList()
+}
+```
+
+The ViewModel's `init` block reads the first emission:
+
+```kotlin
+init {
+    viewModelScope.launch {
+        val saved = historyStore.historyFlow.first()
+           _uiState.value = _uiState.value.copy(history = saved)
+         }
+}
+```
+
+This means history is restored immediately on ViewModel construction — including after process death and device reboots, since DataStore files survive on disk.
+
+## UI — DigScreen
+
+**File:** `app/src/main/java/.../DigScreen.kt`
+
+The DIG screen is a full-screen Compose layout with five sections:
+
+```
+┌─────────────────────────────────────────┐
+│ dig @DNS_SERVER  FQDN_TO_QUERY              │ ← Usage hint (monospace)
+├─────────────────────────────────────────┤
+│ [DNS Server (IP or FQDN)        ] [Icon]       │
+├─────────────────────────────────────────┤
+│ [FQDN to query                        ]           │
+├─────────────────────────────────────────┤
+│ [      Run DIG               ]                  │
+├─────────────────────────────────────────┤
+│ ┌─ Resolved ────────────────────────┐        │
+│ │ ;; SERVER: 8.8.8.8                     │        │
+│ │ ;; QUESTION SECTION:                   │        │
+│ │ pool.ntp.org.        300  IN  A      1.2.3.4│       │
+│ │ ;; ANSWER SECTION:                     │        │
+│ │ ...                                    │        │
+│ └───────────────────────────────────┘        │
+├─────────────────────────────────────────┤
+│ ┌─ Recent DIG Queries ─────────────┐        │
+│ │ 2026/05/10 14:30:00      @8.8.8.8          │        │
+│ │          pool.ntp.org       ✅              │        │
+│ └───────────────────────────────────┘        │
+└─────────────────────────────────────────┘
+```
+
+### Screen structure
+
+```kotlin
+@Composable
+fun DigScreen() {
+    val context = LocalContext.current
+    val viewModel: DigViewModel = viewModel(factory = DigViewModel.factory(context))
+    val uiState by viewModel.uiState.collectAsState()
+    val focusManager = LocalFocusManager.current
+
+    Column(
+        modifier = Modifier
+               .fillMaxSize()
+               .padding(horizontal = 16.dp, vertical = 20.dp)
+               .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+         ) {
+             // Usage hint
+        Text("dig @DNS_SERVER  FQDN_TO_QUERY", /* monospace style */)
+
+             // DNS Server field
+        OutlinedTextField(/* dnsServer, KeyboardType.Uri, ImeAction.Next */)
+
+             // FQDN field
+        OutlinedTextField(/* fqdn, KeyboardType.Uri, ImeAction.Go */)
+
+             // Run DIG button
+        Button(onClick = { viewModel.runDigQuery() }) { /* ... */ }
+
+             // Result card (animated)
+        AnimatedVisibility(visible = uiState.result != null) {
+            uiState.result?.let { DigResultCard(it) }
+             }
+
+             // History section (animated)
+        AnimatedVisibility(visible = uiState.history.isNotEmpty()) {
+            DigHistorySection(entries = uiState.history, /* ... */)
+             }
+         }
+}
+```
+
+### UI behavior highlights
+
+- **Usage hint** — monospace text showing `dig` CLI syntax so users understand the command pattern
+- **Dual keyboard types** — both fields use `KeyboardType.Uri` (not `Text`), which shows a keyboard with `.` and `/` keys prominent
+- **IME actions** — DNS server field shows "Next", FQDN field shows "Go" which triggers `runDigQuery()`
+- **Button enabled states** — disabled when `isLoading` or `fqdn` is blank
+- **Animated visibility** — result card slides in from below; history fades in. Both use `tween()` easing.
+- **Color-coded result cards** — Success uses `secondaryContainer` (green-ish), errors use `errorContainer` (red-ish)
+- **History re-query** — tapping a history entry populates both fields and immediately starts a new query
+
+### DigResultCard — result display
+
+```kotlin
+@Composable
+private fun DigResultCard(result: DigResult) {
+    val isSuccess = result is DigResult.Success
+    val cardColor = if (isSuccess)
+        MaterialTheme.colorScheme.secondaryContainer
+    else
+        MaterialTheme.colorScheme.errorContainer
+
+    Card(/* containerColor = cardColor */) {
+        Column {
+            DigStatusHeader(result)               // icon + label row
+
+            when (result) {
+                is DigResult.Success -> {
+                    Text(";; SERVER: ${result.dnsServer}")
+                    DnsSection(";; QUESTION SECTION:", listOf(result.questionSection))
+                    DnsSection(";; ANSWER SECTION:", result.records)
+                         }
+
+                is DigResult.NxDomain -> {
+                    Text("\"${result.fqdn}\" could not be resolved (NXDOMAIN). ...")
+                         }
+
+                is DigResult.DnsServerError -> Text(result.detail)
+                is DigResult.NoNetwork -> Text("Please check your internet connection...")
+                is DigResult.Error -> Text(result.message)
+                    }
+                }
+            }
+}
+```
+
+### DnsSection — monospace DNS output block
+
+```kotlin
+@Composable
+private fun DnsSection(header: String, lines: List<String>) {
+    Column {
+        Text(header, /* monospace, semi-bold */)
+        Spacer(Modifier.height(4.dp))
+        Box(
+            modifier = Modifier
+                   .fillMaxWidth()
+                   .background(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(8.dp),
+                     )
+                   .padding(horizontal = 10.dp, vertical = 8.dp),
+                 ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                lines.forEach { line ->
+                    Text(line, /* monospace, 12sp */)
+                         }
+                   }
+                 }
+            }
+}
+```
+
+This renders the QUESTION and ANSWER sections as monospace text blocks on a dark background — mimicking a terminal.
+
+## Test Coverage
+
+The DIG feature has dedicated unit tests in `DigViewModelTest` (~14 tests) covering:
+
+- State mutations on input changes (`onDnsServerChange`, `onFqdnChange`)
+- Repository mocking for `Success`, `NxDomain`, `DnsServerError`, `NoNetwork`, `Error`
+- History save after query (success and failure)
+- State transitions (loading → done)
+- Coroutine control with `StandardTestDispatcher` + `advanceUntilIdle()`
+
+## Data Flow Summary
+
+```
+User taps "Run DIG" → ViewModel.runDigQuery()
+               │
+               ├─ Validates input (non-empty FQDN)
+               ├─ queryJob?.cancel()                     ← cancel in-flight query
+               ├─ _uiState.value = loading
+               │
+               └─ viewModelScope.launch {
+                       ├─ withTimeout(userSetting * 1000) {
+                       │       repository.resolve(server, fqdn)
+                       │               ← SimpleResolver (dnsjava)
+                       │               1. Query A records
+                       │               2. If empty → query AAAA
+                       │               3. If still empty → NxDomain
+                       │               4. If A succeeded → also append AAAA
+                       │             }
+                       │
+                       ├─ Save history (SUCCESS / FAILED)
+                       ├─ Deduplicate by (dnsServer, fqdn)
+                       ├─ _uiState.value = result + history
+                       └─ historyStore.save(updatedHistory)        ← DataStore write
+                   }
+```
