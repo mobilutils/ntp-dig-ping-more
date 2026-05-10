@@ -1,0 +1,619 @@
+---
+title: Port Scanner — Implementation Deep Dive
+description: How the Port Scanner works, concurrent TCP/UDP probing, chunked scanning with mutex-protected progress, and history deduplication
+---
+# Port Scanner — Implementation Deep Dive
+## Overview
+
+The Port Scanner performs **TCP and UDP port scans** against a target host across a configurable port range. Unlike Ping and Traceroute (which use subprocesses), Port Scanner uses **direct socket I/O** — `Socket.connect()` for TCP and `DatagramSocket` for UDP — managed through Kotlin coroutines with concurrency limiting.
+
+The feature reports:
+
+- **Progress** — a `LinearProgressIndicator` showing scan completion percentage
+- **Discovered ports** — live list of open ports as they're found, sorted numerically
+- **History** — last 5 distinct scans (by host + port range + protocol)
+
+The feature is implemented across **three files** (no separate Repository — the socket I/O logic lives directly in the ViewModel):
+
+| File | Role |
+|---|---|
+| `PortScannerViewModel.kt` | State management + concurrent scanning — `StateFlow<PortScannerUiState>`, `Socket`/`DatagramSocket` |
+| `PortScannerHistoryStore.kt` | Persistence — DataStore-backed history (last 5 entries) |
+| `PortScannerScreen.kt` | UI — Jetpack Compose screen with TCP/UDP radio buttons, progress bar, and discovered ports list |
+
+## PortScannerViewModel — Concurrent Port Probing
+
+**File:** `app/src/main/java/.../PortScannerViewModel.kt`
+
+```kotlin
+class PortScannerViewModel(
+    private val historyStore: PortScannerHistoryStore,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(PortScannerUiState())
+    val uiState: StateFlow<PortScannerUiState> = _uiState.asStateFlow()
+
+    private var scanJob: Job? = null
+```
+
+### UI State
+
+```kotlin
+data class PortScannerUiState(
+    val host: String = "",
+    val startPort: String = "1",
+    val endPort: String = "1024",
+    val protocol: PortScannerProtocol = PortScannerProtocol.TCP,
+    val isRunning: Boolean = false,
+    val progress: Float = 0f,
+    val discoveredPorts: List<Int> = emptyList(),
+    val history: List<PortScannerHistoryEntry> = emptyList(),
+)
+```
+
+Unlike Ping and Traceroute (which stream output lines), Port Scanner tracks `progress: Float` (0.0–1.0) and `discoveredPorts: List<Int>` — a growing list of open port numbers.
+
+### The `startScan()` lifecycle
+
+```kotlin
+fun startScan() {
+    val host = _uiState.value.host.trim()
+    val startPort = _uiState.value.startPort.toIntOrNull() ?: 0
+    val endPort = _uiState.value.endPort.toIntOrNull() ?: 0
+    val protocol = _uiState.value.protocol
+
+    if (host.isBlank() || startPort < 1 || endPort > 65535 || startPort > endPort || _uiState.value.isRunning) {
+        return
+    }
+
+    _uiState.value = _uiState.value.copy(
+        isRunning = true,
+        progress = 0f,
+        discoveredPorts = emptyList(),
+    )
+
+    scanJob = viewModelScope.launch(Dispatchers.IO) {
+        val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+        try {
+            withTimeout(timeoutMs) {
+                val totalPorts = endPort - startPort + 1
+                var scannedCount = 0
+                val discovered = mutableListOf<Int>()
+                val mutex = Mutex()
+
+                val portsToScan = (startPort..endPort).toList()
+
+                // Limit concurrency to prevent OutOfMemory and Too Many Open Files errors
+                val concurrencyLimit = 50
+                val chunks = portsToScan.chunked(concurrencyLimit)
+
+                for (chunk in chunks) {
+                    if (!isActive) break
+
+                    val deferreds = chunk.map { port ->
+                        async {
+                            val isOpen = if (protocol == PortScannerProtocol.TCP) {
+                                checkTcpPort(host, port)
+                            } else {
+                                checkUdpPort(host, port)
+                            }
+
+                            mutex.withLock {
+                                scannedCount++
+                                if (isOpen) {
+                                    discovered.add(port)
+                                    discovered.sort()
+                                }
+
+                                val currentProgress = scannedCount.toFloat() / totalPorts
+                                withContext(Dispatchers.Main) {
+                                    _uiState.value = _uiState.value.copy(
+                                        progress = currentProgress,
+                                        discoveredPorts = discovered.toList()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    deferreds.awaitAll()
+                }
+
+                // Once scan completes
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(isRunning = false, progress = 1f)
+                    saveHistory(host, startPort.toString(), endPort.toString(), protocol)
+                }
+            }
+        } catch (_: TimeoutCancellationException) {
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(isRunning = false)
+                saveHistory(host, startPort.toString(), endPort.toString(), protocol)
+            }
+        }
+    }
+}
+```
+
+### Key implementation details
+
+1. **Input validation** — rejects if:
+       - `host` is blank
+       - `startPort < 1` (ports must be ≥ 1)
+       - `endPort > 65535` (ports must be ≤ 65535)
+       - `startPort > endPort` (range must be valid)
+       - Already running (`isRunning`)
+
+2. **Concurrency-limited chunked scanning** — the port range is split into chunks of 50:
+     ```kotlin
+     val concurrencyLimit = 50
+     val chunks = portsToScan.chunked(concurrencyLimit)
+     ```
+    For each chunk, 50 `async` coroutines are launched concurrently, then `awaitAll()` waits for completion before moving to the next chunk. This prevents `OutOfMemoryError` and "Too many open files" errors that would occur from scanning thousands of ports simultaneously.
+
+3. **Mutex-protected shared state** — `scannedCount` and `discovered` are mutable variables shared across coroutines. A `Mutex` ensures atomic access:
+     ```kotlin
+     mutex.withLock {
+         scannedCount++
+         if (isOpen) {
+             discovered.add(port)
+             discovered.sort()
+         }
+         val currentProgress = scannedCount.toFloat() / totalPorts
+         withContext(Dispatchers.Main) {
+             _uiState.value = _uiState.value.copy(
+                 progress = currentProgress,
+                 discoveredPorts = discovered.toList()
+             )
+         }
+     }
+     ```
+
+4. **Progress computation** — `scannedCount.toFloat() / totalPorts` gives the completion fraction. This is updated on every port completion, so the progress bar is smooth even for small ranges.
+
+5. **`isActive` check** — `if (!isActive) break` inside the chunk loop checks coroutine cancellation on each chunk boundary. This is the primary way `stopScan()` halts the scan.
+
+6. **Dual timeout** — `withTimeout(timeoutMs)` wraps the entire scan operation. If the timeout expires, a `TimeoutCancellationException` is caught, and history is saved with whatever ports were discovered.
+
+7. **Port sorting** — `discovered.sort()` is called after each new open port is added. Since ports are discovered in chunk order (not sequential), this ensures the list is always numerically sorted.
+
+### TCP port checking
+
+```kotlin
+private fun checkTcpPort(host: String, port: Int): Boolean {
+    return try {
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress(host, port), 1000)
+            true
+        }
+    } catch (e: Exception) {
+        false
+    }
+}
+```
+
+- Creates a new `Socket` for each port
+- `socket.connect()` with a 1-second timeout
+- Returns `true` if the connection succeeds, `false` if any exception is thrown (connection refused, timeout, etc.)
+- `Socket().use {}` ensures the socket is closed even on success (the `use` block calls `close()` on exit)
+
+### UDP port checking
+
+```kotlin
+private fun checkUdpPort(host: String, port: Int): Boolean {
+    return try {
+        DatagramSocket().use { socket ->
+            socket.soTimeout = 1000 // 1 second timeout
+            socket.connect(InetSocketAddress(host, port))
+            val sendData = ByteArray(0)
+            val sendPacket = DatagramPacket(sendData, sendData.size)
+            socket.send(sendPacket)
+
+            val receiveData = ByteArray(1024)
+            val receivePacket = DatagramPacket(receiveData, receiveData.size)
+            socket.receive(receivePacket)
+            true // got a response
+        }
+    } catch (e: SocketTimeoutException) {
+        // No response. Could be open or filtered.
+        false
+    } catch (e: Exception) {
+        // PortUnreachableException or other errors
+        false
+    }
+}
+```
+
+- Creates a new `DatagramSocket` for each port
+- `socket.connect()` binds the socket to the target (does NOT send a packet)
+- Sends an **empty packet** (`ByteArray(0)`) — a 0-byte UDP payload
+- Waits up to 1 second for a response via `socket.receive()`
+- Returns `true` if a response is received, `false` on timeout or any other exception
+
+### UDP scanning limitations
+
+The UDP check is a **simplified open-port heuristic**:
+
+| Scenario | Behavior | Result |
+|---|---|---|
+| Port is open + application responds | Receives UDP packet → sends response | ✅ Detected as open |
+| Port is open + application doesn't respond | Receives UDP packet → no response → timeout | ❌ Missed (false negative) |
+| Port is closed | Receives UDP packet → sends ICMP Port Unreachable → caught as `SocketException` | ❌ Detected as closed (correct) |
+| Port is filtered (firewall) | Packet dropped → timeout | ❌ Missed (false negative) |
+
+**Why UDP scanning is inherently unreliable:** UDP is connectionless. There is no three-way handshake like TCP. The only definitive indicator of a closed port is an ICMP "Port Unreachable" message — which is itself often blocked by firewalls. An open port that doesn't send a response is indistinguishable from a filtered port or a slow-to-respond service.
+
+### Command handlers
+
+| Function | Behavior |
+|---|---|
+| `onHostChange(value)` | Updates `host` |
+| `onStartPortChange(value)` | Updates `startPort` |
+| `onEndPortChange(value)` | Updates `endPort` |
+| `onProtocolChange(protocol)` | Updates `protocol` (TCP/UDP) |
+| `startScan()` | Validates, launches chunked concurrent scan, saves history on completion |
+| `stopScan()` | Cancels job, saves history with whatever was discovered |
+| `selectHistoryEntry(entry)` | Stops current scan (if running), populates all fields, immediately starts new scan |
+
+### The `stopScan()` method
+
+```kotlin
+fun stopScan() {
+    scanJob?.cancel()
+    _uiState.value = _uiState.value.copy(isRunning = false)
+    viewModelScope.launch {
+        val s = _uiState.value
+        saveHistory(s.host.trim(), s.startPort, s.endPort, s.protocol)
+    }
+}
+```
+
+Stops the scan by cancelling the job and saves history with whatever ports were discovered at the time of stopping.
+
+### History deduplication
+
+```kotlin
+private suspend fun saveHistory(host: String, startPort: String, endPort: String, protocol: PortScannerProtocol) {
+    if (host.isBlank()) return
+    val timestamp = LocalDateTime.now()
+        .format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
+    val newEntry = PortScannerHistoryEntry(
+        timestamp = timestamp,
+        host = host,
+        startPort = startPort,
+        endPort = endPort,
+        protocol = protocol
+    )
+    val updatedHistory = (listOf(newEntry) + _uiState.value.history
+        .filter { it.host != host || it.startPort != startPort || it.endPort != endPort || it.protocol != protocol })
+        .take(5)
+    _uiState.value = _uiState.value.copy(history = updatedHistory)
+    historyStore.save(updatedHistory)
+}
+```
+
+Deduplication is by **four-tuple**: `(host, startPort, endPort, protocol)`. Two scans with the same host but different port ranges or protocols are treated as distinct entries.
+
+### Factory delegate
+
+```kotlin
+companion object {
+    fun factory(context: Context): ViewModelProvider.Factory =
+        object : ViewModelProvider.Factory {
+               @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                PortScannerViewModel(
+                    historyStore = PortScannerHistoryStore(context.applicationContext),
+                    settingsRepository = SettingsRepository(context.applicationContext),
+                       ) as T
+               }
+}
+```
+
+Note: Port Scanner has **no Repository** — the socket I/O calls (`Socket.connect()`, `DatagramSocket`) live directly in the ViewModel. This is one of three screens without a Repository file (the others are Ping and Traceroute).
+
+### `onCleared()` override
+
+```kotlin
+override fun onCleared() {
+    super.onCleared()
+    scanJob?.cancel()
+}
+```
+
+Cancels the in-flight scan when the ViewModel is destroyed (e.g., configuration change).
+
+## PortScannerHistoryStore — Persistence
+
+**File:** `app/src/main/java/.../PortScannerHistoryStore.kt`
+
+### DataStore setup
+
+```kotlin
+private val Context.portScannerHistoryDataStore: DataStore<Preferences>
+    by preferencesDataStore(name = "port_scanner_history")
+```
+
+Each tool has its own named DataStore file. Port Scanner uses `"port_scanner_history"`.
+
+### Serialization format
+
+A single `String` preference key (`"port_scanner_history"`) contains all entries, one per line, fields separated by `|`:
+
+```
+2026/05/10 14:30:00|192.168.1.1|1|1024|TCP
+2026/05/09 09:15:22|google.com|80|443|UDP
+```
+
+| Field | Example | Notes |
+|---|---|---|
+| `timestamp` | `2026/05/10 14:30:00` | `yyyy/MM/dd HH:mm:ss` |
+| `host` | `192.168.1.1` | Hostname or IP |
+| `startPort` | `1` | String (not converted to Int) |
+| `endPort` | `1024` | String (not converted to Int) |
+| `protocol` | `TCP` | Enum serialized as `.name` |
+
+### Deserialization
+
+```kotlin
+private fun deserialise(raw: String): List<PortScannerHistoryEntry> =
+    raw.split(ENTRY_SEP)
+           .filter { it.isNotBlank() }
+            .mapNotNull { line ->
+            val parts = line.split(FIELD_SEP)
+            if (parts.size >= 5) {
+                val protocol = when (parts[4]) {
+                         "UDP" -> PortScannerProtocol.UDP
+                        else -> PortScannerProtocol.TCP
+                     }
+                PortScannerHistoryEntry(
+                    timestamp = parts[0],
+                    host = parts[1],
+                    startPort = parts[2],
+                    endPort = parts[3],
+                    protocol = protocol
+                       )
+                  } else null
+              }
+              .take(MAX_ENTRIES)
+```
+
+- Requires at least 5 fields (timestamp, host, startPort, endPort, protocol)
+- `protocol` defaults to `TCP` if the 5th field is missing or unrecognized
+- Empty/blank lines are filtered out
+- `take(MAX_ENTRIES)` acts as a safety net even though the ViewModel caps at 5 before saving
+
+### Reactive history flow
+
+```kotlin
+val historyFlow: Flow<List<PortScannerHistoryEntry>> = context.portScannerHistoryDataStore.data.map { prefs ->
+    prefs[KEY]?.let { raw -> deserialise(raw) } ?: emptyList()
+}
+```
+
+The ViewModel's `init` block reads the first emission:
+
+```kotlin
+init {
+    viewModelScope.launch {
+        val saved = historyStore.historyFlow.first()
+            _uiState.value = _uiState.value.copy(history = saved)
+         }
+     }
+```
+
+## UI — PortScannerScreen
+
+**File:** `app/src/main/java/.../PortScannerScreen.kt`
+
+The Port Scanner screen has a **single scrollable column** layout with five sections:
+
+```
+┌─────────────────────────────────────────┐
+│ [Hostname / IP                      ]         │
+├─────────────────────────────────────────┤
+│ (●) TCP      (○) UDP                         │ ← radio buttons
+├─────────────────────────────────────────┤
+│ [Start Port] [End Port]                      │
+├─────────────────────────────────────────┤
+│ [🔍 Search    Scan Ports                 ]     │
+├─────────────────────────────────────────┤
+│ ████████████████████░░░░░░░░░░ 60%         │ ← progress bar
+│ ┌─ Open Ports Found: 3 ────────────┐        │
+│ │ Port 22/TCP open                  │        │
+│ │ Port 80/TCP open                  │        │
+│ │ Port 443/TCP open                 │        │
+│ └───────────────────────────────────┘        │
+├─────────────────────────────────────────┤
+│ ┌─ Recent Scans ─────────────────┐         │
+│ │ 2026/05/10 14:30:00 [TCP]       │         │
+│ │ 192.168.1.1 : 1-1024             │         │
+│ └─────────────────────────────────┘         │
+└─────────────────────────────────────────┘
+```
+
+### Screen structure
+
+```kotlin
+@Composable
+fun PortScannerScreen() {
+    val context = LocalContext.current
+    val vm: PortScannerViewModel = viewModel(factory = PortScannerViewModel.factory(context))
+    val uiState by vm.uiState.collectAsState()
+    val focusManager = LocalFocusManager.current
+
+    val outputScrollState = rememberScrollState()
+
+      // Auto-scroll to bottom only when new ports are discovered (not on every progress update)
+    LaunchedEffect(uiState.discoveredPorts.size, uiState.isRunning) {
+        if (uiState.discoveredPorts.isNotEmpty() && uiState.isRunning) {
+            outputScrollState.animateScrollTo(outputScrollState.maxValue)
+          }
+       }
+
+    Column(
+        modifier = Modifier
+               .fillMaxSize()
+               .padding(horizontal = 16.dp, vertical = 20.dp)
+               .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+           ) {
+               // Hostname field
+            OutlinedTextField(/* host, ImeAction.Next */)
+
+               // TCP/UDP radio buttons
+            Row(/* RadioButton(TCP) + RadioButton(UDP) */)
+
+               // Start/End port fields (side by side)
+            Row(/* startPort (weight 1f) + endPort (weight 1f) */)
+
+               // Scan / Stop button
+            Button(/* ... */)
+
+               // Progress bar + discovered ports card
+            if (uiState.isRunning || uiState.discoveredPorts.isNotEmpty()) {
+                if (uiState.isRunning) {
+                    LinearProgressIndicator(/* progress = uiState.progress */)
+                   }
+                Card {
+                    Text("Open Ports Found: ${uiState.discoveredPorts.size}")
+                    uiState.discoveredPorts.forEach { port ->
+                        Text("Port $port/${uiState.protocol} open")
+                       }
+                   }
+               }
+
+               // History section
+            AnimatedVisibility(visible = uiState.history.isNotEmpty()) {
+                PortScannerHistorySection(entries = uiState.history, /* ... */)
+               }
+           }
+}
+```
+
+### Key UI details
+
+- **TCP/UDP radio buttons** — mutually exclusive protocol selection, disabled during scan
+- **Start/End port fields** — side-by-side layout with `weight(1f)`, numeric keyboard (`KeyboardType.Number`)
+- **Auto-scroll** — `LaunchedEffect(uiState.discoveredPorts.size, uiState.isRunning)` triggers `animateScrollTo(maxValue)` only when *new ports are discovered*, not on every progress update. This avoids janky scrolling during the majority of the scan when no ports are found yet.
+- **Progress bar** — `LinearProgressIndicator` with `progress = uiState.progress` (0.0–1.0), only visible when `isRunning`
+- **Discovered ports card** — always visible after scan completes (even if empty), shows "Open Ports Found: N" header and individual port lines
+- **Button enabled states** — enabled when either running (always) or all three fields (host, startPort, endPort) are non-blank
+- **Button text** — "Scan Ports" (search icon) when idle, "Stop" (stop icon, red background) when running
+
+### Discovered ports display
+
+```kotlin
+uiState.discoveredPorts.forEach { port ->
+    Text(
+        text = "Port $port/${uiState.protocol} open",
+        style = MaterialTheme.typography.bodySmall.copy(
+            fontFamily = FontFamily.Monospace,
+            fontSize = 14.sp,
+               ),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+           )
+}
+```
+
+Each discovered port is rendered as `Port <N>/<PROTOCOL> open` in monospace font at 14sp — larger than Ping/Traceroute's 12sp, since the output is shorter (typically dozens of lines vs hundreds).
+
+### History row display
+
+```kotlin
+Text("${entry.timestamp}   [${entry.protocol}]")
+Text("${entry.host} : ${entry.startPort}-${entry.endPort}")
+```
+
+History entries show the protocol in brackets next to the timestamp, and the port range as `start-end` (not individual ports). No status emoji — unlike Ping/Traceroute, Port Scanner has no meaningful success/partial/failed distinction.
+
+## Test Coverage
+
+The Port Scanner feature has dedicated unit tests in `PortScannerViewModelTest` (~14 tests) covering:
+
+| Test | What it verifies |
+|---|---|
+| `initial state has default values` | Default values for all UI state fields |
+| `onHostChange updates host` | Host field update |
+| `onStartPortChange updates start port` | Start port field update |
+| `onEndPortChange updates end port` | End port field update |
+| `onProtocolChange updates protocol` | Protocol toggle |
+| `startScan rejects blank host` | Input validation |
+| `startScan rejects start port less than 1` | Input validation |
+| `startScan rejects end port greater than 65535` | Input validation |
+| `startScan rejects start port greater than end port` | Input validation |
+| `startScan rejects if already running` | No-op when already running |
+| `startScan with valid inputs sets running state` | Scan initiation |
+| `stopScan cancels job and sets not running` | Scan cancellation |
+| `selectHistoryEntry populates fields and starts scan` | History re-scan |
+| `history is deduplicated by host and port range` | History deduplication |
+
+**Notable gaps:**
+- No tests for TCP/UDP port checking logic (requires mocking `Socket`/`DatagramSocket`, which is non-trivial)
+- No tests for progress computation or concurrency behavior
+- The `startScan` tests use a relaxed mock of `PortScannerHistoryStore`, so `saveHistory` calls are no-ops — they verify state transitions but not actual socket behavior
+
+## Data Flow Summary
+
+```
+User enters host + port range → taps "Scan Ports" / presses "Go"
+            │
+            ├─ Validates (non-blank host, 1 ≤ start ≤ end ≤ 65535, not running)
+            ├─ _uiState.value = isRunning = true, progress = 0f, discoveredPorts = []
+            │
+            └─ viewModelScope.launch(Dispatchers.IO) {
+                  withTimeout(userSetting * 1000) {
+                      val totalPorts = endPort - startPort + 1
+                      var scannedCount = 0
+                      val discovered = mutableListOf<Int>()
+                      val mutex = Mutex()
+                      val chunks = (startPort..endPort).chunked(50)
+
+                      for (chunk in chunks) {
+                          if (!isActive) break
+
+                          val deferreds = chunk.map { port ->
+                              async {
+                                  val isOpen = checkTcpPort(host, port)
+                                        // or checkUdpPort(host, port)
+
+                                  mutex.withLock {
+                                      scannedCount++
+                                      if (isOpen) {
+                                          discovered.add(port)
+                                          discovered.sort()
+                                         }
+                                      val progress = scannedCount / totalPorts
+                                      withContext(Dispatchers.Main) {
+                                          _uiState.value = copy(
+                                              progress, discoveredPorts
+                                          )
+                                         }
+                                     }
+                                  }
+                              }
+                          deferreds.awaitAll()
+                          }
+                       }
+
+                      // Complete
+                      saveHistory(host, startPort, endPort, protocol)
+                      _uiState.value = isRunning = false, progress = 1f
+                  }
+               }
+            │
+            ├─ checkTcpPort(host, port):
+            │     Socket().use { socket ->
+            │         socket.connect(InetSocketAddress(host, port), 1000)
+            │         → true  (connected)
+            │         → false (exception: refused, timeout, etc.)
+            │     }
+            │
+            └─ checkUdpPort(host, port):
+                  DatagramSocket().use { socket ->
+                      socket.send(ByteArray(0))
+                      socket.receive() → true  (response received)
+                      → false (SocketTimeoutException: no response)
+                      → false (SocketException: port unreachable)
+                  }
+```
