@@ -4,5 +4,13 @@ export default {
   'ntp-client': 'NTP Client',
   'dig': 'Dig',
   'ping': 'Ping',
+  'traceroute': 'Traceroute',
+  'port-scan': 'Port Scan',
+  'lan-scan': 'LAN Scan',
+  'google-time-sync': 'Google Time Sync',
+  'https-cert': 'HTTPS Cert',
+  'device-info': 'Device Info',
+  'bulk-actions': 'Bulk Actions',
+  'settings': 'Settings',
   'more': '...More',
 }
