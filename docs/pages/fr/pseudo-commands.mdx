@@ -1,0 +1,82 @@
+---
+title: Commandes Pseudo
+---
+
+# Commandes Pseudo
+
+## Vue d'ensemble
+
+Une **commande pseudo** est un mot-clé intégré reconnu par la fonctionnalité Actions en Lots. Contrairement aux exécutables shell (par ex. `ping` ou `dig` qui invoquent des binaires système via `Runtime.exec`), les commandes pseudo déclenchent du code Kotlin personnalisé directement dans `BulkActionsRepository`. Il existe 9 commandes pseudo :
+
+| Mot-clé | Objectif |
+|---|---|
+| `ping` | Ping ICMP |
+| `dig` | Résolution DNS (via dnsjava) |
+| `ntp` | Requête de temps NTP |
+| `port-scan` | Scan de ports TCP |
+| `checkcert` | Inspection de certificats HTTPS |
+| `device-info` | Infos d'identité de l'appareil |
+| `tracert` | Traceroute (sondage TTL) |
+| `google-timesync` | Google Time Sync |
+| `lan-scan` | Balayage de sous-réseau LAN |
+
+Les mots-clés non reconnus passent par un fallback `Runtime.exec()` brut.
+
+## Comment ça fonctionne
+
+```
+Fichier de config JSON
+    "commands": {
+      "ping_google":        "ping -c 5 google.com",
+      "dig_example":        "dig example.com",
+      "checkcert_google": "checkcert https://google.com"
+    }
+         │
+         ▼
+BulkConfigParser.parse(json)           ← analyse JSON en BulkConfig(commands=Map<String, String>)
+         │
+         ▼
+BulkActionsViewModel.onLoadAndRun()    ← lit la config, stocke dans l'état UI
+         │
+         ▼
+BulkActionsRepository.executeAllCommands(commands)
+         │
+         ├── Pour chaque paire (nom, cmd) :
+         │    executeSingleCommand(nom, cmd, timeoutMs)
+         │        │
+         │        └── Analyse du premier mot → dispatch via `when` :
+         │             "ping"          → executePing()           → Runtime.exec("ping -c 5 google.com")
+         │             "dig"           → executeDig()            → DigRepository.resolve()
+         │             "ntp"           → executeNtp()            → NtpRepository.query()
+         │             "port-scan"     → executePortScan()       → Socket.connect(port, timeout) × N
+         │             "checkcert"     → executeCheckcert()      → HttpsCertRepository.fetchCertificate()
+         │             "device-info"  → executeDeviceInfo()     → SystemInfoRepository.getDeviceInfo()
+         │             "tracert"       → executeTracert()        → Runtime.exec("ping -c 1 -t TTL host")
+         │             "google-timesync" → executeGoogleTimeSync() → GoogleTimeSyncRepository.fetchGoogleTime()
+         │             "lan-scan"      → executeLanScan()        → LanScannerRepository.pingSweep()
+         │           else            → executeRaw()            → Runtime.exec(full string)
+         │
+         ▼
+BulkCommandResult    (hiérarchie scellée)
+    ├── BulkCommandSuccess     — réussi avec lignes de sortie
+    ├── BulkCommandError       — échoué avec message d'erreur
+    ├── BulkCommandTimeout     — délai d'attente dépassé
+    ├── BulkCommandClosed      — arrêté manuellement
+    └── BulkCommandWarning     — réussi mais avec un avertissement (ex: cert expiré)
+         │
+         ├──→ BulkActionsViewModel.generateOutputContent()    → rapport texte avec tableau récapitulatif
+         ├──→ BulkActionsViewModel.generateCsvContent()        → export CSV
+         └──→ BulkActionsScreen.ResultItem()                   → affichage UI Compose (icône + lignes)
+```
+
+## Classes Clés
+
+| Classe | Rôle |
+|---|---|
+| `BulkConfigParser` | Analyse JSON en `BulkConfig` data class |
+| `BulkActionsRepository.executeSingleCommand()` | Dispatche chaque mot-clé de commande vers l'exécuteur correct |
+| `executePing()` … `executeLanScan()` | 9 exécuteurs privés — invoquent les dépôts ou binaires système |
+| `BulkCommandResult` (+ sous-classes) | Hiérarchie scellée représentant les résultats d'exécution |
+| `BulkActionsViewModel.generateOutputContent()` | Formate les résultats en rapport texte avec tableau récapitulatif |
+| `BulkActionsViewModel.generateCsvContent()` | Formate les résultats en CSV |
+| `BulkActionsScreen.ResultItem()` | Affiche chaque résultat dans l'UI Compose (icône + statut + lignes de sortie) |
