@@ -1,0 +1,74 @@
+---
+title: Developer Guide
+description: Technical stack, getting started, and useful commands for developers
+---
+
+## Technical Stack
+
+| Category | Technology |
+|---|---|
+| **Language** | Kotlin 2.2.10 |
+| **Min SDK** | API 26 (Android 8.0) |
+| **Target SDK** | API 37 (Android 15) |
+| **Build System** | AGP 9.2.0 + Gradle Kotlin DSL |
+| **UI** | Jetpack Compose (BOM 2025.01.00) + Material 3 |
+| **Navigation** | Jetpack Navigation Compose 2.8.9 |
+| **Architecture** | MVVM — `StateFlow<UiState>` → Compose, `ViewModelProvider.Factory` delegates (no Hilt/Dagger) |
+| **Async** | Kotlin Coroutines (`Dispatchers.IO` for I/O, `Dispatchers.Main` for UI) |
+| **Persistence** | AndroidX DataStore Preferences (history + settings) |
+| **NTP** | Apache Commons Net 3.11.1 (`NTPUDPClient`) |
+| **DNS** | dnsjava 3.6.2 (full DNS resolution, bypasses system resolver) |
+| **PAC Evaluation** | QuickJS 0.9.2 (`quickjs-android-wrapper`) |
+| **Testing** | JUnit 4 + MockK + `StandardTestDispatcher` for coroutine control |
+| **Coverage** | JaCoCo 0.8.12 |
+
+## Getting Started
+
+**Prerequisites:**
+
+- Android Studio (latest stable)
+- JDK 11 or later
+- An Android device or emulator (API 26+)
+
+**Open the project:**
+
+1. Launch Android Studio
+2. File → Open → select this project's root directory
+3. Wait for Gradle sync to complete
+
+**First build:**
+
+```bash
+./gradlew assembleDebug
+```
+
+This produces a debug APK at `app/build/outputs/apk/debug/app-debug-dev.apk`.
+
+## Useful Commands
+
+### Builds & Installation
+
+| Command | Purpose |
+|---|---|
+| `./gradlew assembleDebug` | Build debug APK |
+| `./gradlew installDebug` | Build + install debug APK on connected device/emulator |
+| `./gradlew connectedDebugAndroidTest` | Run instrumented tests on connected device |
+
+### Testing
+
+| Command | Purpose |
+|---|---|
+| `./gradlew test` | Run all unit tests (~365 tests) |
+| `./gradlew test --tests "ClassName"` | Run a single test class |
+| `./gradlew testDebugUnitTest` | Run debug unit tests only |
+| `./gradlew jacocoUnitTestReport` | Generate JaCoCo coverage report (HTML + XML) |
+
+### Coverage Report Location
+
+```
+app/build/reports/jacoco/jacocoUnitTestReport/html/index.html
+```
+
+### Code Style
+
+The project uses Kotlin's `official` code style (set in `gradle.properties`). Android Studio will auto-format on save when the Kotlin plugin is configured with the official style guide.
