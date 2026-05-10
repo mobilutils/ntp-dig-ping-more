@@ -1,0 +1,230 @@
+---
+title: Fonctionnalités Disponibles
+description: Voici le bout émergé de l'iceberg
+---
+
+## Fonctionnalités disponibles
+Ci-dessous un aperçu écran par écran
+##
+import Img from '../../../components/Img'
+
+## Clients NTP (Network Time Protocol)
+
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         - Saisissez l'adresse et le port de n'importe quel serveur NTP (défaut : pool.ntp.org:123)
+         Affiche :
+         - ✅ / ❌ Statut de joignabilité
+         - Heure du serveur
+         - Décalage d'horloge (ms)
+         - Délai d'aller-retour (ms)
+
+         - 5 dernières requêtes conservées en historique cliquable (persisté entre les redémarrages)
+         - Gestion gracieuse des erreurs : échec DNS, délai d'attente, aucun réseau
+
+      </div>
+      <div style={{ width: '50%' }}>
+         <Img src="/images/1_screencap_ntp.png" alt="NTP Check" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+</div>
+
+## DIG (Domain Information Groper)
+
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         <Img src="/images/2_screencap_dig.png" alt="DIG" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+      <div style={{ width: '50%' }}>
+         - Test DIG
+         - Saisissez un serveur DNS (IP ou FQDN, ex. `8.8.8.8`) et un nom à résoudre
+         - La requête va directement au serveur DNS spécifié (API 29+), pas au résolveur système
+         - Affiche une section de réponse au style `dig` avec colonnes alignées :
+         - Résolution complète de la chaîne CNAME incluse
+         - Gestion gracieuse des erreurs : NXDOMAIN, résolveur injoignable, aucun réseau
+      </div>
+</div>
+
+## PING (Packet INternet Groper)
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         - Saisissez n'importe quel nom d'hôte ou adresse IP
+         - Appuyez sur **Ping** pour démarrer — le bouton devient rouge et indique **Arrêter** pendant l'exécution
+         - La sortie s'affiche en direct dans une carte terminal monospace avec défilement
+         - Envoie jusqu'à 100 paquets ICMP (`ping -c 100`) ; peut être arrêté à tout moment
+         - L'icône d'historique reflète le résultat :
+           - ✅ Tous les paquets sont passés
+           - 🤷‍♂️ Au moins un a réussi mais certains ont été perdus
+           - ❌ Aucune réponse reçue
+         - 5 derniers hôtes pingés conservés en historique cliquable (persisté entre les redémarrages)
+      </div>
+      <div style={{ width: '50%' }}>
+         <Img src="/images/3_screencap_ping.png" alt="Ping" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+</div>
+
+## MORE (dans le nom de l'application ;))
+
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         <Img src="/images/4_screencap_more.png" alt="DIG" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+      <div style={{ width: '50%' }}>
+         <p><strong>PLUS</strong></p>
+         - Le nom est NTP DIG PING ..PLUS
+      </div>
+</div>
+
+## Paramètres
+
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         - **Délai d'attente opérationnel** — délai global (1–60 s) appliqué à tous les outils réseau
+           - Modifications sauvegardées immédiatement sur entrée valide ; annulation au focus-perdu si invalide
+         - **Configuration Proxy PAC** — surcharge proxy au niveau application (indépendante du proxy système)
+           - Activer/désactiver le routage proxy
+           - Champ URL PAC avec validation de format URL (http/https uniquement)
+           - Scripts PAC évalués avec un moteur JavaScript léger (QuickJS)
+           - Résultats PAC mis en cache avec TTL de 5 minutes pour les performances
+           - Supporte les directives `PROXY`, `SOCKS`, et `DIRECT` avec chaînes de fallback
+           - Bouton **"Tester Proxy/PAC"** envoie une requête HEAD via le proxy résolu et rapporte la latence
+           - Dernier résultat et horodatage persistés entre les redémarrages
+           - Appliqué à Google Time Sync (HTTP) et Inspecteur de Certificats HTTPS (tunnel SSL CONNECT)
+           - Toutes les erreurs retombent silencieusement sur DIRECT — les problèmes proxy ne bloquent jamais l'utilisation normale
+      </div>
+      <div style={{ width: '50%' }}>
+         <Img src="/images/5_screencap_settings.png" alt="Paramètres" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+</div>
+
+## Actions en Lots
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         <Img src="/images/6_screencap_bulkactions.png" alt="DIG" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+      <div style={{ width: '50%' }}>
+         - Charger un fichier de configuration JSON définissant plusieurs commandes diagnostiques à exécuter en séquence
+         - Supporte les types de commandes intégrés : `ping`, `dig`, `ntp`, `port-scan`, `checkcert`, `device-info`, `tracert`, `google-timesync`, `lan-scan`
+         - Les préfixes de commande inconnus retombent sur l'exécution shell brute
+         - Chaque commande s'exécute avec un délai de 30 secondes ; les erreurs et délais d'attente sont capturés par commande sans arrêter le lot
+         - Barre de progression en temps réel avec statut par commande (SUCCÈS / ERREUR / DÉLAI D'ATTENTE)
+         - Sortie style terminal avec résultats codés par couleur
+         - Sauvegarde automatique des résultats dans le chemin de `fichier-de-sortie` défini dans la config après exécution (avec validation d'accessibilité en écriture)
+         - Bouton **"Valider Config"** vérifie la structure JSON et l'accessibilité en écriture du chemin de sortie, suggère un chemin de fallback si besoin
+         - Bouton **"Écrire dans le fichier"** lance un sélecteur SAF pour sélectionner manuellement l'emplacement de sauvegarde
+         - Gestion gracieuse des erreurs : JSON invalide, chemins inaccessibles en écriture, échecs réseau — tous capturés et affichés sans planter
+      </div>
+</div>
+
+
+## Traceroute
+
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         - Saisissez n'importe quel nom d'hôte ou adresse IP
+         - Appuyez sur **Traceroute** pour démarrer — le bouton devient rouge et indique **Arrêter** pendant l'exécution
+         - La sortie s'affiche saut par saut dans une carte terminal monospace avec défilement
+         - Implémenté via `ping -c 1 -t <TTL>` pour sonder (aucun binaire `traceroute` requis)
+         - Chaque saut qui répond avec Time Exceeded révèle son IP et son temps aller-retour
+         - Sonde jusqu'à 30 sauts ; s'arrête automatiquement quand la destination répond
+         - L'icône d'historique reflète le résultat :
+           - ✅ Destination atteinte (tous ou la plupart des sauts ont répondu)
+           - 🤷‍♂️ Certains sauts ont répondu mais la destination n'a pas été atteinte
+           - ❌ Aucun saut n'a répondu
+         - 5 derniers hôtes tracés conservés en historique cliquable (persisté entre les redémarrages)
+      </div>
+      <div style={{ width: '50%' }}>
+         <Img src="/images/7_screencap_traceroute.png" alt="Traceroute" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+</div>
+
+## Scan de Ports
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         <Img src="/images/8_screencap_portscan.png" alt="DIG" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+      <div style={{ width: '50%' }}>
+         - Vérifier quels ports TCP ou UDP sont ouverts sur une IP ou un nom d'hôte spécifique
+         - Définir des plages de ports personnalisées (début et fin)
+         - Sélectionner entre les protocoles de scan TCP ou UDP
+         - Barre de progression en direct et liste mise à jour dynamiquement des ports découverts
+         - Scan concurrent de ports pour garantir de hautes performances
+         - 5 dernières scans conservés en historique cliquable (persisté entre les redémarrages)
+      </div>
+</div>
+
+## Scanner LAN
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         - Découvrir les appareils actifs sur votre sous-réseau Wi-Fi ou Ethernet local
+         - Plages de scan personnalisées avec valeurs pré-remplies pour votre sous-réseau actuel
+         - Scan Rapide (IP courantes) ou Scan Complet (balayage de plage personnalisée)
+         - Liste mise à jour en direct avec IP, Nom d'hôte, Adresse MAC, et latence (ms) pour chaque appareil découvert
+         - Suit la progression du scan avec une capacité d'arrêt/annulation
+         - Historique des scans passés persisté entre les redémarrages
+      </div>
+      <div style={{ width: '50%' }}>
+         <Img src="/images/9_screencap_lanscan.png" alt="Scanner LAN" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+</div>
+
+## Google Time Sync
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         <Img src="/images/10_screencap_ggtimesync.png" alt="DIG" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+      <div style={{ width: '50%' }}>
+         - Interroge `http://clients2.google.com/time/1/current` via HTTP et analyse la réponse de temps de Google
+         - Supprime le préfixe de protection XSSI `)]}'` avant l'analyse JSON
+         - Calcule les métriques complètes de synchronisation de type NTP :
+           - 📡 **RTT** — temps aller-retour (T4 − T1)
+           - ⏱ **Décalage d'horloge** — `correctedServerTime − T4` (positif = horloge locale en retard, négatif = en avance)
+           - 🧮 **Heure du serveur corrigée** — `serverTime + RTT / 2`
+         - Indicateur de décalage codé par couleur : 🟢 < 100 ms · 🟠 < 500 ms · 🔴 ≥ 500 ms
+         - Champ hôte personnalisé (défaut : `clients2.google.com`)
+         - Bouton **Copier le décalage** en un clic pour les workflows d'ajustement manuel d'horloge
+         - États Inactif / Chargement / Succès / Erreur survivant aux rotations et changements de configuration
+         - Supporte le routage proxy optionnel quand Proxy PAC est activé dans Paramètres
+      </div>
+</div>
+
+## Certificat HTTPS
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         - Saisissez n'importe quel nom d'hôte et port (défaut : `google.com:443`)
+         - Effectue un véritable échange de certificats TLS et extrait la chaîne de certificats de l'homologue
+         - Affiche :
+            - Noms distingués Sujet / Émetteur (CN, O, OU, C) pour chaque certificat de la chaîne
+            - Période de validité (Non avant / Non après) avec jours avant expiration
+            - Statut de validité : ✅ Valide · ⚠️ Expiration Proche · ❌ Expiré · ⚠️ Non Approuvé
+            - Numéro de série, empreintes SHA-256 et SHA-1 (cliquer pour copier)
+            - Noms Alternatifs de Sujet (SANs)
+            - Algorithme de clé, taille de clé, algorithme de signature, profondeur de chaîne
+         - Pour les certificats **non approuvés** ou **expirés**, affiche la **chaîne complète** — feuille → intermédiaire(s) → racine — avec marqueurs `[Feuille]`, `[Intermédiaire N]`, et `[Racine]` pour inspecter les détails de chaque certificat même quand la validation de confiance échoue
+         - 5 derniers hôtes inspectés conservés en historique cliquable (persisté entre les redémarrages)
+         - Supporte le tunneling SSL via HTTP CONNECT quand Proxy PAC est activé
+      </div>
+      <div style={{ width: '50%' }}>
+         <Img src="/images/11_screencap_checkcert.png" alt="Vérifier Certificat" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+</div>
+
+## Informations Appareil
+<div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', marginBottom: '32px' }}>
+      <div style={{ flex: 1 }}>
+         <Img src="/images/12_screencap_deviceinfo.png" alt="DIG" style={{ maxWidth: '100%', width: '100%', height: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+      </div>
+      <div style={{ width: '50%' }}>
+         <p><strong>Informations Appareil</strong></p>
+         - Vue complète en lecture seule de l'identité, du réseau, de la batterie et de la sécurité de l'appareil
+         - Affiche : Nom de l'Appareil, IMEI, Numéro de Série, ICCID, Version Android, Niveau API, Architecture CPU
+         - Heure Actuelle de l'Appareil (mise à jour auto), Temps depuis Démarrage, Temps depuis Extinction de l'Écran
+         - Réseau : IPv4/IPv6, Masque de Sous-Réseau, Passerelle par Défaut, Serveurs DNS, Serveur NTP, Type de Réseau Actif
+         - SSID Wi-Fi, Nom de l'Opérateur Mobile
+         - Niveau de Batterie, Statut de Charge, Santé
+         - RAM Totale/Disponible & Stockage Interne
+         - Statut MDM/Politique d'Appareil (Propriétaire du Périphérique, Propriétaire du Profil, Profil Géré, ou Aucun)
+         - Certificats CA Système et Utilisateur Installés (sujet, dates de validité, type)
+         - Gère les restrictions API d'Android 10+ avec des messages de fallback clairs (ex. "Restreint par Android 10+")
+         - Demandes d'autorisation runtime via `ActivityResultContracts` ; explication affichée si refusé
+      </div>
+</div>

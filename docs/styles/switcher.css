@@ -1,0 +1,8 @@
+/* docs/styles/switcher.css */
+.locale-switcher-container {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0;
+  margin-top: 48px;
+  border-top: 1px solid #e5e7eb;
+}
