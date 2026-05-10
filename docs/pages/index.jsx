@@ -1,19 +1,11 @@
 import { useRouter } from 'next/router'
 import { useEffect } from 'react'
 
-export async function getStaticProps() {
-  return {
-    props: {
-      basePath: process.env.BASE_PATH || '',
-     },
-    }
-}
-
-export default function Index({ basePath }) {
+export default function Index() {
   const router = useRouter()
   useEffect(() => {
-    router.replace(`${basePath}/fr/`)
-      }, [router])
+    router.replace('/fr/')
+       }, [router])
 
   return null
 }
