@@ -1,0 +1,516 @@
+---
+title: Ping — Implementation Deep Dive
+description: How the Ping screen works native subprocess, streaming output, and status computation
+---
+# Ping — Implementation Deep Dive
+
+## Overview
+
+The Ping screen executes the **native `ping` binary** as a subprocess via `Runtime.exec()` and streams its stdout line-by-line into a terminal-like output card. Unlike NTP (UDP query) and DIG (DNS query), Ping is a **continuous, streaming operation** — it runs until manually stopped or the user-configurable timeout expires.
+
+The feature reports:
+
+- **Live output** — each line from the `ping` process as it arrives (ICMP echo requests/replies, statistics)
+- **Status summary** — derived from the collected output:
+     - **ALL_SUCCESS** ✅ — every sent packet got a reply (`received == sent > 0`)
+     - **PARTIAL** 🤷 — some packets lost (`0 < received < sent`)
+     - **ALL_FAILED** ❌ — no reply received (`received == 0`)
+- **History** — last 5 distinct host pings with status
+
+The feature is implemented across **three files** (no separate Repository — the subprocess logic lives directly in the ViewModel):
+
+| File | Role |
+|---|---|
+| `PingViewModel.kt` | State management + subprocess orchestration — `StateFlow<PingUiState>`, `Runtime.exec()` |
+| `PingHistoryStore.kt` | Persistence — DataStore-backed history (last 5 entries) |
+| `PingScreen.kt` | UI — Jetpack Compose screen with terminal output card and custom scrollbar |
+
+## PingViewModel — Subprocess Orchestration
+
+**File:** `app/src/main/java/.../PingViewModel.kt`
+
+```kotlin
+class PingViewModel(
+    private val historyStore: PingHistoryStore,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(PingUiState())
+    val uiState: StateFlow<PingUiState> = _uiState.asStateFlow()
+
+    private var pingJob: Job? = null
+    private var pingProcess: Process? = null
+
+     // Regex to extract the icmp_seq number from a reply or timeout line
+    private val icmpSeqRegex = Regex("""icmp_seq=(\d+)""")
+```
+
+### UI State
+
+```kotlin
+data class PingUiState(
+     /** Text field content. */
+    val host: String = "",
+     /** Whether a ping is currently running. */
+    val isRunning: Boolean = false,
+     /** Accumulated output lines from the ping process. */
+    val outputLines: List<String> = emptyList(),
+     /** Up to 5 most recent distinct host pings, newest first. */
+    val history: List<PingHistoryEntry> = emptyList(),
+)
+```
+
+Unlike NTP and DIG, Ping's UI state includes `outputLines: List<String>` — a growing list of all lines from the subprocess. This is the only screen in the app that accumulates streaming output.
+
+### The `startPing()` lifecycle
+
+```kotlin
+fun startPing() {
+    val host = _uiState.value.host.trim()
+    if (host.isBlank() || _uiState.value.isRunning) return
+
+        _uiState.value = _uiState.value.copy(
+        isRunning = true,
+        outputLines = emptyList(),
+        )
+
+    pingJob = viewModelScope.launch {
+        val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+        try {
+            withTimeout(timeoutMs) {
+                val process = withContext(Dispatchers.IO) {
+                    Runtime.getRuntime().exec(arrayOf("ping", "-c", "100", host))
+                 }
+                pingProcess = process
+
+                val reader = BufferedReader(InputStreamReader(process.inputStream))
+                withContext(Dispatchers.IO) {
+                    var line: String? = null
+                    while (isActive && reader.readLine().also { line = it } != null) {
+                        val trimmed = line!!
+                        withContext(Dispatchers.Main) {
+                              _uiState.value = _uiState.value.copy(
+                                outputLines = _uiState.value.outputLines + trimmed,
+                             )
+                          }
+                        }
+                     }
+                process.waitFor()
+               }
+            } catch (_: TimeoutCancellationException) {
+              // Append a visible timeout marker before the finally block cleans up.
+              _uiState.value = _uiState.value.copy(
+                outputLines = _uiState.value.outputLines +
+                      "--- Timed out after ${timeoutMs / 1000}s ---",
+              )
+            } catch (_: Exception) {
+              // Interrupted or cancelled – treat as stopped
+            } finally {
+                pingProcess?.destroy()
+                pingProcess = null
+
+                val wasRunning = _uiState.value.isRunning
+                val status = computeStatus(_uiState.value.outputLines)
+                 _uiState.value = _uiState.value.copy(isRunning = false)
+
+                if (wasRunning) {
+                    saveHistory(host, status)
+                 }
+               }
+           }
+       }
+```
+
+### Key implementation details
+
+1. **No-op if already running** — `if (host.isBlank() || _uiState.value.isRunning) return` prevents duplicate pings.
+
+2. **Subprocess command** — `Runtime.getRuntime().exec(arrayOf("ping", "-c", "100", host))` runs the system `ping` with `-c 100` (max 100 packets). The `-c 100` cap is a safety net — the real stop condition is the user-configurable timeout or manual stop.
+
+3. **Dual `withContext(Dispatchers.IO)` blocks** — the first opens the subprocess, the second reads the stream. This ensures both operations run on the IO dispatcher (thread pool) rather than the default coroutine context.
+
+4. **Line-by-line streaming** — `reader.readLine()` in a `while (isActive && ...)` loop, with `withContext(Dispatchers.Main)` for each UI update. This is necessary because Compose state updates must happen on the main thread.
+
+5. **`isActive` check** — `while (isActive && ...)` checks the coroutine's active state on each iteration. When `pingJob?.cancel()` or `pingProcess?.destroy()` is called, the coroutine becomes inactive and the loop exits cleanly.
+
+6. **Timeout handling** — `withTimeout(timeoutMs)` wraps the entire ping operation. If the timeout expires, a visible marker line `"--- Timed out after ${timeoutMs / 1000}s ---"` is appended to the output before the `finally` block cleans up.
+
+7. **`finally` block** — always destroys the subprocess, clears the `pingProcess` reference, computes status, and saves history (if the ping was actually running).
+
+8. **`onCleared()` override** — when the ViewModel is destroyed (e.g., configuration change), `pingProcess?.destroy()` ensures no orphaned subprocess survives.
+
+### The `stopPing()` method
+
+```kotlin
+fun stopPing() {
+    pingProcess?.destroy()
+    pingJob?.cancel()
+    pingProcess = null
+
+    val host = _uiState.value.host.trim()
+    val status = computeStatus(_uiState.value.outputLines)
+
+        _uiState.value = _uiState.value.copy(isRunning = false)
+    viewModelScope.launch { saveHistory(host, status) }
+}
+```
+
+Stops the process, cancels the job, computes status from collected output, and saves history asynchronously.
+
+### Status computation
+
+```kotlin
+private fun computeStatus(lines: List<String>): PingStatus {
+    val received = lines.count { it.contains("bytes from") }
+     // Highest icmp_seq seen — present in both reply ("bytes from") and
+     // "Request timeout" lines, giving a good estimate of sent count.
+    val maxSeq = lines.mapNotNull { line ->
+        icmpSeqRegex.find(line)?.groupValues?.get(1)?.toIntOrNull()
+     }.maxOrNull() ?: 0
+
+     // If no icmp_seq seen at all, fall back to received count as "sent"
+    val sent = if (maxSeq > 0) maxSeq else received
+
+    return when {
+        received == 0          -> PingStatus.ALL_FAILED
+        received >= sent       -> PingStatus.ALL_SUCCESS
+        else                   -> PingStatus.PARTIAL
+         }
+}
+```
+
+| Status | Condition | Emoji |
+|---|---|---|
+| `ALL_SUCCESS` | `received >= sent > 0` | ✅ |
+| `PARTIAL` | `0 < received < sent` | 🤷‍♂️ |
+| `ALL_FAILED` | `received == 0` | ❌ |
+
+**How it works:**
+
+- **`received`** — count of lines containing `"bytes from"` (each successful ICMP reply)
+- **`sent`** — derived from the highest `icmp_seq=` number seen across *all* lines (both replies and timeout lines). This is a proxy for sent count because `ping` increments `icmp_seq` for each packet sent, whether or not it gets a reply.
+- **Fallback** — if no `icmp_seq` is found (e.g., the output format differs on some platforms), `sent` falls back to `received` count, which means any output with replies is treated as `ALL_SUCCESS`.
+
+### Command handlers
+
+| Function | Behavior |
+|---|---|
+| `onHostChange(value)` | Updates `host` (no result clearing needed — there's no `result` field) |
+| `startPing()` | Validates, launches subprocess, streams output, saves history on completion |
+| `stopPing()` | Destroys subprocess, cancels job, computes status, saves history |
+| `selectHistoryEntry(entry)` | Stops current ping (if running), populates host, immediately starts new ping |
+
+### Factory delegate
+
+```kotlin
+companion object {
+    fun factory(context: Context): ViewModelProvider.Factory =
+        object : ViewModelProvider.Factory {
+              @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                PingViewModel(
+                    historyStore = PingHistoryStore(context.applicationContext),
+                    settingsRepository = SettingsRepository(context.applicationContext),
+                     ) as T
+             }
+}
+```
+
+Note: Ping has **no Repository** — the `Runtime.exec()` call lives directly in the ViewModel. This is one of two screens without a Repository file (the other is Traceroute).
+
+## PingHistoryStore — Persistence
+
+**File:** `app/src/main/java/.../PingHistoryStore.kt`
+
+### DataStore setup
+
+```kotlin
+private val Context.pingHistoryDataStore: DataStore<Preferences>
+    by preferencesDataStore(name = "ping_history")
+```
+
+Each tool has its own named DataStore file. Ping uses `"ping_history"`.
+
+### Serialization format
+
+A single `String` preference key (`"ping_history"`) contains all entries, one per line, fields separated by `|`:
+
+```
+2026/05/10 14:30:00|google.com|ALL_SUCCESS
+2026/05/09 09:15:22|192.168.1.1|PARTIAL
+2026/05/08 18:00:00|nonexistent.host|ALL_FAILED
+```
+
+| Field | Example | Notes |
+|---|---|---|
+| `timestamp` | `2026/05/10 14:30:00` | `yyyy/MM/dd HH:mm:ss` |
+| `host` | `google.com` | Hostname or IP |
+| `status` | `ALL_SUCCESS` | Enum serialized as `.name` |
+
+### Deserialization with backward compatibility
+
+```kotlin
+private fun deserialise(raw: String): List<PingHistoryEntry> =
+    raw.split(ENTRY_SEP)
+           .filter { it.isNotBlank() }
+           .mapNotNull { line ->
+            val parts = line.split(FIELD_SEP)
+            if (parts.size >= 2) {
+                 // Support old boolean format ("true"/"false") and new enum names
+                val status = when (parts.getOrNull(2)) {
+                    "ALL_SUCCESS", "true"  -> PingStatus.ALL_SUCCESS
+                    "PARTIAL"              -> PingStatus.PARTIAL
+                    else                   -> PingStatus.ALL_FAILED
+                     }
+                PingHistoryEntry(timestamp = parts[0], host = parts[1], status = status)
+               } else null
+           }
+           .take(MAX_ENTRIES)
+```
+
+- Requires at least 2 fields (timestamp, host); 3rd field (`status`) defaults to `ALL_FAILED` if missing
+- **Backward compatibility** — supports the old boolean format (`"true"` → `ALL_SUCCESS`, `"false"` → `ALL_FAILED`) alongside the new enum names
+- Empty/blank lines are filtered out
+- `take(MAX_ENTRIES)` acts as a safety net even though the ViewModel caps at 5 before saving
+
+### Reactive history flow
+
+```kotlin
+val historyFlow: Flow<List<PingHistoryEntry>> = context.pingHistoryDataStore.data.map { prefs ->
+    prefs[KEY]?.let { raw -> deserialise(raw) } ?: emptyList()
+}
+```
+
+The ViewModel's `init` block reads the first emission:
+
+```kotlin
+init {
+    viewModelScope.launch {
+        val saved = historyStore.historyFlow.first()
+            _uiState.value = _uiState.value.copy(history = saved)
+         }
+    }
+```
+
+## UI — PingScreen
+
+**File:** `app/src/main/java/.../PingScreen.kt`
+
+The Ping screen has a **different layout strategy** from NTP and DIG. Instead of a single scrollable column, it uses a **pinned input area** with a **scrollable output terminal** that fills all remaining space:
+
+```
+┌─────────────────────────────────────────┐
+│ [Hostname / IP                    ]       │ ← pinned, always visible
+├─────────────────────────────────────────┤
+│ [🔲 Terminal    Ping                  ]   │ ← pinned, always visible
+├─────────────────────────────────────────┤
+│ ┌─ Terminal output (scrollable) ─────┐  │
+│ │ PING google.com (142.250.188.46):  │  │
+│ │ 64 bytes from 142.250.188.46: ...  │  │
+│ │ 64 bytes from 142.250.188.46: ...  │  │
+│ │ ... (fills remaining space)        │  │
+│ │                                    │  │ ← custom scrollbar
+│ └────────────────────────────────────┘  │
+├─────────────────────────────────────────┤
+│ ┌─ Recent Pings ───────────────────┐    │
+│ │ 2026/05/10 14:30:00   google.com  ✅│    │
+│ └──────────────────────────────────┘    │
+└─────────────────────────────────────────┘
+```
+
+### Screen structure
+
+```kotlin
+@Composable
+fun PingScreen() {
+    val context = LocalContext.current
+    val vm: PingViewModel = viewModel(factory = PingViewModel.factory(context))
+    val uiState by vm.uiState.collectAsState()
+    val focusManager = LocalFocusManager.current
+
+     // Separate scroll state just for the output area
+    val outputScrollState = rememberScrollState()
+    LaunchedEffect(uiState.outputLines.size) {
+        outputScrollState.animateScrollTo(outputScrollState.maxValue)
+     }
+
+     // ── Outer column: no scroll — input+button pinned, output gets remaining space
+    Column(
+        modifier = Modifier
+             .fillMaxSize()
+             .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+             // ── Hostname field (always visible)
+            OutlinedTextField(/* host, KeyboardType.Uri, ImeAction.Go */)
+
+             // ── Ping / Stop button (always visible)
+            Button(/* ... */)
+
+             // ── Output terminal card (weight(1f) = fills all remaining space)
+            AnimatedVisibility(
+                visible = uiState.outputLines.isNotEmpty(),
+                modifier = Modifier.weight(1f),
+                enter = fadeIn(tween(300)),
+                exit = fadeOut(tween(200)),
+                ) {
+                Card(/* ... */) {
+                    Box {
+                         Column(
+                             modifier = Modifier
+                                  .fillMaxSize()
+                                  .padding(end = 10.dp)           // room for scrollbar
+                                  .verticalScroll(outputScrollState)
+                                  .verticalScrollbar(outputScrollState),
+                             ) {
+                                uiState.outputLines.forEach { line ->
+                                    Text(line, /* monospace, 12sp */)
+                                   }
+                              }
+                          }
+                      }
+                  }
+
+             // ── Ping History (below the output)
+            AnimatedVisibility(visible = uiState.history.isNotEmpty()) {
+                PingHistorySection(entries = uiState.history, /* ... */)
+              }
+          }
+}
+```
+
+### Key UI differences from NTP/DIG
+
+| Aspect | NTP / DIG | Ping |
+|---|---|---|
+| **Scroll strategy** | Single scrollable column | Pinned input + scrollable output terminal |
+| **Output area** | Fixed-size result card | Fills remaining space (`weight(1f)`) |
+| **Auto-scroll** | Not needed | `LaunchedEffect` + `animateScrollTo(maxValue)` on every new line |
+| **Scrollbar** | None | Custom `verticalScrollbar` modifier (draws a rounded rect on the right edge) |
+| **Button behavior** | Single action | Toggle (Ping ↔ Stop) |
+| **Button color** | Primary (always) | Primary when idle, Error (red) when running |
+
+### Custom scrollbar
+
+```kotlin
+private fun Modifier.verticalScrollbar(
+    scrollState: androidx.compose.foundation.ScrollState,
+    width: Dp = 4.dp,
+    color: Color = Color.Gray.copy(alpha = 0.5f),
+): Modifier = this.drawWithContent {
+    drawContent()
+    val contentHeight = scrollState.maxValue.toFloat() + size.height
+    if (contentHeight <= size.height) return@drawWithContent    // nothing to scroll
+
+    val thumbHeightPx = (size.height / contentHeight) * size.height
+    val thumbTopPx     = (scrollState.value.toFloat() / contentHeight) * size.height
+    val barWidth       = width.toPx()
+
+    drawRoundRect(
+        color         = color,
+        topLeft       = Offset(size.width - barWidth, thumbTopPx),
+        size          = Size(barWidth, thumbHeightPx),
+        cornerRadius = CornerRadius(barWidth / 2),
+        )
+}
+```
+
+A custom `Modifier` extension that draws a thin rounded rectangle on the right edge, positioned proportionally to the scroll offset — mimicking a terminal scrollbar.
+
+### Button toggle behavior
+
+```kotlin
+Button(
+    onClick = {
+        focusManager.clearFocus()
+        if (uiState.isRunning) vm.stopPing() else vm.startPing()
+      },
+    enabled = uiState.isRunning || uiState.host.isNotBlank(),
+    colors = if (uiState.isRunning)
+        ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+    else
+        ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+    ) {
+    if (uiState.isRunning) {
+        // Stop icon + "Stop" text
+        Icon(Icons.Filled.Stop, /* ... */)
+        Text("Stop", fontWeight = FontWeight.Medium)
+      } else {
+        // Terminal icon + "Ping" text
+        Icon(Icons.Filled.Terminal, /* ... */)
+        Text("Ping", fontWeight = FontWeight.Medium)
+      }
+}
+```
+
+The button toggles between "Ping" (terminal icon) and "Stop" (stop icon, red background). It's enabled when either running (always) or host is non-blank (ready to start).
+
+### IME action behavior
+
+```kotlin
+keyboardActions = KeyboardActions(
+    onGo = {
+        focusManager.clearFocus()
+        if (uiState.isRunning) vm.stopPing() else vm.startPing()
+      },
+),
+```
+
+The "Go" key on the keyboard toggles ping start/stop — same behavior as the button. This is consistent with the button's toggle behavior.
+
+### Terminal output styling
+
+```kotlin
+uiState.outputLines.forEach { line ->
+    Text(
+        text = line,
+        style = MaterialTheme.typography.bodySmall.copy(
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            ),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+}
+```
+
+Each output line is rendered in monospace font at 12sp with 18sp line height — compact enough to fit many lines in the terminal card while remaining readable.
+
+## Test Coverage
+
+There is **no dedicated `PingViewModelTest`** in the test suite. The Ping ViewModel's subprocess-based nature makes it harder to unit test (requires mocking `Runtime.getRuntime().exec()`). The feature relies on:
+
+- **Manual testing** — the primary test method for the Ping screen
+- **`PingHistoryStore` tests** — history serialization/deserialization, backward compatibility, edge cases
+- **Integration testing** — via the test automation scripts (BULKACTIONS-ADB-SCRIPT)
+
+## Data Flow Summary
+
+```
+User enters host → taps "Ping" / presses "Go"
+          │
+          ├─ Validates (non-blank, not already running)
+          ├─ _uiState.value = isRunning = true, outputLines = []
+          │
+          └─ viewModelScope.launch {
+                  withTimeout(userSetting * 1000) {
+                      Runtime.exec(["ping", "-c", "100", host])
+                          │
+                          ├─ BufferedReader.readLine() loop
+                          ├─ withContext(Dispatchers.Main) → append line
+                          ├─ LaunchedEffect → auto-scroll to bottom
+                          └─ process.waitFor() (when stopped or timeout)
+                      }
+                  │
+                  finally {
+                      pingProcess?.destroy()
+                      computeStatus(outputLines)
+                          │
+                          ├─ received = count("bytes from")
+                          ├─ sent = max(icmp_seq) or fallback to received
+                          └─ ALL_SUCCESS / PARTIAL / ALL_FAILED
+                      }
+                      saveHistory(host, status)
+                  }
+              }
+```
