@@ -1,0 +1,1116 @@
+---
+title: Settings - Deep Dive
+description: How the Settings screen works — timeout, Proxy/PAC configuration, PAC file mode, logging, and persistence
+---
+
+# Settings — Implementation Deep Dive
+How the Settings screen works: timeout, Proxy/PAC configuration, PAC file mode, logging, and persistence
+
+## Overview
+
+The Settings screen is the **global configuration hub** for the app. It provides:
+
+1. **Operation Timeout** — a numeric field (1–60 s, default 5 s) applied to all network-based tools
+2. **Proxy / PAC Configuration** — enable/disable proxy routing, choose PAC source (URL or local file), validate PAC syntax, and test connectivity
+3. **Proxy PAC Logging** — toggle high-level PAC event logging, view the in-memory log buffer, and clear persisted logs
+
+The feature spans **six source files** across the app module plus **three proxy module files**:
+
+| File | Role |
+|---|---|
+| `SettingsViewModel.kt` | State management — `StateFlow<SettingsUiState>`, input validation, PAC actions |
+| `SettingsScreen.kt` | UI — two `SettingsSectionCard` groups (Network, Proxy) |
+| `SettingsRepository.kt` | DataStore wrapper — timeout flow + proxy config persistence |
+| `SettingsDataStore.kt` | Key definitions (`SettingsKeys`) + `DataStore<Preferences>` singleton |
+| `ProxyConfig.kt` | Data class carrying proxy configuration state |
+| `ProxyPacLogger.kt` | Thread-safe, dual-store logger (in-memory buffer + file) |
+
+Supporting proxy files (used by Settings and other screens):
+
+| File | Role |
+|---|---|
+| `proxy/ProxyResolver.kt` | PAC fetch/evaluate/cache, proxy resolution, connectivity test |
+| `proxy/JsEngine.kt` | Interface for PAC JS evaluation |
+| `proxy/QuickJsEngine.kt` | QuickJS-based PAC evaluator with native DNS bridges |
+
+> **Note:** The Settings screen has its own dedicated `SettingsScreen.kt` file (unlike NTP Check, which lives inside `MainActivity.kt`). The ProxyResolver, JsEngine, and ProxyPacLogger are shared across multiple screens (Settings, HttpsCert, GoogleTimeSync, BulkActions).
+
+---
+
+## SettingsDataStore — Key Definitions
+
+**File:** `app/src/main/java/.../settings/SettingsDataStore.kt`
+
+All settings are backed by a single AndroidX Preferences DataStore instance named `"app_settings"`. Keys are declared in the `SettingsKeys` object:
+
+```kotlin
+internal val Context.settingsDataStore: DataStore<Preferences>
+    by preferencesDataStore(name = "app_settings")
+
+object SettingsKeys {
+    // Timeout
+    val TIMEOUT_SECONDS          = intPreferencesKey("timeout_seconds")
+    const val DEFAULT_TIMEOUT_SECONDS: Int = 5
+    const val MIN_TIMEOUT_SECONDS: Int     = 1
+    const val MAX_TIMEOUT_SECONDS: Int     = 60
+
+    // Proxy / PAC
+    val PROXY_ENABLED            = booleanPreferencesKey("proxy_enabled")
+    val PROXY_PAC_URL            = stringPreferencesKey("proxy_pac_url")
+    val PROXY_LAST_TESTED        = longPreferencesKey("proxy_last_tested")
+    val PROXY_LAST_TEST_RESULT   = stringPreferencesKey("proxy_last_test_result")
+    val PROXY_LOGGING_ENABLED    = booleanPreferencesKey("proxy_logging_enabled")
+}
+```
+
+**Design notes:**
+- The DataStore is a `val` property extension on `Context` — each call returns the same singleton per process
+- No migration logic is needed; the app is early enough that schema changes are additive only
+- All keys use typed preference keys (`intPreferencesKey`, `booleanPreferencesKey`, etc.) for type safety
+
+---
+
+## ProxyConfig — Data Model
+
+**File:** `app/src/main/java/.../settings/ProxyConfig.kt`
+
+```kotlin
+data class ProxyConfig(
+    val enabled: Boolean = false,
+    val pacUrl: String = "",
+    val lastTested: Long = 0L,
+    val lastTestResult: String? = null,
+    val loggingEnabled: Boolean = false,
+)
+```
+
+A plain data class emitted by `SettingsRepository.proxyConfigFlow`. It maps one-to-one to the five proxy-related DataStore keys. The `lastTestResult` field is nullable because the user may never have pressed "Test Proxy."
+
+---
+
+## SettingsRepository — Persistence Layer
+
+**File:** `app/src/main/java/.../settings/SettingsRepository.kt`
+
+The Repository is a thin wrapper around `settingsDataStore`. It exposes two reactive flows and two suspend functions:
+
+### Timeout
+
+```kotlin
+val timeoutSecondsFlow: Flow<Int> = context.settingsDataStore.data.map { prefs ->
+    prefs[SettingsKeys.TIMEOUT_SECONDS] ?: SettingsKeys.DEFAULT_TIMEOUT_SECONDS
+}
+
+suspend fun updateTimeout(seconds: Int) {
+    val clamped = seconds.coerceIn(
+        SettingsKeys.MIN_TIMEOUT_SECONDS,
+        SettingsKeys.MAX_TIMEOUT_SECONDS,
+    )
+    context.settingsDataStore.edit { prefs ->
+        prefs[SettingsKeys.TIMEOUT_SECONDS] = clamped
+    }
+}
+```
+
+**Design note:** Clamping is enforced at the Repository level, not the ViewModel. This means `timeoutSecondsFlow` never emits an out-of-range value, even if the store is corrupted.
+
+### Proxy / PAC
+
+```kotlin
+val proxyConfigFlow: Flow<ProxyConfig> = context.settingsDataStore.data.map { prefs ->
+    ProxyConfig(
+        enabled         = prefs[SettingsKeys.PROXY_ENABLED] ?: false,
+        pacUrl          = prefs[SettingsKeys.PROXY_PAC_URL] ?: "",
+        lastTested      = prefs[SettingsKeys.PROXY_LAST_TESTED] ?: 0L,
+        lastTestResult  = prefs[SettingsKeys.PROXY_LAST_TEST_RESULT],
+        loggingEnabled  = prefs[SettingsKeys.PROXY_LOGGING_ENABLED] ?: false,
+    )
+}
+
+suspend fun saveProxyConfig(config: ProxyConfig) {
+    context.settingsDataStore.edit { prefs ->
+        prefs[SettingsKeys.PROXY_ENABLED]           = config.enabled
+        prefs[SettingsKeys.PROXY_PAC_URL]           = config.pacUrl
+        prefs[SettingsKeys.PROXY_LAST_TESTED]       = config.lastTested
+        prefs[SettingsKeys.PROXY_LOGGING_ENABLED]   = config.loggingEnabled
+        if (config.lastTestResult != null) {
+            prefs[SettingsKeys.PROXY_LAST_TEST_RESULT] = config.lastTestResult
+        } else {
+            prefs.remove(SettingsKeys.PROXY_LAST_TEST_RESULT)
+        }
+    }
+}
+```
+
+**Design notes:**
+- `proxyConfigFlow` emits a fresh `ProxyConfig` on **any** proxy-related key change — the entire object is rebuilt, not partial updates
+- `saveProxyConfig` is **atomic** within a single `edit { }` block — all five keys are written together
+- `lastTestResult` is explicitly removed (not set to empty string) when null, avoiding stale test results lingering in the store
+
+---
+
+## SettingsViewModel — State Management
+
+**File:** `app/src/main/java/.../SettingsViewModel.kt`
+
+The ViewModel coordinates three concerns: timeout input, proxy/PAC configuration, and PAC logging. It exposes a single `StateFlow<SettingsUiState>` with **17 fields**.
+
+### SettingsUiState
+
+```kotlin
+data class SettingsUiState(
+    val timeoutInput: String = "5",
+    val isError: Boolean = false,
+    val savedTimeout: Int = 5,
+    val proxyEnabled: Boolean = false,
+    val pacSourceMode: PacSourceMode = PacSourceMode.Default,
+    val proxyPacUrl: String = "",
+    val proxyPacUrlError: String? = null,
+    val isTestingProxy: Boolean = false,
+    val proxyTestResult: String? = null,
+    val proxyLastTested: Long = 0L,
+    val proxyLoggingEnabled: Boolean = false,
+    val showLogDialog: Boolean = false,
+    val proxyLogs: List<String> = emptyList(),
+)
+```
+
+| Field Group | Fields | Purpose |
+|---|---|---|
+| **Timeout** | `timeoutInput`, `isError`, `savedTimeout` | Raw text, validation flag, revert anchor |
+| **Proxy / PAC** | `proxyEnabled`, `pacSourceMode`, `proxyPacUrl`, `proxyPacUrlError`, `isTestingProxy`, `proxyTestResult`, `proxyLastTested` | Proxy toggle, source mode, PAC input, validation, test state |
+| **Logging** | `proxyLoggingEnabled`, `showLogDialog`, `proxyLogs` | Logger toggle, dialog visibility, log snapshot |
+
+### PacSourceMode
+
+```kotlin
+enum class PacSourceMode {
+    URL,   // HTTP/HTTPS URL (existing behavior)
+    FILE,  // Local filesystem path (private storage or absolute path)
+}
+```
+
+Two source modes for PAC scripts:
+- **URL** — fetch PAC from an HTTP/HTTPS endpoint (existing behavior)
+- **FILE** — load PAC from a local file path (newer feature for offline/air-gapped environments)
+
+### Initialization
+
+The `init` block runs **two** coroutine flows on creation:
+
+```kotlin
+init {
+    // 1. Seed timeout from persisted value
+    viewModelScope.launch {
+        settingsRepository.timeoutSecondsFlow.collect { persisted ->
+            val current = _uiState.value
+            if (!current.isError) {
+                _uiState.value = current.copy(
+                    timeoutInput = persisted.toString(),
+                    savedTimeout = persisted,
+                )
+            } else {
+                // Just sync the known-good backing value for revert purposes
+                _uiState.value = current.copy(savedTimeout = persisted)
+            }
+        }
+    }
+
+    // 2. Load persisted proxy config
+    viewModelScope.launch {
+        val config = settingsRepository.proxyConfigFlow.first()
+        _uiState.value = _uiState.value.copy(
+            proxyEnabled = config.enabled,
+            proxyPacUrl = config.pacUrl,
+            proxyLastTested = config.lastTested,
+            proxyTestResult = config.lastTestResult,
+            proxyLoggingEnabled = config.loggingEnabled,
+        )
+        proxyPacLogger.enabled = config.loggingEnabled
+    }
+}
+```
+
+**Design notes:**
+- Timeout uses `.collect {}` (not `.first()`) because the user may change the timeout while the Settings screen is open, and the UI should reflect external changes (e.g., from Bulk Actions ADB automation)
+- The `isError` guard prevents overwriting the user's in-progress typing when the persisted value arrives
+- Proxy config uses `.first()` because it's a one-time seed — subsequent changes are triggered by user actions, not flow emissions
+- `proxyPacLogger.enabled` is synced from persisted state so the logger starts in the correct state even before the user toggles it
+
+### Timeout Actions
+
+```kotlin
+fun onTimeoutChange(value: String) {
+    val filtered = value.filter { it.isDigit() }.take(3)
+    val parsed = filtered.toIntOrNull()
+    val valid = parsed != null &&
+            parsed >= SettingsKeys.MIN_TIMEOUT_SECONDS &&
+            parsed <= SettingsKeys.MAX_TIMEOUT_SECONDS
+
+    _uiState.value = _uiState.value.copy(
+        timeoutInput = filtered,
+        isError = parsed == null || parsed < SettingsKeys.MIN_TIMEOUT_SECONDS || parsed > SettingsKeys.MAX_TIMEOUT_SECONDS,
+    )
+
+    if (valid && parsed != null) {
+        viewModelScope.launch {
+            settingsRepository.updateTimeout(parsed)
+        }
+    }
+}
+
+fun revert() {
+    val saved = _uiState.value.savedTimeout
+    _uiState.value = _uiState.value.copy(
+        timeoutInput = saved.toString(),
+        isError = false,
+    )
+}
+```
+
+**Design notes:**
+- Input is **filtered** to digits only, max 3 characters (covers 1–60 range)
+- Persistence happens **immediately** on every valid keystroke (no "Save" button)
+- `revert()` is called when the text field loses focus while in an invalid state — it restores `savedTimeout` and clears the error flag
+- The `savedTimeout` field acts as a revert anchor, updated only on successful persistence
+
+### Proxy / PAC Actions
+
+#### onProxyEnabledChange
+
+```kotlin
+fun onProxyEnabledChange(enabled: Boolean) {
+    _uiState.value = _uiState.value.copy(proxyEnabled = enabled)
+    viewModelScope.launch {
+        saveCurrentProxyConfig()
+    }
+}
+```
+
+Toggles proxy routing on/off and persists immediately.
+
+#### onPacSourceModeChange
+
+```kotlin
+fun onPacSourceModeChange(mode: PacSourceMode) {
+    _uiState.value = _uiState.value.copy(
+        pacSourceMode = mode,
+        proxyPacUrl = "",        // Clear on switch to avoid stale content
+        proxyPacUrlError = null,
+    )
+    proxyResolver.clearCache()
+    viewModelScope.launch {
+        saveCurrentProxyConfig()
+    }
+}
+```
+
+Switches between URL and FILE source modes. Clears the PAC URL to avoid confusion (a URL-mode URL is not a valid file path and vice versa). Clears the ProxyResolver cache since file-based and URL-based PACs have different fetch strategies.
+
+#### onPacFileSelected — SAF Copy-to-Storage
+
+```kotlin
+fun onPacFileSelected(uri: Uri) {
+    val internalPath = appContext?.let { ctx ->
+        runCatching {
+            val outputFile = File(ctx.filesDir, "saved-pac.pac")
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                outputFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            outputFile.absolutePath
+        }.getOrNull()
+    }
+
+    _uiState.value = _uiState.value.copy(
+        proxyPacUrl = internalPath ?: "",
+        proxyPacUrlError = if (internalPath == null) "Failed to copy file" else null,
+    )
+
+    if (internalPath != null) {
+        proxyResolver.clearCache()
+        viewModelScope.launch {
+            saveCurrentProxyConfig()
+        }
+    }
+}
+```
+
+When the user selects a `.pac` file via the SAF picker (`GetContent` contract):
+1. Copies the file content to app private storage (`filesDir/saved-pac.pac`)
+2. Stores the internal file path in `proxyPacUrl`
+3. Clears the ProxyResolver cache and persists the config
+
+**Why copy instead of storing the URI?** SAF URIs can expire or become invalid if the document provider revokes access. Copying to private storage ensures the PAC file persists across app restarts and is accessible even without the original document provider.
+
+#### onProxyPacUrlChange — Debounced Validation
+
+```kotlin
+fun onProxyPacUrlChange(url: String) {
+    _uiState.value = _uiState.value.copy(
+        proxyPacUrl = url,
+        proxyPacUrlError = null, // clear error immediately while typing
+    )
+
+    proxyResolver.clearCache()
+
+    pacUrlDebounceJob?.cancel()
+    pacUrlDebounceJob = viewModelScope.launch {
+        delay(300) // debounce
+
+        val error = validatePacUrl(url, _uiState.value.pacSourceMode)
+        _uiState.value = _uiState.value.copy(proxyPacUrlError = error)
+
+        if (error == null) {
+            saveCurrentProxyConfig()
+        }
+    }
+}
+```
+
+**Design notes:**
+- PAC URL updates are **debounced by 300 ms** to avoid distracting the user with validation errors while they're still typing
+- The PAC URL is cleared from cache immediately on every keystroke (not debounced) — this ensures stale PAC results aren't used while the user edits
+- Validation errors are shown only **after** the debounce delay; the error field is cleared **immediately** on a new keystroke (so the user never sees an error from a previous keystroke while still typing)
+- Valid URLs are persisted immediately after debounce (no separate "Save" action)
+
+#### validatePacUrl — Mode-Aware Validation
+
+```kotlin
+internal fun validatePacUrl(url: String, mode: PacSourceMode = _uiState.value.pacSourceMode): String? {
+    if (url.isBlank()) return null
+
+    when (mode) {
+        PacSourceMode.URL -> {
+            return try {
+                val parsed = java.net.URL(url)
+                when {
+                    parsed.protocol !in listOf("http", "https") ->
+                        "Only http:// and https:// URLs are supported"
+                    parsed.host.isNullOrBlank() ->
+                        "URL must contain a hostname"
+                    else -> null
+                }
+            } catch (_: Exception) {
+                "Invalid URL format"
+            }
+        }
+        PacSourceMode.FILE -> {
+            return try {
+                val resolvedPath = if (url.startsWith("content://")) {
+                    android.net.Uri.parse(url).path ?: url
+                } else {
+                    url
+                }
+
+                if (resolvedPath.isBlank() || resolvedPath == "/") {
+                    "Invalid file path"
+                } else {
+                    null       // File existence checked at fetch time, not here
+                }
+            } catch (_: Exception) {
+                "Invalid file path"
+            }
+        }
+    }
+}
+```
+
+**Validation rules:**
+
+| Mode | Valid | Invalid |
+|---|---|---|
+| **URL** | `http://proxy.corp.com/proxy.pac`, `https://example.com/pac.js` | `ftp://...`, `http://`, `not a url`, empty |
+| **FILE** | `/data/user/0/app/files/saved-pac.pac`, `content://...` paths | `/`, empty, non-existent paths (checked at fetch time, not validation) |
+
+**Design note:** FILE mode validation is intentionally lenient — it checks that the path is non-blank and not just `/`. File existence is verified at **fetch time** (in `ProxyResolver.fetchPacFromFile()`), not at validation time, because the user might type a path that doesn't exist yet (e.g., before selecting a file).
+
+#### testProxy — Connectivity Test
+
+```kotlin
+fun testProxy() {
+    testJob?.cancel()
+    _uiState.value = _uiState.value.copy(isTestingProxy = true)
+
+    testJob = viewModelScope.launch {
+        val result = proxyResolver.testProxy()
+        val now = System.currentTimeMillis()
+
+        _uiState.value = _uiState.value.copy(
+            isTestingProxy = false,
+            proxyTestResult = result.message,
+            proxyLastTested = now,
+        )
+
+        saveCurrentProxyConfig(
+            overrideLastTested = now,
+            overrideTestResult = result.message,
+        )
+    }
+}
+```
+
+Cancels any in-progress test, sets `isTestingProxy = true`, then calls `ProxyResolver.testProxy()`. The result (success or failure message with latency) is displayed in the UI and persisted. The `testJob` field allows cancellation of in-flight tests if the user navigates away.
+
+### Proxy Logging Actions
+
+```kotlin
+fun onProxyLoggingEnabledChange(enabled: Boolean) {
+    proxyPacLogger.enabled = enabled
+    _uiState.value = _uiState.value.copy(proxyLoggingEnabled = enabled)
+    viewModelScope.launch {
+        saveCurrentProxyConfig()
+    }
+}
+
+fun onViewLogs() {
+    val logs = proxyPacLogger.getLogs()
+    _uiState.value = _uiState.value.copy(
+        showLogDialog = true,
+        proxyLogs = logs,
+    )
+}
+
+fun onClearLogs() {
+    proxyPacLogger.clear()
+    _uiState.value = _uiState.value.copy(
+        proxyLogs = emptyList(),
+        showLogDialog = false,
+    )
+}
+
+fun onDismissLogDialog() {
+    _uiState.value = _uiState.value.copy(showLogDialog = false)
+}
+```
+
+Logging actions operate on the shared `ProxyPacLogger` singleton. The `onViewLogs()` action takes a **snapshot** of the in-memory buffer at the moment of the call — subsequent log entries don't appear in the open dialog (the dialog would need to be reopened).
+
+### Factory
+
+```kotlin
+companion object {
+    fun factory(context: Context): ViewModelProvider.Factory =
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                val appContext = context.applicationContext
+                val settingsRepo = SettingsRepository(appContext)
+                val logger = ProxyPacLogger.getInstance(
+                    logFile = File(appContext.filesDir, "proxypac-logs.txt"),
+                )
+                val proxyResolver = ProxyResolver(
+                    settingsRepository = settingsRepo,
+                    jsEngine = QuickJsEngine(),
+                    logger = logger,
+                    appContext = appContext,
+                )
+                return SettingsViewModel(
+                    settingsRepository = settingsRepo,
+                    proxyResolver = proxyResolver,
+                    proxyPacLogger = logger,
+                    appContext = appContext,
+                ) as T
+            }
+        }
+}
+```
+
+The factory creates all dependencies inline:
+- `SettingsRepository` with application context (ensures DataStore singleton is shared)
+- `ProxyPacLogger` via `getInstance()` (singleton pattern — shared across all screens)
+- `ProxyResolver` with `QuickJsEngine`, the logger, and the app context (for file-based PAC)
+- `SettingsViewModel` with all three dependencies
+
+> **Why application context?** The DataStore is a process-wide singleton. Using an activity context could create multiple DataStore instances if the activity is recreated. `applicationContext` guarantees a single DataStore per process.
+
+---
+
+## SettingsScreen — UI
+
+**File:** `app/src/main/java/.../SettingsScreen.kt`
+
+The screen is a single `@Composable fun SettingsScreen()` function wrapped in a vertically scrollable `Column` with two `SettingsSectionCard` groups.
+
+### Section 1: Network Configuration
+
+Contains a single `OutlinedTextField` for the operation timeout:
+
+```kotlin
+OutlinedTextField(
+    value = uiState.timeoutInput,
+    onValueChange = viewModel::onTimeoutChange,
+    modifier = Modifier.fillMaxWidth()
+        .onFocusChanged { focusState ->
+            if (!focusState.isFocused && uiState.isError) {
+                viewModel.revert()
+            }
+        },
+    label = { Text("Operation Timeout (seconds)") },
+    placeholder = { Text(SettingsKeys.DEFAULT_TIMEOUT_SECONDS.toString()) },
+    singleLine = true,
+    isError = uiState.isError,
+    supportingText = {
+        if (uiState.isError) {
+            Text("Must be between ${SettingsKeys.MIN_TIMEOUT_SECONDS} and ${SettingsKeys.MAX_TIMEOUT_SECONDS}",
+                color = MaterialTheme.colorScheme.error)
+        } else {
+            Text("Applies to total duration of scans/requests.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    },
+    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+)
+```
+
+**Design notes:**
+- `onFocusChanged` listener calls `viewModel.revert()` when focus leaves and the field is still invalid — this ensures the displayed value always reflects a real persisted setting
+- `KeyboardType.Number` restricts the IME to numeric input only
+- Supporting text changes contextually: error message when invalid, help text when valid
+
+### Section 2: Proxy Configuration
+
+Contains multiple controls grouped vertically:
+
+1. **Enable Proxy toggle** — `Switch` + description label
+2. **PAC Source mode** — two `FilterChip` components (`URL` / `FILE`)
+3. **PAC URL/File input** — mode-aware `OutlinedTextField` with:
+   - Dynamic label: "PAC URL" vs "PAC File"
+   - Dynamic placeholder: URL example vs file path example
+   - Dynamic supporting text: context-aware help or validation error
+   - Dynamic trailing icon: "Browse" `TextButton` (FILE mode only, when proxy enabled)
+   - Dynamic keyboard: `KeyboardType.Uri` (URL mode) vs `KeyboardType.Text` (FILE mode)
+4. **Enable Proxy Logging toggle** — `Switch` (disabled when proxy is disabled)
+5. **Log action buttons** — "View Logs" and "Clear Logs" `TextButton`s (disabled when proxy is disabled)
+6. **Test Proxy/PAC button** — full-width `Button` with loading state
+7. **Last test result** — monospaced text with timestamp (if ever tested)
+
+#### PAC File Picker
+
+```kotlin
+val pacFilePickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.GetContent()
+) { uri: android.net.Uri? ->
+    uri?.let { selectedUri ->
+        viewModel.onPacFileSelected(selectedUri)
+    }
+}
+```
+
+The "Browse" `TextButton` in FILE mode launches a `GetContent` activity result contract with MIME type `*/*` (all files). This is necessary because `.pac` files don't have a well-known MIME type — using `application/javascript` would gray out all files in the SAF picker (a known issue that was fixed by switching to `*/*`).
+
+#### Test Proxy/PAC Button
+
+```kotlin
+Button(
+    onClick = viewModel::testProxy,
+    enabled = uiState.proxyEnabled &&
+            uiState.proxyPacUrl.isNotBlank() &&
+            uiState.proxyPacUrlError == null &&
+            !uiState.isTestingProxy,
+    modifier = Modifier.fillMaxWidth(),
+    colors = ButtonDefaults.buttonColors(
+        containerColor = MaterialTheme.colorScheme.secondary,
+    ),
+) {
+    if (uiState.isTestingProxy) {
+        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        Spacer(Modifier.width(8.dp))
+        Text("Testing…")
+    } else {
+        Text("Test Proxy/PAC", fontWeight = FontWeight.Medium)
+    }
+}
+```
+
+The button is enabled only when:
+- Proxy is enabled
+- PAC URL/File is non-blank
+- No validation error exists
+- Not already testing
+
+Uses `MaterialTheme.colorScheme.secondary` as the container color to visually distinguish it from primary actions.
+
+#### SettingsSectionCard
+
+```kotlin
+@Composable
+private fun SettingsSectionCard(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = title, style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f))
+            Spacer(Modifier.height(16.dp))
+            content()
+        }
+    }
+}
+```
+
+A reusable card composable that wraps each section (Network Configuration, Proxy Configuration) with a colored title, horizontal divider, and consistent padding.
+
+---
+
+## ProxyPacLogger — Dual-Store Logging
+
+**File:** `app/src/main/java/.../proxy/ProxyPacLogger.kt`
+
+A thread-safe logger that writes to **two stores simultaneously**:
+1. **In-memory buffer** — `ArrayDeque<String>` capped at 500 lines, accessible via `getLogs()`
+2. **Persistent file** — `proxypac-logs.txt` in `filesDir`, also capped at 500 lines
+
+### Singleton Pattern
+
+```kotlin
+@Volatile
+private var instance: ProxyPacLogger? = null
+
+fun getInstance(logFile: File): ProxyPacLogger {
+    return instance ?: synchronized(this) {
+        instance ?: ProxyPacLogger(logFile).also { instance = it }
+    }
+}
+```
+
+All screens (Settings, HttpsCert, GoogleTimeSync, BulkActions) must use `getInstance()` to share the same in-memory buffer and file handle. Creating separate instances would cause events logged by one screen to be invisible to the "View Logs" dialog on the Settings screen.
+
+### Logging Mechanics
+
+```kotlin
+fun log(event: String, force: Boolean = false) {
+    if (!enabled && !force) return
+
+    val timestamp = SimpleDateFormat(TIMESTAMP_FMT, Locale.US).format(Date())
+    val line = "[$timestamp] $event"
+
+    synchronized(buffer) {
+        if (buffer.size >= MAX_LINES) buffer.removeFirst()
+        buffer.addLast(line)
+    }
+
+    writeScope.launch {
+        try {
+            mutex.withLock { appendAndRoll(line) }
+        } catch (_: Exception) { /* swallow */ }
+    }
+}
+```
+
+**Design notes:**
+- Gated on `enabled` — when `false`, `log()` is a no-op with zero overhead
+- `force = true` bypasses the `enabled` check — used by `ProxyResolver` when `forceLogging` is set via BulkActions `"log-proxy": true`
+- In-memory buffer is `synchronized` for thread safety
+- File writes are **async, fire-and-forget** on a dedicated `CoroutineScope(Dispatchers.IO + SupervisorJob())`, serialized by a `Mutex` to prevent concurrent writes from corrupting the file
+- Logging **never blocks, never suspends, and never throws** — it's strictly observational
+
+### Rolling Limit
+
+Both stores enforce a **500-line rolling limit**:
+- In-memory: `buffer.removeFirst()` when `size >= MAX_LINES`
+- File: read all lines, `takeLast(MAX_LINES)`, rewrite on each append
+
+This prevents unbounded memory growth and disk usage, even in long-running batch operations.
+
+---
+
+## ProxyResolver — PAC Fetch, Evaluate, Test
+
+**File:** `app/src/main/java/.../proxy/ProxyResolver.kt`
+
+The `ProxyResolver` is the engine behind the Proxy/PAC feature. It is used by Settings (as its primary dependency), and shared by HttpsCert, GoogleTimeSync, and BulkActions.
+
+### PAC Source Dispatch
+
+```kotlin
+val pacScript = when {
+    effectivePacUrl.startsWith("http://") || effectivePacUrl.startsWith("https://") ->
+        fetchPacScript(effectivePacUrl)
+    else ->
+        if (appContext != null)
+            fetchPacFromFile(effectivePacUrl)
+        else
+            logIfEnabled("PAC_FETCH_FAIL reason=no Context for file access")
+            null
+}
+```
+
+The resolver dispatches by URL scheme:
+- `http://` or `https://` → HTTP GET via `HttpURLConnection`
+- Anything else → treated as an absolute filesystem path, read via `FileSystemIO` abstraction
+
+### Caching
+
+Two independent caches with a **5-minute TTL** (`PAC_CACHE_TTL_MS`):
+
+| Cache | Type | Key | Purpose |
+|---|---|---|---|
+| **PAC script** | `@Volatile` fields | PAC URL / file path | Avoid re-fetching the same PAC script |
+| **Per-host proxy** | `mutableMapOf<String, CachedProxy>` | Hostname | Avoid re-evaluating PAC for the same host |
+
+Both caches are cleared by `clearCache()` (called on PAC URL change, source mode switch, or file selection).
+
+### testProxy — Connectivity Test
+
+```kotlin
+suspend fun testProxy(): ProxyTestResult = withContext(Dispatchers.IO) {
+    val proxy = resolveProxy(TEST_URL)  // "http://connectivitycheck.gstatic.com/generate_204"
+    val startMs = System.currentTimeMillis()
+
+    connection = if (proxy != null) {
+        URL(TEST_URL).openConnection(proxy) as HttpURLConnection
+    } else {
+        URL(TEST_URL).openConnection() as HttpURLConnection
+    }
+
+    connection.apply {
+        requestMethod = "HEAD"
+        connectTimeout = 10_000
+        readTimeout = 10_000
+        instanceFollowRedirects = true
+    }
+
+    val code = connection.responseCode
+    val latencyMs = System.currentTimeMillis() - startMs
+
+    if (code in 200..299) {
+        ProxyTestResult(success = true, message = "✓ HTTP $code $via (${latencyMs}ms)", latencyMs = latencyMs)
+    } else {
+        ProxyTestResult(success = false, message = "✗ HTTP $code (${latencyMs}ms)", latencyMs = latencyMs)
+    }
+}
+```
+
+Tests proxy connectivity by sending a `HEAD` request to Google's connectivity-check endpoint (`http://connectivitycheck.gstatic.com/generate_204`):
+- If `resolveProxy()` returns a non-DIRECT proxy, the request goes through it
+- Otherwise, a direct connection is used
+- Success = HTTP 2xx response code
+- Result includes round-trip latency in milliseconds
+- Result message is formatted as `✓ HTTP 204 via 10.0.0.1:8080 (50ms)` or `✗ Connection refused`
+
+### PAC Result Parsing
+
+```kotlin
+internal fun parsePacResult(pacResult: String): Proxy? {
+    val entries = pacResult.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+    for (entry in entries) {
+        when {
+            entry.uppercase() == "DIRECT" -> return null
+            entry.uppercase().startsWith("PROXY ") -> {
+                val proxy = parseAddress(entry.substring(6).trim(), Proxy.Type.HTTP)
+                if (proxy != null) return proxy
+            }
+            entry.uppercase().startsWith("SOCKS ") || entry.uppercase().startsWith("SOCKS5 ") || entry.uppercase().startsWith("SOCKS4 ") -> {
+                val proxy = parseAddress(entry.substring(spaceIdx + 1).trim(), Proxy.Type.SOCKS)
+                if (proxy != null) return proxy
+            }
+        }
+    }
+    return null  // No valid entry → DIRECT
+}
+```
+
+Parses the PAC result string into a `java.net.Proxy`:
+- `"DIRECT"` → returns `null` (DIRECT connection)
+- `"PROXY host:port"` → `Proxy.Type.HTTP`
+- `"SOCKS host:port"`, `"SOCKS5 host:port"`, `"SOCKS4 host:port"` → `Proxy.Type.SOCKS`
+- Fallback chains (semicolon-separated) — uses the **first valid** entry
+- Malformed entries are skipped (try next in fallback chain)
+- No valid entry → returns `null` (DIRECT)
+
+### FileSystemIO Abstraction
+
+```kotlin
+interface FileSystemIO {
+    fun canRead(path: String): Boolean
+    fun isFile(path: String): Boolean
+    fun exists(path: String): Boolean
+    fun readText(path: String): String
+}
+
+internal object DefaultFileSystemIO : FileSystemIO {
+    override fun canRead(path: String) = File(path).canRead()
+    override fun isFile(path: String) = File(path).isFile
+    override fun exists(path: String) = File(path).exists()
+    override fun readText(path: String) = File(path).readText(Charsets.UTF_8)
+}
+```
+
+The `FileSystemIO` interface abstracts file system operations for PAC script loading. This enables unit testing by allowing a mock implementation that returns fake PAC content without touching the real filesystem. The `DefaultFileSystemIO` object wraps `java.io.File`.
+
+---
+
+## QuickJsEngine — PAC Script Evaluation
+
+**File:** `app/src/main/java/.../proxy/QuickJsEngine.kt`
+
+The `JsEngine` implementation backed by [QuickJS](https://github.com/cashapp/quickjs-android-wrapper) (`app.cash.quickjs:quickjs-android-wrapper:0.9.2`).
+
+### Evaluation Flow
+
+```kotlin
+override fun evaluatePac(pacScript: String, targetUrl: String, targetHost: String): String {
+    val engine = QuickJs.create()
+    try {
+        // 1. Load JS-only PAC utilities (isPlainHostName, dnsDomainIs, etc.)
+        engine.evaluate(PAC_UTILS_JS_ONLY)
+
+        // 2. Register native Kotlin bridges (dnsResolve, isInNet)
+        registerNativeDnsResolve(engine)
+        registerNativeIsInNet(engine)
+
+        // 3. Load the PAC script
+        engine.evaluate(pacScript)
+
+        // 4. Invoke FindProxyForURL and return result
+        val result = engine.evaluate("FindProxyForURL('${escapeJs(targetUrl)}', '${escapeJs(targetHost)}');")
+        return result?.toString() ?: "DIRECT"
+    } finally {
+        engine.close()
+    }
+}
+```
+
+Each `evaluatePac()` call creates a **fresh QuickJS runtime**, loads the PAC script, invokes `FindProxyForURL(url, host)`, and tears down the runtime. This is safe for concurrent use because no shared mutable state exists between invocations.
+
+### Native Bridges
+
+Two PAC functions are provided as **native Kotlin bridges** (not JavaScript implementations):
+
+| JS Function | Native Implementation | Purpose |
+|---|---|---|
+| `dnsResolve(host)` | `InetAddress.getByName(host)` | Real DNS resolution via device's default resolver |
+| `isInNet(host, pattern, mask)` | Bitwise subnet comparison: `(hostIp & mask) == (pattern & mask)` | Subnet membership check for `DIRECT`/`PROXY` routing |
+
+**Why native bridges?** Standard PAC scripts use `dnsResolve()` to resolve hostnames to IPs and `isInNet()` to check if a hostname matches a subnet pattern (e.g., `isInNet(host, "10.0.0.0", "255.0.0.0")`). These require DNS resolution and bitwise IP arithmetic that a pure JS engine can't perform without a full network stack.
+
+**Known limitation:** `isInNet()` always returns `false` because the PAC utility stubs in the JS-only utilities don't include a working `dnsResolve()` — the native bridge fixes this by performing real DNS resolution via `InetAddress.getByName()`. See the `PAC_IsInNetStubIssue.md` memory file for details.
+
+### JS-Only Utilities
+
+The following PAC functions are implemented purely in JavaScript and loaded before the PAC script:
+
+- `isPlainHostName(host)` — true if hostname has no dots
+- `dnsDomainIs(host, domain)` — true if host ends with domain
+- `localHostOrDomainIs(host, hostdom)` — true if host matches hostdom or hostdom is a prefix
+- `isResolvable(host)` — always returns true (stub)
+- `myIpAddress()` — returns `'127.0.0.1'` (stub — device's actual IP is not accessible from JS)
+- `dnsDomainLevels(host)` — number of dots in hostname
+- `shExpMatch(str, shexp)` — shell expression match (regex-based)
+- `weekdayRange()`, `dateRange()`, `timeRange()` — always return true (time-based rules are not used)
+
+---
+
+## Data Flow Summary
+
+### Timeout Change
+
+```
+User types "10"
+  → OutlinedTextField.onValueChange
+  → SettingsViewModel.onTimeoutChange("10")
+  → Filter digits, validate 1 ≤ 10 ≤ 60
+  → _uiState.value.copy(timeoutInput = "10", isError = false)
+  → settingsRepository.updateTimeout(10)  [suspend, runs on Dispatchers.IO]
+  → DataStore.edit { TIMEOUT_SECONDS = 10 }
+  → SettingsScreen reads updated uiState → displays "10"
+```
+
+### PAC URL Change (Debounced)
+
+```
+User types "http://proxy.corp.com/proxy.pac"
+  → OutlinedTextField.onValueChange
+  → SettingsViewModel.onProxyPacUrlChange(url)
+  → Immediate: _uiState.value.copy(proxyPacUrl = url, proxyPacUrlError = null)
+  → Immediate: proxyResolver.clearCache()
+  → Cancel previous debounce job
+  → Launch new job: delay(300ms)
+    → After 300ms: validatePacUrl(url) → null (valid)
+    → _uiState.value.copy(proxyPacUrlError = null)
+    → saveCurrentProxyConfig() → DataStore.edit { PROXY_PAC_URL = url }
+```
+
+### PAC File Selection
+
+```
+User taps "Browse" → SAF GetContent launcher (*/*)
+  → User selects proxy.pac
+  → onPacFileSelected(uri)
+  → contentResolver.openInputStream(uri) → copyTo(filesDir/saved-pac.pac)
+  → _uiState.value.copy(proxyPacUrl = "/data/user/0/.../files/saved-pac.pac")
+  → proxyResolver.clearCache()
+  → saveCurrentProxyConfig() → DataStore.edit { PROXY_PAC_URL = internalPath }
+```
+
+### Proxy Test
+
+```
+User taps "Test Proxy/PAC"
+  → SettingsViewModel.testProxy()
+  → testJob?.cancel()  // cancel any in-flight test
+  → _uiState.value.copy(isTestingProxy = true)
+  → proxyResolver.testProxy()
+    → resolveProxy(TEST_URL)  // fetch/evaluate PAC
+    → HEAD http://connectivitycheck.gstatic.com/generate_204 via proxy
+    → ProxyTestResult(success = true/false, message = "✓ HTTP 204 via ...", latencyMs = 50)
+  → _uiState.value.copy(isTestingProxy = false, proxyTestResult = result.message, proxyLastTested = now)
+  → saveCurrentProxyConfig(overrideLastTested = now, overrideTestResult = result.message)
+```
+
+---
+
+## Testing
+
+**File:** `app/src/test/java/.../SettingsViewModelTest.kt` (36 tests)
+
+### Test Structure
+
+| Test Group | Count | What It Covers |
+|---|---|---|
+| **Initialization** | 6 | Default state, proxy disabled, empty PAC URL, logging disabled, persisted proxy config load, logger flag sync |
+| **Timeout** | 3 | Valid value saves + clears error, out-of-range sets error, revert restores last saved |
+| **Proxy enable/disable** | 2 | State update, config persistence |
+| **PAC URL validation** | 6 | Empty string, valid HTTP/HTTPS, FTP rejected, malformed, no host |
+| **PAC URL debounce** | 3 | Immediate URL update, immediate error clear, cache clear |
+| **Test Proxy** | 4 | `isTestingProxy` state, success result, failure result, config persistence |
+| **Proxy logging** | 5 | Toggle state, logger flag, persistence, toggle off, view logs snapshot, clear logs, dismiss dialog |
+| **PAC source mode** | 4 | Default is URL, switch to FILE clears URL, switch to URL clears file path |
+| **FILE mode validation** | 3 | Internal path accepted, `/` rejected, special chars in filename |
+| **URL mode validation** | 2 | Valid HTTP accepted, FTP rejected |
+
+### Testing Conventions
+
+Same as the rest of the project:
+- JUnit 4 (`@RunWith(JUnit4::class)`) + MockK (`mockk(relaxed = true)`)
+- `StandardTestDispatcher` + `advanceUntilIdle()` for coroutine control
+- `coEvery { ... } returns ...` for suspend function mocks
+- `verify { ... }` for side-effect verification (logger flag changes)
+- `@Before` / `@After` for dispatcher setup/teardown
+- `ProxyPacLogger.resetInstance()` for test isolation (test-only method)
+
+### Notable Test Patterns
+
+**Persisted config load:**
+```kotlin
+coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
+    ProxyConfig(enabled = true, pacUrl = "http://proxy.corp.com/proxy.pac", ...))
+val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger, appContext = null)
+testDispatcher.scheduler.advanceUntilIdle()
+assertTrue(vm.uiState.value.proxyEnabled)
+assertEquals("http://proxy.corp.com/proxy.pac", vm.uiState.value.proxyPacUrl)
+```
+
+**Debounce verification:**
+```kotlin
+viewModel.onProxyPacUrlChange("not a url")
+testDispatcher.scheduler.advanceTimeBy(400)
+testDispatcher.scheduler.advanceUntilIdle()
+assertTrue(viewModel.uiState.value.proxyPacUrlError != null)  // error after debounce
+
+viewModel.onProxyPacUrlChange("http://")
+assertNull(viewModel.uiState.value.proxyPacUrlError)  // error cleared immediately
+```
+
+### Untested Code
+
+The `onPacFileSelected()` method requires `ContentResolver` APIs (`openInputStream`, `Uri.parse`) which cannot be unit-tested without Robolectric. This is noted in the test file:
+
+```kotlin
+// NOTE: onPacFileSelected requires Android ContentResolver APIs.
+// These are tested via instrumented tests or cannot be unit-tested without Robolectric.
+// The copy-to-storage logic is integration-tested through the SettingsScreen composable.
+```
+
+---
+
+## Key Design Decisions
+
+### 1. Immediate Persistence on Valid Input
+
+There is **no "Save" button** for either timeout or PAC URL. Valid values are persisted immediately on every keystroke (timeout) or after debounce (PAC URL). This ensures the settings are always up-to-date, even if the app crashes or is force-stopped mid-configuration.
+
+### 2. Debounced PAC URL Validation
+
+PAC URL validation is debounced by 300 ms to avoid distracting the user with validation errors while they're still typing. However, the error field is cleared **immediately** on a new keystroke — so the user never sees a stale error from a previous keystroke.
+
+### 3. SACopy-to-Storage for PAC Files
+
+When the user selects a PAC file via SAF, it's copied to app private storage (`filesDir/saved-pac.pac`) rather than storing the URI. This ensures:
+- The PAC file persists across app restarts
+- Access doesn't depend on the document provider staying alive
+- The path is a simple absolute path that `ProxyResolver` can read without URI permission grants
+
+### 4. Shared ProxyPacLogger Singleton
+
+All screens share the same `ProxyPacLogger` instance via `getInstance()`. This means:
+- The "View Logs" dialog on the Settings screen shows logs from **all** screens (Settings, HttpsCert, GoogleTimeSync, BulkActions)
+- A single "Clear Logs" button clears logs from all sources
+- The in-memory buffer provides real-time visibility into PAC operations across the entire app
+
+### 5. Mode-Aware PAC Source
+
+The `PacSourceMode` enum (URL / FILE) allows the same UI controls to work for both remote and local PAC scripts. Switching modes clears the PAC URL to avoid confusion (a URL-mode URL is not a valid file path). The `ProxyResolver` dispatches fetches by URL scheme — HTTP/HTTPS URLs go through `fetchPacScript()`, everything else is treated as a filesystem path.
+
+### 6. File System IO Abstraction
+
+The `FileSystemIO` interface enables unit testing of `ProxyResolver.fetchPacFromFile()` by allowing a mock implementation. The `DefaultFileSystemIO` object wraps `java.io.File`. This pattern is used throughout the app to keep I/O testable.
+
+### 7. Atomic Proxy Config Saves
+
+`saveProxyConfig()` writes all five proxy-related keys in a single `edit { }` block. This ensures that the DataStore never contains a partially-written proxy config (e.g., `enabled = true` but `pacUrl = ""`), which could happen if two concurrent saves interleaved.
+
+---
+
+## Integration with Other Features
+
+### Bulk Actions
+
+Bulk Actions can configure proxy settings at the config level:
+- `"url-proxypac"` — sets a static PAC URL that bypasses persisted settings (uses `ProxyResolver.forStaticPacUrl()`)
+- `"log-proxy": true` — forces PAC logging even when the user's global logging toggle is off (uses `forceLogging = true`)
+
+Both settings are created via `ProxyResolver.forStaticPacUrl(pacUrl, context, jsEngine, logger, forceLogging)` which constructs a `ProxyResolver` with a static PAC URL override and force logging.
+
+### HttpsCert & GoogleTimeSync
+
+Both screens use `ProxyResolver.resolveProxy()` to route their network requests through the user's configured proxy. They share the same `ProxyPacLogger` singleton and `QuickJsEngine` instance (created per-resolution).
+
+### ProxyResolver.forStaticPacUrl()
+
+A companion factory method that creates a `ProxyResolver` with a static PAC URL, without reading from or writing to `SettingsRepository`. This is used by Bulk Actions where the PAC URL comes from the JSON config and should not affect the user's persisted proxy settings.
+
+---
+
+## Known Limitations
+
+### isInNet() Native Bridge Limitation
+
+The `isInNet()` native bridge in `QuickJsEngine` performs real DNS resolution via `InetAddress.getByName()` and bitwise subnet comparison. However, the PAC utility stubs in `PAC_UTILS_JS_ONLY` don't include a working `dnsResolve()` — the native bridge `dnsResolve` fixes this by delegating to `InetAddress.getByName()`. See the `PAC_IsInNetStubIssue.md` memory file for the full history of this issue.
+
+### No PAC Script Caching Across Processes
+
+The PAC script cache (`cachedPacScript`, `cachedPacUrl`, `pacFetchedAt`) is in-memory only. If the app process is killed and restarted, the cache is lost. This is acceptable because the 5-minute TTL means most PAC scripts are fetched infrequently, and the DataStore-persisted PAC URL ensures the script can always be re-fetched.
+
+### File Mode Path Validation is Lenient
+
+FILE mode validation only checks that the path is non-blank and not just `/`. File existence is verified at fetch time (in `ProxyResolver.fetchPacFromFile()`), not at validation time. This means the user can type a path that doesn't exist, and the error will only appear when they press "Test Proxy/PAC." This is intentional — it allows the user to type a path before selecting a file, and the "Browse" button provides immediate feedback via the copy-to-storage result.
+
+### No Proxy Authentication Support
+
+The `ProxyResolver` does not support proxy authentication (username/password). HTTP connections created by `testProxy()` and `resolveProxy()` use `HttpURLConnection` without any authentication headers or `Authenticator` registration. Proxy servers that require authentication will fail with a 407 Unauthorized response.
+
+### No Proxy Auto-Discovery (WPAD)
+
+The app does not support Web Proxy Auto-Discovery Protocol (WPAD). Users must manually configure their PAC URL or file path in the Settings screen. There is no DNS-based or DHCP-based auto-discovery.

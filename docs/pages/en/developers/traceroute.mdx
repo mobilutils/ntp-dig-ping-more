@@ -4,6 +4,8 @@ description: How the Traceroute screen works, TTL probing via ping, hop classifi
 ---
 
 # Traceroute — Implementation Deep Dive
+How the Traceroute screen works: TTL probing via ping, hop classification, and status computation
+
 ## Overview
 
 The Traceroute screen implements traceroute by **probing with `ping -c 1 -t <TTL>`** for incrementing TTL values (1, 2, …, 30). Since Android devices typically don't ship with a `traceroute` binary, this approach uses the ICMP Time Exceeded mechanism to discover each hop along the path.

@@ -1,0 +1,998 @@
+---
+title: LAN Scanner — Deep Dive
+description: How the LAN Scanner works, ConnectivityManager subnet detection, quick vs full scan modes, ARP table MAC lookup, and JSON history persistence
+---
+
+# LAN Scanner — Implementation Deep Dive
+How the LAN Scanner works: ConnectivityManager subnet detection, quick vs full scan modes, ARP table MAC lookup, and JSON history persistence
+
+## Overview
+
+The LAN Scanner discovers active devices on the local network by **pinging IP addresses** and collecting device information (MAC address, hostname) for each responsive host. Unlike Port Scanner (TCP/UDP socket probing), LAN Scanner uses **ICMP ping** to determine host liveness, then enriches results with ARP table and reverse DNS lookups.
+
+The feature supports **two scan modes**:
+
+- **Quick Scan** — probes a small sampled set of IPs (7–9 points across the range) for fast results
+- **Full Scan** — pings every IP in the configured range
+
+The feature reports:
+
+- **Subnet info** — automatically detected from the active WiFi/Ethernet connection (IP, CIDR, base IP, number of hosts)
+- **Active devices** — list of responsive hosts with IP, MAC, hostname, ping latency, and router identification
+- **Progress** — real-time `ipsChecked / totalIpsToCheck` with `LinearProgressIndicator`
+- **History** — last 10 scan summaries (unique among all features — capped at 10, not 5)
+
+The feature is implemented across **four files** (the only screen with a Repository *and* dedicated test files for the Repository's pure functions):
+
+| File | Role |
+|---|---|
+| `LanScannerRepository.kt` | Network I/O — `ConnectivityManager`, `Runtime.exec("ping")`, `/proc/net/arp`, reverse DNS, IP conversion utilities |
+| `LanScannerViewModel.kt` | State management — `StateFlow<LanScannerUiState>`, concurrent ping scanning, quick vs full scan modes |
+| `LanScannerHistoryStore.kt` | Persistence — **JSON-based** DataStore (unique among all features) |
+| `LanScannerScreen.kt` | UI — Jetpack Compose screen with subnet info card, scan controls, device list, history |
+
+## LanScannerRepository — Network I/O and Subnet Detection
+
+**File:** `app/src/main/java/.../LanScannerRepository.kt`
+
+### Subnet Detection
+
+```kotlin
+fun getLocalSubnetInfo(): SubnetInfo? {
+    val connectivityManager =
+        context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+    val activeNetwork: Network = connectivityManager.activeNetwork ?: return null
+    val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return null
+
+       // Recommend scanning on WiFi or Ethernet only
+    if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+         !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+        return null
+         }
+       }
+
+    val linkProperties: LinkProperties =
+        connectivityManager.getLinkProperties(activeNetwork) ?: return null
+
+    for (linkAddress in linkProperties.linkAddresses) {
+        val inetAddress = linkAddress.address
+        if (inetAddress is Inet4Address && !inetAddress.isLoopbackAddress) {
+            val ipString = inetAddress.hostAddress ?: continue
+            val prefixLength = linkAddress.prefixLength
+            val ipLong = ipToLong(ipString)
+            val mask = (0xffffffffL shl (32 - prefixLength)) and 0xffffffffL
+            val baseIp = ipLong and mask
+            val numHosts = (2.0.pow(32 - prefixLength).toLong()) - 2
+
+            return SubnetInfo(
+                ipAddress = ipString,
+                networkPrefixLength = prefixLength,
+                cidr = "${longToIp(baseIp)}/$prefixLength",
+                baseIp = baseIp,
+                numHosts = numHosts
+                 )
+              }
+            }
+    return null
+}
+```
+
+### Key implementation details
+
+1. **ConnectivityManager** — queries the active network interface. Returns `null` if no network is connected.
+
+2. **WiFi/Ethernet only** — `hasTransport(TRANSPORT_WIFI)` or `hasTransport(TRANSPORT_ETHERNET)`. Mobile data (CELLULAR) is explicitly excluded — LAN scanning on mobile data makes no sense and would be extremely slow/dangerous.
+
+3. **Subnet computation**:
+      - `ipToLong()` converts the IP string to a 64-bit long (treated as unsigned 32-bit)
+      - Bitwise mask: `(0xffffffffL shl (32 - prefixLength)) and 0xffffffffL` — e.g., /24 → `0xffffff00`
+      - `baseIp = ipLong and mask` — network address (e.g., `192.168.1.0`)
+      - `numHosts = 2^(32 - prefixLength) - 2` — subtracts network and broadcast addresses
+
+4. **First non-loopback IPv4** — iterates `linkAddresses` and returns the first `Inet4Address` that isn't loopback. Most devices have a single interface with a single IPv4, but multi-homed devices (WiFi + Ethernet) will use whichever is enumerated first.
+
+5. **`SubnetInfo` data class**:
+     ```kotlin
+     data class SubnetInfo(
+         val ipAddress: String,           // e.g. "192.168.1.100"
+         val networkPrefixLength: Int,    // e.g. 24
+         val cidr: String,                // e.g. "192.168.1.0/24"
+         val baseIp: Long,               // e.g. 3232235776 (192.168.1.0 as long)
+         val numHosts: Long,             // e.g. 254
+       )
+      ```
+
+### Ping via ICMP subprocess
+
+```kotlin
+suspend fun ping(ip: String): Int? = withContext(Dispatchers.IO) {
+    try {
+        val process = Runtime.getRuntime().exec(arrayOf("ping", "-c", "1", "-W", "1", ip))
+        val reader = BufferedReader(InputStreamReader(process.inputStream))
+        var timeMs: Int? = null
+        var line: String?
+        while (reader.readLine().also { line = it } != null) {
+            if (line?.contains("time=") == true) {
+                  // Extract e.g. "time=2.45 ms"
+                val timeStr = line?.substringAfter("time=")?.substringBefore(" ms")
+                timeMs = timeStr?.toFloatOrNull()?.toInt()
+                 }
+             }
+        process.waitFor()
+        if (process.exitValue() == 0) {
+            timeMs ?: 1 // At least 1ms if successful but couldn't parse time
+             } else {
+            null
+             }
+         } catch (e: Exception) {
+        null
+     }
+}
+```
+
+- `-c 1` — send exactly 1 ICMP echo request
+- `-W 1` — wait 1 second for a reply per packet
+- Parses `time=2.45 ms` from the output to extract latency in milliseconds
+- Returns `null` if the ping fails (non-zero exit code or exception)
+- Returns at least `1` ms even if the time couldn't be parsed (as long as the exit code was 0)
+
+**Note:** This uses `Runtime.exec("ping")` — the same subprocess approach as Ping and Traceroute screens. This is different from Port Scanner, which uses direct TCP/UDP socket I/O.
+
+### MAC address from ARP table
+
+```kotlin
+suspend fun getMacFromArpTable(ip: String): String? = withContext(Dispatchers.IO) {
+    var mac: String? = null
+    try {
+        val reader = BufferedReader(java.io.FileReader("/proc/net/arp"))
+        var line: String?
+        while (reader.readLine().also { line = it } != null) {
+            val tokens = line!!.split(Regex("\\s+"))
+            if (tokens.size >= 4 && ip == tokens[0]) {
+                val macAddress = tokens[3]
+                if (macAddress.matches(Regex("..:..:..:..:..:..")) && macAddress != "00:00:00:00:00:00") {
+                    mac = macAddress
+                    break
+                     }
+                  }
+              }
+        reader.close()
+         } catch (e: Exception) {
+          // Ignore /proc/net/arp read failures
+         }
+    mac
+}
+```
+
+- Reads `/proc/net/arp` — the kernel ARP cache exposed as a file
+- Each line has format: `IP address       HW type     HW address    Type    Interface`
+- Token index 3 (`tokens[3]`) is the MAC address
+- Validates MAC format: `..:..:..:..:..:..` (6 pairs of hex digits, colon-separated)
+- Filters out `00:00:00:00:00:00` (invalid/zero MAC)
+- Returns `null` on any read failure (file not found, permission denied, etc.)
+
+**Android 13+ restriction:** The comment notes that Android 13+ restricts reading `/proc/net/arp` for "targetSdk" apps, but it's provided as a best-effort. Many devices still allow it, especially on non-rooted consumer devices.
+
+### Reverse DNS lookup
+
+```kotlin
+suspend fun resolveHostname(ip: String): String? = withContext(Dispatchers.IO) {
+    try {
+        val inet = InetAddress.getByName(ip)
+        val hostname = inet.hostName
+        if (hostname != ip) hostname else null
+         } catch (e: Exception) {
+        null
+     }
+}
+```
+
+- `InetAddress.getByName(ip)` performs a reverse DNS (PTR) lookup
+- Returns the hostname if different from the IP itself (avoids returning the IP as its own "hostname")
+- Returns `null` on any DNS failure (NXDOMAIN, timeout, no PTR record)
+
+### IP conversion utilities
+
+```kotlin
+fun longToIp(ipLong: Long): String {
+    return String.format(
+         "%d.%d.%d.%d",
+         (ipLong shr 24) and 0xff,
+         (ipLong shr 16) and 0xff,
+         (ipLong shr 8) and 0xff,
+        ipLong and 0xff
+     )
+}
+
+fun ipToLong(ipAddress: String): Long {
+    var result: Long = 0
+    val ipAddressInArray = ipAddress.split(".")
+    if (ipAddressInArray.size != 4) throw IllegalArgumentException("Invalid IP format")
+    for (i in 3 downTo 0) {
+        val ip = ipAddressInArray[3 - i].toLong()
+        if (ip !in 0..255) throw IllegalArgumentException("Invalid IP part")
+        result = result or (ip shl (i * 8))
+     }
+    return result
+}
+```
+
+These are **pure functions** (no Android dependencies) and are tested directly in `LanScannerRepositoryTest` (19 tests covering round-trips, edge cases, and invalid inputs).
+
+## LanScannerViewModel — Concurrent Ping Scanning
+
+**File:** `app/src/main/java/.../LanScannerViewModel.kt`
+
+### UI State
+
+```kotlin
+data class LanScannerUiState(
+     /** Subnet information retrieved from the system. */
+    val subnetInfo: SubnetInfo? = null,
+     /** Custom start IP address for scanning. */
+    val startIp: String = "",
+     /** Custom end IP address for scanning. */
+    val endIp: String = "",
+     /** Whether a scan is currently running. */
+    val isScanning: Boolean = false,
+     /** Real-time progress percentage (0.0 to 1.0). */
+    val progress: Float = 0f,
+     /** The number of IPs checked so far. */
+    val ipsChecked: Int = 0,
+     /** The total number of IPs to check in the current scan. */
+    val totalIpsToCheck: Int = 0,
+     /** List of active devices found so far in the current scan. */
+    val activeDevices: List<LanDevice> = emptyList(),
+     /** History of previous scans. */
+    val history: List<LanScannerHistoryEntry> = emptyList(),
+     /** Last error message, if any. */
+    val errorMsg: String? = null,
+)
+```
+
+The UI state is the most complex in the app — 10 fields covering subnet info, IP range, progress tracking, discovered devices, history, and error messages.
+
+### Constructor with test injection
+
+```kotlin
+class LanScannerViewModel(
+    private val repository: LanScannerRepository,
+    private val historyStore: LanScannerHistoryStore,
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
+```
+
+Note the `ioDispatcher` parameter with a default value. This allows tests to inject a `StandardTestDispatcher` for deterministic coroutine testing — unlike most other ViewModels in the app.
+
+### Initialization
+
+```kotlin
+init {
+       // Load initial subnet network details
+    refreshSubnetInfo()
+
+       // Load scan history (cap at 10 entries to protect against mock bypass)
+    viewModelScope.launch {
+        val savedHistory = historyStore.historyFlow.first()
+             _uiState.value = _uiState.value.copy(history = savedHistory.take(10))
+         }
+     }
+```
+
+On construction:
+1. Calls `refreshSubnetInfo()` synchronously to detect the local network
+2. Loads history asynchronously from DataStore
+3. Caps loaded history at 10 entries (double safety — both here and in the store)
+
+### `refreshSubnetInfo()`
+
+```kotlin
+fun refreshSubnetInfo() {
+    val info = repository.getLocalSubnetInfo()
+         _uiState.value = _uiState.value.copy(
+        subnetInfo = info,
+        startIp = info?.let { repository.longToIp(it.baseIp + 1) } ?: "",
+        endIp = info?.let { repository.longToIp(it.baseIp + it.numHosts) } ?: "",
+        errorMsg = if (info == null) "No WiFi / Ethernet connection detected." else null
+     )
+}
+```
+
+Populates `startIp` as `baseIp + 1` (first usable host) and `endIp` as `baseIp + numHosts` (last usable host). For a /24 network, this would be `192.168.1.1` to `192.168.1.254`.
+
+### Quick Scan vs Full Scan
+
+```kotlin
+fun startScan(isFullScan: Boolean) {
+    val startStr = _uiState.value.startIp.trim()
+    val endStr = _uiState.value.endIp.trim()
+
+    val startLong = try { repository.ipToLong(startStr) } catch (e: Exception) { null }
+    val endLong = try { repository.ipToLong(endStr) } catch (e: Exception) { null }
+
+    if (startLong == null || endLong == null || startLong > endLong || endLong - startLong > 65535) {
+             _uiState.value = _uiState.value.copy(errorMsg = "Invalid IP range or range too large (max 65535 hosts).")
+        return
+         }
+
+    val subnetInfo = repository.getLocalSubnetInfo()
+         _uiState.value = _uiState.value.copy(subnetInfo = subnetInfo, errorMsg = null)
+
+    if (_uiState.value.isScanning) stopScan()
+
+       // 1. Generate IPs to check
+    val ipsToScan = if (isFullScan) {
+             (startLong..endLong).map { repository.longToIp(it) }
+         } else {
+            listOf(
+                startLong,
+                startLong + 5,
+                startLong + 10,
+                startLong + 50,
+                startLong + 100,
+                endLong - 1,
+                endLong
+             ).filter { it in startLong..endLong }.distinct().map { repository.longToIp(it) }
+         }
+```
+
+**Quick Scan** probes 7 sampled IPs: `[start, start+5, start+10, start+50, start+100, end-1, end]`, filtered to the valid range and deduplicated. This gives a representative sample of the subnet without scanning every IP.
+
+**Full Scan** probes every IP in the range: `(startLong..endLong).map { ... }`. For a /24 network, this is 254 IPs.
+
+### The scan loop
+
+```kotlin
+         _uiState.value = _uiState.value.copy(
+        isScanning = true,
+        progress = 0f,
+        ipsChecked = 0,
+        totalIpsToCheck = ipsToScan.size,
+        activeDevices = emptyList()
+     )
+
+    scanJob = viewModelScope.launch(ioDispatcher) {
+        val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+        val checkedCount = AtomicInteger(0)
+        val total = ipsToScan.size
+
+           // Partition into batches for basic concurrency without overwhelming the system
+        val chunkSize = 20
+        val chunks = ipsToScan.chunked(chunkSize)
+
+        try {
+            withTimeout(timeoutMs) {
+                for (chunk in chunks) {
+                    if (!isActive) break // Canceled
+
+                    val deferredResults = chunk.map { ip ->
+                        async {
+                            val pingTime = repository.ping(ip)
+                            if (pingTime != null) {
+                                   // Device is alive. Fetch MAC and Hostname.
+                                val mac = repository.getMacFromArpTable(ip)
+                                val fqdn = repository.resolveHostname(ip)
+
+                                   // Assume standard .1 is typically the router
+                                val routerIp = subnetInfo?.let { repository.longToIp(it.baseIp + 1) }
+
+                                val device = LanDevice(
+                                    ip = ip,
+                                    mac = mac,
+                                    hostname = fqdn,
+                                    isRouter = (ip == routerIp),
+                                    pingMs = pingTime
+                                 )
+
+                                withContext(Dispatchers.Main) {
+                                       // Add uniquely and sort by IP
+                                    val currentList = _uiState.value.activeDevices.toMutableList()
+                                    if (currentList.none { it.ip == ip }) {
+                                        currentList.add(device)
+                                        currentList.sortBy { _ ->
+                                            val parts = ip.split(".")
+                                            if (parts.size == 4) parts[3].toIntOrNull() ?: 0 else 0
+                                             }
+                                             _uiState.value = _uiState.value.copy(activeDevices = currentList)
+                                         }
+                                     }
+                                 }
+
+                            val done = checkedCount.incrementAndGet()
+                            withContext(Dispatchers.Main) {
+                                 _uiState.value = _uiState.value.copy(
+                                    ipsChecked = done,
+                                    progress = done.toFloat() / total
+                                 )
+                             }
+                         }
+                     }
+                    deferredResults.awaitAll() // Wait for this batch to finish
+                 }
+
+                 // Cleanup when fully complete or canceled
+                withContext(Dispatchers.Main) {
+                     _uiState.value = _uiState.value.copy(isScanning = false)
+                    saveHistory(isFullScan)
+                 }
+             }
+         } catch (_: TimeoutCancellationException) {
+            withContext(Dispatchers.Main) {
+                 _uiState.value = _uiState.value.copy(isScanning = false)
+                saveHistory(isFullScan)
+             }
+         }
+     }
+}
+```
+
+### Key implementation details
+
+1. **Concurrency-limited chunked scanning** — IPs are chunked into batches of 20 (`chunked(20)`), and each chunk is scanned concurrently with `async { ... }.awaitAll()`. This prevents overwhelming the network or the device.
+
+2. **`AtomicInteger` for progress counting** — `checkedCount` is an `AtomicInteger` incremented by each concurrent coroutine. This avoids the need for a `Mutex` (unlike Port Scanner, which uses `Mutex` for its `scannedCount`).
+
+3. **Per-IP enrichment pipeline** — for each responsive IP:
+      ```kotlin
+      val pingTime = repository.ping(ip)
+      if (pingTime != null) {
+          val mac = repository.getMacFromArpTable(ip)
+          val fqdn = repository.resolveHostname(ip)
+          val device = LanDevice(ip, mac, fqdn, isRouter, pingTime)
+          // Update UI
+      }
+      ```
+    Each enrichment call (`getMacFromArpTable`, `resolveHostname`) is a separate coroutine-suspend call within the `async` block. They run sequentially within the same async lambda.
+
+4. **Router detection heuristic** — `isRouter = (ip == routerIp)` where `routerIp = baseIp + 1`. This assumes the gateway is always the first usable IP (`.1`), which is standard for most home/SOHO routers but not guaranteed.
+
+5. **Unique device insertion** — `currentList.none { it.ip == ip }` prevents duplicate entries if the same IP is scanned twice (can happen in quick scan if the sample points overlap after filtering).
+
+6. **IP-based sorting** — devices are sorted by the last octet (`parts[3].toIntOrNull()`) after each insertion. This is a simple O(n) sort that works well for the small device lists typical of LAN scanning.
+
+7. **`isActive` check** — `if (!isActive) break` inside the chunk loop checks coroutine cancellation on each chunk boundary.
+
+8. **Dual timeout** — `withTimeout(timeoutMs)` wraps the entire scan operation. If the timeout expires, a `TimeoutCancellationException` is caught, and history is saved with whatever devices were discovered.
+
+### History entry — JSON-based (unique)
+
+```kotlin
+private suspend fun saveHistory(isFullScan: Boolean) {
+    val activeCount = _uiState.value.activeDevices.size
+    val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
+    val scanTypeStr = if (isFullScan) "Full Scan" else "Quick Scan"
+    val rangeStr = "${_uiState.value.startIp} - ${_uiState.value.endIp}"
+
+    val newEntry = LanScannerHistoryEntry(
+        timestamp = timestamp,
+        type = scanTypeStr,
+        subnet = rangeStr,
+        activeHostsCount = activeCount
+     )
+
+    val updatedHistory = (listOf(newEntry) + _uiState.value.history).take(10)
+         _uiState.value = _uiState.value.copy(history = updatedHistory)
+    historyStore.save(updatedHistory)
+}
+```
+
+Note: LAN Scanner history is **not deduplicated** — every scan (even identical ones) is appended. The cap is 10 entries (not 5 like other features).
+
+### `stopScan()` — partial scan handling
+
+```kotlin
+fun stopScan() {
+    scanJob?.cancel()
+         _uiState.value = _uiState.value.copy(isScanning = false)
+       // If we stopped midway, we can still record partial history
+    if (_uiState.value.ipsChecked > 0) {
+        viewModelScope.launch {
+            saveHistory(isFullScan = _uiState.value.totalIpsToCheck > 10)
+             }
+         }
+}
+```
+
+Only saves history if at least one IP was checked (`ipsChecked > 0`). The `isFullScan` parameter is inferred from `totalIpsToCheck > 10` (quick scan typically probes ≤ 10 IPs).
+
+### Command handlers
+
+| Function | Behavior |
+|---|---|
+| `refreshSubnetInfo()` | Re-detects subnet, updates startIp/endIp |
+| `onStartIpChange(value)` | Updates `startIp` |
+| `onEndIpChange(value)` | Updates `endIp` |
+| `startScan(isFullScan)` | Validates IP range, launches chunked concurrent scan |
+| `stopScan()` | Cancels job, saves partial history if any IPs were checked |
+| `selectHistoryEntry(entry)` | **Not implemented** — the ViewModel has no `selectHistoryEntry()` method. History is read-only display. |
+
+### Factory delegate
+
+```kotlin
+companion object {
+    fun factory(context: Context): ViewModelProvider.Factory =
+        object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                val appContext = context.applicationContext
+                return LanScannerViewModel(
+                    repository = LanScannerRepository(appContext),
+                    historyStore = LanScannerHistoryStore(appContext),
+                    settingsRepository = SettingsRepository(appContext),
+                      ) as T
+                 }
+             }
+}
+```
+
+## LanScannerHistoryStore — JSON-Based Persistence
+
+**File:** `app/src/main/java/.../LanScannerHistoryStore.kt`
+
+### Unique serialization format
+
+LAN Scanner is the **only feature** that uses JSON for history serialization, not the pipe-delimited format used by all other features.
+
+```kotlin
+val historyFlow: Flow<List<LanScannerHistoryEntry>> = context.lanScannerDataStore.data.map { prefs ->
+    val jsonString = prefs[HISTORY_KEY] ?: "[]"
+    parseHistory(jsonString)
+}
+
+suspend fun save(history: List<LanScannerHistoryEntry>) {
+    val jsonArray = JSONArray()
+    history.forEach { entry ->
+        val obj = JSONObject().apply {
+            put("timestamp", entry.timestamp)
+            put("type", entry.type)
+            put("subnet", entry.subnet)
+            put("activeHostsCount", entry.activeHostsCount)
+             }
+        jsonArray.put(obj)
+     }
+    context.lanScannerDataStore.edit { prefs ->
+        prefs[HISTORY_KEY] = jsonArray.toString()
+     }
+}
+```
+
+### Data class
+
+```kotlin
+data class LanScannerHistoryEntry(
+    val timestamp: String,        // "yyyy/MM/dd HH:mm:ss"
+    val type: String,              // "Quick Scan" or "Full Scan"
+    val subnet: String,            // e.g. "192.168.1.0/24"
+    val activeHostsCount: Int      // Number of active devices found
+)
+```
+
+### Serialization format
+
+A single JSON array stored in the DataStore:
+
+```json
+[
+  {
+    "timestamp": "2026/05/10 14:30:00",
+    "type": "Full Scan",
+    "subnet": "192.168.1.0/24",
+    "activeHostsCount": 5
+  },
+  {
+    "timestamp": "2026/05/09 09:15:22",
+    "type": "Quick Scan",
+    "subnet": "192.168.1.0/24",
+    "activeHostsCount": 3
+  }
+]
+```
+
+### Deserialization
+
+```kotlin
+private fun parseHistory(jsonString: String): List<LanScannerHistoryEntry> {
+    val items = mutableListOf<LanScannerHistoryEntry>()
+    try {
+        val array = JSONArray(jsonString)
+        for (i in 0 until array.length()) {
+            val obj = array.getJSONObject(i)
+            items.add(
+                LanScannerHistoryEntry(
+                    timestamp = obj.getString("timestamp"),
+                    type = obj.getString("type"),
+                    subnet = obj.getString("subnet"),
+                    activeHostsCount = obj.getInt("activeHostsCount"),
+                      )
+                 )
+             }
+         } catch (e: Exception) {
+          // Ignore parse errors, return what we have so far
+         }
+    return items
+}
+```
+
+Silently ignores parse errors (malformed JSON, missing fields) and returns whatever entries were successfully parsed. This is defensive — corrupted history data shouldn't crash the app.
+
+### Why JSON?
+
+The comment in the ViewModel says "cap at 10 entries to protect against mock bypass." The JSON format was likely chosen because:
+
+1. **Structured data** — the history entry has 4 fields, and JSON naturally represents structured records
+2. **No delimiter conflicts** — pipe-delimited format could conflict with subnet strings containing `|` (unlikely but possible)
+3. **Future extensibility** — easy to add fields (e.g., list of discovered IPs, scan duration) without changing the serialization format
+
+### DataStore setup
+
+```kotlin
+private val Context.lanScannerDataStore: DataStore<Preferences>
+    by preferencesDataStore(name = "lan_scanner_history")
+```
+
+Uses `"lan_scanner_history"` as the DataStore name.
+
+## UI — LanScannerScreen
+
+**File:** `app/src/main/java/.../LanScannerScreen.kt`
+
+The LAN Scanner screen has a **three-section layout**:
+
+```
+┌─────────────────────────────────────────┐
+│ ┌─ Subnet Info Card ────────────────┐    │
+│ │ 📶 192.168.1.100 (192.168.1.0/24)  │    │
+│ │ [Start IP] [End IP]  [Refresh]     │    │
+│ └───────────────────────────────────┘    │
+├─────────────────────────────────────────┤
+│ [Quick Scan] [Full Scan]                 │
+│ Scanned: 45/254   Found: 3               │
+│ ██████████████████░░░░░░░░░░ 18%         │
+├─────────────────────────────────────────┤
+│ ┌─ Discovered Devices (3) ─────────┐     │
+│ │ 🖥 192.168.1.1                     │     │
+│ │    router.local                   │     │
+│ │    MAC: AA:BB:CC:DD:EE:FF   1 ms  │     │
+│ │ 🖥 192.168.1.100                   │     │
+│ │    MyPhone.local                  │     │
+│ │    MAC: 11:22:33:44:55:66  2 ms   │     │
+│ └───────────────────────────────────┘     │
+├─────────────────────────────────────────┤
+│ ┌─ Recent Scans ─────────────────┐       │
+│ │ 2026/05/10 14:30:00             │       │
+│ │ 192.168.1.0/24 • Full Scan   5 │       │
+│ └────────────────────────────────┘       │
+└─────────────────────────────────────────┘
+```
+
+### Screen structure
+
+```kotlin
+@Composable
+fun LanScannerScreen() {
+    val context = LocalContext.current
+    val vm: LanScannerViewModel = viewModel(factory = LanScannerViewModel.factory(context))
+    val uiState by vm.uiState.collectAsState()
+
+    Column(
+        modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+               // 1. Subnet Info Card
+            SubnetInfoCard(/* ... */)
+
+               // 2. Scan Controls & Progress
+            ScanControlsBar(/* ... */)
+
+               // 3. Device List and History (LazyColumn)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+                  ) {
+                       // Devices Section Title
+                    if (uiState.activeDevices.isNotEmpty() || uiState.isScanning) {
+                        item { Text("Discovered Devices (${uiState.activeDevices.size})") }
+                      }
+
+                       // Discovered Devices
+                    items(uiState.activeDevices, key = { it.ip }) { device ->
+                        DeviceRow(device = device)
+                      }
+
+                       // History Section
+                    if (uiState.history.isNotEmpty() && !uiState.isScanning) {
+                        item { Spacer(Modifier.height(16.dp)) }
+                        item { HistorySection(entries = uiState.history) }
+                      }
+                    }
+                }
+}
+```
+
+### Key UI details
+
+- **LazyColumn for devices** — uses `LazyColumn` with `items(uiState.activeDevices, key = { it.ip })` for efficient rendering. The `key = { it.ip }` ensures stable identity across state updates.
+- **History shown only when not scanning** — `if (uiState.history.isNotEmpty() && !uiState.isScanning)` prevents the history section from appearing during an active scan, giving more screen space to the device list.
+- **Router icon differentiation** — `Icons.Filled.Router` (blue, from `colorScheme.primary`) for the router device, `Icons.Filled.Computer` (gray, from `colorScheme.onSurfaceVariant`) for regular devices.
+- **MAC address uppercase** — `device.mac.uppercase()` ensures consistent display format.
+- **Ping latency in primary color** — `${device.pingMs} ms` is displayed in `colorScheme.primary`, making it easy to spot at a glance.
+- **No history re-query** — unlike other features, LAN Scanner history entries are **not clickable**. There's no `selectHistoryEntry()` method in the ViewModel. History is read-only.
+
+### SubnetInfoCard — network detection and IP range input
+
+```kotlin
+@Composable
+private fun SubnetInfoCard(
+    subnetInfo: SubnetInfo?,
+    startIp: String,
+    endIp: String,
+    errorMsg: String?,
+    isScanning: Boolean,
+    onStartIpChange: (String) -> Unit,
+    onEndIpChange: (String) -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Card {
+        Column {
+               // Network status row
+            Row {
+                val icon = if (subnetInfo != null) Icons.Filled.Wifi else Icons.Filled.Warning
+                val tint = if (subnetInfo != null) onSurfaceVariant else error
+                Icon(icon, tint = tint)
+                   // Display subnet info or error message
+                if (subnetInfo != null) {
+                    Text("${subnetInfo.ipAddress} (${subnetInfo.cidr})")
+                  } else {
+                    Text("No connection. Manual IP range provided.")
+                  }
+                   // Refresh button
+                IconButton(onClick = onRefresh, enabled = !isScanning) {
+                    Icon(Icons.Filled.Refresh)
+                  }
+               }
+
+               // Start/End IP fields (side by side)
+            Row {
+                OutlinedTextField(startIp, /* Start IP */, weight(1f))
+                OutlinedTextField(endIp, /* End IP */, weight(1f))
+               }
+
+               // Error message
+            if (errorMsg != null) {
+                Text(errorMsg, color = error)
+              }
+           }
+       }
+}
+```
+
+- **WiFi icon** when subnet is detected, **Warning icon** (red) when no WiFi/Ethernet connection
+- **Refresh button** — re-detects the subnet (useful after switching networks)
+- **Editable IP range** — even when subnet is auto-detected, users can manually edit the start/end IPs
+
+### ScanControlsBar — quick/full scan buttons and progress
+
+```kotlin
+@Composable
+private fun ScanControlsBar(
+    isScanning: Boolean,
+    canScan: Boolean,
+    progress: Float,
+    ipsChecked: Int,
+    totalIps: Int,
+    foundCount: Int,
+    onQuickScan: () -> Unit,
+    onFullScan: () -> Unit,
+    onStop: () -> Unit,
+) {
+    Column {
+        Row {
+            if (isScanning) {
+                  // Single "Stop Scan" button (red, with spinner)
+                Button(onClick = onStop, containerColor = error) {
+                    CircularProgressIndicator()
+                    Icon(Icons.Filled.Stop)
+                    Text("Stop Scan")
+                  }
+              } else {
+                  // Two side-by-side buttons
+                OutlinedButton(onClick = onQuickScan, enabled = canScan) {
+                    Text("Quick Scan")
+                  }
+                Button(onClick = onFullScan, enabled = canScan) {
+                    Text("Full Scan")
+                  }
+              }
+           }
+
+        AnimatedVisibility(visible = isScanning || totalIps > 0) {
+               // Progress stats
+            Row {
+                Text("Scanned: $ipsChecked / $totalIps")
+                Text("Found: $foundCount", color = primary, fontWeight = Bold)
+              }
+               // Progress bar
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.height(6.dp),
+                color = primary,
+                trackColor = surfaceVariant,
+              )
+           }
+       }
+}
+```
+
+- **Two buttons when idle**: "Quick Scan" (outlined) and "Full Scan" (filled)
+- **Single red "Stop Scan" button when scanning**: includes a `CircularProgressIndicator` spinner
+- **Progress stats**: "Scanned: N/M" (gray) and "Found: N" (bold, primary color)
+- **6dp tall progress bar**: wider than Port Scanner's 4dp, with explicit `trackColor` for visual contrast
+
+### DeviceRow — individual device display
+
+```kotlin
+@Composable
+private fun DeviceRow(device: LanDevice) {
+    Card {
+        Row {
+               // Router or computer icon
+            Icon(
+                imageVector = if (device.isRouter) Icons.Filled.Router else Icons.Filled.Computer,
+                tint = if (device.isRouter) primary else onSurfaceVariant,
+              )
+               // IP, hostname, MAC
+            Column {
+                Text(device.ip, fontWeight = Bold)
+                if (!device.hostname.isNullOrBlank()) {
+                    Text(device.hostname)
+                  }
+                if (!device.mac.isNullOrBlank()) {
+                    Text("MAC: ${device.mac.uppercase()}", fontFamily = Monospace)
+                  }
+               }
+               // Ping latency
+            if (device.pingMs != null) {
+                Text("${device.pingMs} ms", color = primary)
+              }
+           }
+       }
+}
+```
+
+- **Conditional fields**: hostname and MAC are only shown if non-null/non-blank
+- **Monospace MAC**: displayed as `MAC: AA:BB:CC:DD:EE:FF` in monospace font
+- **Ping latency**: only shown if ping succeeded (`pingMs != null`)
+
+### HistorySection — scan history display
+
+```kotlin
+@Composable
+private fun HistoryRow(entry: LanScannerHistoryEntry) {
+    Row {
+        Column(weight(1f)) {
+            Text(entry.timestamp)
+            Text("${entry.subnet} • ${entry.type}")
+           }
+        Column(alignment = End) {
+            Text("${entry.activeHostsCount}", fontWeight = Bold, color = primary)
+            Text("Hosts", style = labelSmall)
+          }
+       }
+}
+```
+
+- **Left side**: timestamp and subnet/type
+- **Right side**: large bold number of active hosts found, with "Hosts" label
+- **Not clickable** — no `onClick` handler, unlike all other feature histories
+
+## Test Coverage
+
+### ViewModel tests — `LanScannerViewModelTest` (~24 tests)
+
+| Test | What it verifies |
+|---|---|
+| `initial state has default values` | Default values including subnet info populated from mock |
+| `init loads subnet info and history` | Init block calls `refreshSubnetInfo()` and loads history |
+| `init sets error when subnet info is null` | Error message when no WiFi/Ethernet |
+| `refreshSubnetInfo updates subnet info` | Subnet re-detection |
+| `refreshSubnetInfo sets error when no connection` | Error on re-detect with no network |
+| `onStartIpChange updates start IP` | Start IP field update |
+| `onEndIpChange updates end IP` | End IP field update |
+| `startScan with invalid IP range shows error` | Invalid IP format rejection |
+| `startScan with reversed IP range shows error` | start > end rejection |
+| `startScan with range too large shows error` | >65535 hosts rejection |
+| `startScan validates IP format` | `999.999.999.999` rejection |
+| `startScan clears error and sets scanning state` | Error cleared on valid scan |
+| `startScan stops existing scan before starting new one` | No-op when already scanning |
+| `stopScan sets isScanning to false` | Scan cancellation |
+| `quick scan uses sampled IPs` | Quick scan probes ≤ 10 IPs |
+| `full scan uses all IPs in range` | Full scan probes all IPs (e.g., 10 for range 1–10) |
+| `scan progress updates correctly` | Progress in [0, 1] range |
+| `history is loaded on init` | History restoration from store |
+| `history is capped at 10 entries` | History cap enforcement |
+| `history is saved after scan completes` | History save on completion |
+| `history is saved on partial scan stop` | History save on stop (with `atLeast = 0` verification) |
+| `onCleared cancels scanJob` | ViewModel cleanup |
+| `activeDevices is populated when ping succeeds` | Device discovery with mocked ping/MAC/hostname |
+| `scan with empty start or end IP shows error` | Empty IP string rejection |
+
+**Notable test patterns:**
+- Uses `StandardTestDispatcher` + `advanceUntilIdle()` for deterministic coroutine testing
+- Mocks `repository.getLocalSubnetInfo()` and `historyStore.historyFlow` with `every { ... } returns`
+- Mocks `repository.ipToLong()` and `repository.longToIp()` with `answers { ... }` to simulate real IP conversion
+- Mocks `repository.ping()` to return `null` (no device) or a latency value (device alive)
+- `coVerify { historyStore.save(any()) }` to confirm history save calls
+
+### Repository tests — `LanScannerRepositoryTest` (19 tests)
+
+Tests the pure IP conversion functions (`ipToLong`, `longToIp`) directly, without Android dependencies:
+
+| Test | What it verifies |
+|---|---|
+| `longToIp converts 0 to 0.0.0.0` | Zero IP |
+| `longToIp converts localhost to 127.0.0.1` | Loopback |
+| `longToIp converts max value to 255.255.255.255` | Max IP |
+| `longToIp converts common private IP range` | `192.168.1.1` |
+| `longToIp converts 10.0.0.1` | Class A private range |
+| `longToIp handles negative values correctly` | Bitwise operations with signed long |
+| `ipToLong converts 0.0.0.0 to 0` | Zero IP round-trip |
+| `ipToLong converts 127.0.0.1` | Loopback round-trip |
+| `ipToLong converts 255.255.255.255` | Max IP round-trip |
+| `ipToLong converts 192.168.1.1` | Private IP round-trip |
+| `ipToLong converts 10.0.0.1` | Class A round-trip |
+| `ipToLong converts 172.16.0.1` | Class B round-trip |
+| `ipToLong round-trips with longToIp` | Bidirectional conversion |
+| `ipToLong throws for invalid IP format` | Missing octet |
+| `ipToLong throws for IP with too many octets` | Extra octet |
+| `ipToLong throws for octet out of range` | `256` rejection |
+| `ipToLong throws for negative octet` | `-1` rejection |
+| `ipToLong throws for non-numeric octet` | `abc` rejection |
+| `ipToLong handles edge case 0.0.0.0` | Zero IP |
+| `ipToLong handles edge case 1.0.0.0` | Class A edge |
+
+These are pure JVM tests (no Android mocks needed) — the most straightforward test class in the app.
+
+## Data Flow Summary
+
+```
+ViewModel constructed
+       │
+       ├─ refreshSubnetInfo()
+       │     └─ ConnectivityManager → WiFi/Ethernet?
+       │           ├─ Yes → compute baseIp, numHosts → SubnetInfo
+       │           └─ No → null → errorMsg = "No WiFi..."
+       │
+       └─ historyStore.historyFlow.first() → load history (cap 10)
+
+User taps "Quick Scan" / "Full Scan"
+       │
+       ├─ Validate IP range (valid IPs, start ≤ end, ≤ 65535 hosts)
+       ├─ Re-detect subnet (fresh SubnetInfo)
+       ├─ Clear errorMsg
+       ├─ If already scanning → stopScan()
+       │
+       └─ Generate IPs to scan:
+             ├─ Quick: [start, start+5, start+10, start+50, start+100, end-1, end]
+             └─ Full: (startLong..endLong) → every IP
+             │
+             └─ Chunked(20) → for each chunk:
+                   async { ip →
+                       ping(ip)
+                         ├─ null → device not alive → skip
+                         └─ latency → getMacFromArpTable(ip)
+                                   → resolveHostname(ip)
+                                   → LanDevice(ip, mac, hostname, isRouter, pingMs)
+                                   → append to activeDevices (unique by IP, sorted)
+                       checkedCount.increment()
+                       progress = checked / total
+                     }
+                   awaitAll()
+                 }
+               │
+               ├─ Complete → saveHistory(isFullScan)
+               └─ Timeout → saveHistory(isFullScan)
+```
