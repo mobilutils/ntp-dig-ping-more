@@ -3,6 +3,8 @@ title: Port Scanner — Implementation Deep Dive
 description: How the Port Scanner works, concurrent TCP/UDP probing, chunked scanning with mutex-protected progress, and history deduplication
 ---
 # Port Scanner — Implementation Deep Dive
+How the Port Scanner works: concurrent TCP/UDP probing, chunked scanning with mutex-protected progress, and history deduplication
+
 ## Overview
 
 The Port Scanner performs **TCP and UDP port scans** against a target host across a configurable port range. Unlike Ping and Traceroute (which use subprocesses), Port Scanner uses **direct socket I/O** — `Socket.connect()` for TCP and `DatagramSocket` for UDP — managed through Kotlin coroutines with concurrency limiting.
