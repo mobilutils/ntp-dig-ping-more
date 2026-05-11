@@ -6,17 +6,19 @@
 
 A modern Android app for network diagnostics: **NTP reachability testing**, **DNS lookup (DIG)**, **Ping**, **Traceroute**, **Port Scanner**, **LAN Scanner**, **Google Time Sync**, **HTTPS Certificate Inspector**, and **Bulk Actions** (batch execute commands from a JSON config). Includes a global **Settings** screen with configurable operation timeouts and optional **Proxy PAC** routing.
 
+Github pages : [https://mobilutils.github.io/ntp-dig-ping-more/](https://mobilutils.github.io/ntp-dig-ping-more/)
+
 ## Visuals
 
 | NTP Check| DIG | PING |
 |---|---|---|
-|![NTP Check](./docs/images/1_screencap_ntp.png)|![dig](./docs/images/2_screencap_dig.png)|![ping](./docs/images/3_screencap_ping.png)|
+|![NTP Check](./docs/public/images/1_screencap_ntp.png)|![dig](./docs/public/images/2_screencap_dig.png)|![ping](./docs/public/images/3_screencap_ping.png)|
 |More menu|Settings|BulkActions|
-|![more](./docs/images/4_screencap_more.png)|![settings](./docs/images/5_screencap_settings.png)|![bulkactions](./docs/images/6_screencap_bulkactions.png)|
+|![more](./docs/public/images/4_screencap_more.png)|![settings](./docs/public/images/5_screencap_settings.png)|![bulkactions](./docs/public/images/6_screencap_bulkactions.png)|
 |TRACEROUTE|Port Scan|LAN Scan|
-|![traceroute](./docs/images/7_screencap_traceroute.png)|![portscan](./docs/images/8_screencap_portscan.png)|![LANSCAN](./docs/images/9_screencap_lanscan.png)|
+|![traceroute](./docs/public/images/7_screencap_traceroute.png)|![portscan](./docs/public/images/8_screencap_portscan.png)|![LANSCAN](./docs/public/images/9_screencap_lanscan.png)|
 |Google Timesync|Checkcert|DeviceInfos|
-|![ggtimesync](./docs/images/10_screencap_ggtimesync.png)|![checkcert](./docs/images/11_screencap_checkcert.png)|![deviceinfo](./docs/images/12_screencap_deviceinfo.png)|
+|![ggtimesync](./docs/public/images/10_screencap_ggtimesync.png)|![checkcert](./docs/public/images/11_screencap_checkcert.png)|![deviceinfo](./docs/public/images/12_screencap_deviceinfo.png)|
 
 More to Github pages : [Github Pages](https://mobilutils.github.io/ntp-dig-ping-more/available-features/screens)
 
