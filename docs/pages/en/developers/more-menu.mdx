@@ -1,0 +1,580 @@
+---
+title: More Tools Menu - Deep Dive
+description: How the "More" bottom navigation tab exposes hidden screens via a tool list, with selection state logic and navigation routing
+---
+
+# More Tools Menu — Implementation Deep Dive
+How the "More" bottom navigation tab works: hidden screens, selection state, and navigation routing
+
+## Overview
+
+The "More" tab is the **fourth item** on the app's bottom navigation bar. It acts as a gateway to **eight "hidden" screens** — tools that are not directly accessible from the primary bottom bar. The app has 12 screens total, but only 4 are primary bottom-bar items:
+
+| Tab | Screen | Position |
+|---|---|---|
+| 1 | NTP Check | Primary |
+| 2 | DIG Test | Primary |
+| 3 | Ping | Primary |
+| 4 | **More** | Primary (gateway) |
+
+The remaining **8 screens** are hidden behind the "More" tab:
+
+| Screen | Route | Icon |
+|---|---|---|
+| Settings | `settings` | `Icons.Filled.Settings` |
+| Bulk Actions | `bulk_actions` | `Icons.Filled.Dns` |
+| Traceroute | `traceroute` | `Icons.Filled.Route` |
+| Port Scanner | `port_scanner` | `Icons.Filled.Search` |
+| LAN Scanner | `lan_scanner` | `Icons.Filled.WifiFind` |
+| Google Time Sync | `google_time_sync` | `Icons.Filled.AccessTime` |
+| HTTPS Cert | `https_cert` | `Icons.Filled.Lock` |
+| Device Info | `device_info` | `Icons.Filled.Info` |
+
+The feature spans **two files**:
+
+| File | Role |
+|---|---|
+| `MainActivity.kt` | `AppRoot()` composable — bottom bar, NavHost, More tab selection logic |
+| `MoreToolsScreen.kt` | Tool list UI — `MoreToolsScreen()` + `ToolCard()` composables |
+
+---
+
+## AppScreen — Screen Registry
+
+**File:** `app/src/main/java/.../MainActivity.kt`
+
+All screens are declared as **objects** inside the `AppScreen` sealed class:
+
+```kotlin
+sealed class AppScreen(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+) {
+    object NtpCheck     : AppScreen("ntp_check",    "NTP Check",  Icons.Filled.NetworkCheck)
+    object DigTest      : AppScreen("dig_test",     "DIG Test",   Icons.Filled.Dns)
+    object Ping         : AppScreen("ping",         "Ping",       Icons.Filled.Terminal)
+    object Traceroute   : AppScreen("traceroute",   "Traceroute", Icons.Filled.Route)
+    object PortScanner : AppScreen("port_scanner", "Port Scan", Icons.Filled.Search)
+    object LanScanner      : AppScreen("lan_scanner",       "LAN Scan",         Icons.Filled.WifiFind)
+    object GoogleTimeSync : AppScreen("google_time_sync", "Google Time Sync", Icons.Filled.AccessTime)
+    object HttpsCert       : AppScreen("https_cert",        "HTTPS Cert",       Icons.Filled.Lock)
+    object DeviceInfo      : AppScreen("device_info",       "Device Info",      Icons.Filled.Info)
+    object BulkActions     : AppScreen("bulk_actions",      "Bulk Actions",     Icons.Filled.Dns)
+    object Settings        : AppScreen("settings",          "Settings",         Icons.Filled.Settings)
+    object MoreTools       : AppScreen("more_tools",        "More",             Icons.Filled.MoreHoriz)
+}
+```
+
+**Design notes:**
+- Each screen is a **singleton object** (not a class with `companion object`), ensuring a single canonical definition per screen
+- The `route` string is used as the NavHost navigation route — it must be unique and stable
+- The `label` is displayed in the bottom bar and top app bar
+- The `icon` is a Material IconsFilled vector — each hidden screen has its own icon
+
+### allAppScreens
+
+```kotlin
+private val allAppScreens = listOf(
+    AppScreen.NtpCheck,
+    AppScreen.DigTest,
+    AppScreen.Ping,
+    AppScreen.Traceroute,
+    AppScreen.PortScanner,
+    AppScreen.LanScanner,
+    AppScreen.GoogleTimeSync,
+    AppScreen.HttpsCert,
+    AppScreen.DeviceInfo,
+    AppScreen.BulkActions,
+    AppScreen.Settings,
+    AppScreen.MoreTools,
+)
+```
+
+A flat list of **all 12 screens**, in the order they are declared. This is used by `AppRoot()` to derive the top app bar title from the current navigation destination.
+
+### bottomNavItems
+
+```kotlin
+private val bottomNavItems = listOf(
+    AppScreen.NtpCheck,
+    AppScreen.DigTest,
+    AppScreen.Ping,
+    AppScreen.MoreTools,
+)
+```
+
+A flat list of **4 primary bottom-bar items**. Only these 4 screens are directly accessible from the bottom bar without going through the "More" gateway. This is the only place where the bottom bar composition is defined — `AppRoot()` iterates over this list to render `NavigationBarItem`s.
+
+---
+
+## AppRoot — Bottom Bar Selection Logic
+
+**File:** `app/src/main/java/.../MainActivity.kt`
+
+The `AppRoot()` composable is the root of the app's navigation tree. It manages the bottom bar, NavHost, and the "More" tab's selection state.
+
+### NavHost Structure
+
+```kotlin
+NavHost(
+    navController = navController,
+    startDestination = AppScreen.NtpCheck.route,
+    modifier = Modifier.padding(innerPadding),
+) {
+    composable(AppScreen.NtpCheck.route)  { NtpCheckScreen() }
+    composable(AppScreen.DigTest.route)   { DigScreen() }
+    composable(AppScreen.Ping.route)      { PingScreen() }
+    composable(AppScreen.Traceroute.route) { TracerouteScreen() }
+    composable(AppScreen.PortScanner.route) { PortScannerScreen() }
+    composable(AppScreen.LanScanner.route)  { LanScannerScreen() }
+    composable(AppScreen.GoogleTimeSync.route) { GoogleTimeSyncScreen() }
+    composable(AppScreen.HttpsCert.route)  { HttpsCertScreen() }
+    composable(AppScreen.DeviceInfo.route) { DeviceInfoScreen() }
+    composable(AppScreen.Settings.route)   { SettingsScreen() }
+    composable(AppScreen.MoreTools.route)  {
+        MoreToolsScreen(onNavigate = { route ->
+            navController.navigate(route) {
+                popUpTo(AppScreen.MoreTools.route) {}
+            }
+        })
+    }
+    composable(AppScreen.BulkActions.route) {
+        BulkActionsScreen(configUri = configUri, autoRun = autoRun)
+    }
+}
+```
+
+**Key observations:**
+- `startDestination` is `AppScreen.NtpCheck.route` ("ntp_check") — the app always starts on NTP Check
+- All 12 screens are registered as `composable { }` entries in the NavHost
+- `BulkActionsScreen` is the **only screen with arguments** — it receives `configUri` and `autoRun` from the intent
+- The `MoreToolsScreen`'s `onNavigate` callback uses `popUpTo(MoreTools.route)` to prevent back-stack buildup when navigating to a hidden screen
+
+### More Tab Selection Logic
+
+The "More" tab has a **special selection logic** that differs from the other three bottom-bar items:
+
+```kotlin
+bottomNavItems.forEach { screen ->
+    val isMoreToolsSelected = screen == AppScreen.MoreTools && currentDest?.route in listOf(
+        AppScreen.Traceroute.route,
+        AppScreen.PortScanner.route,
+        AppScreen.LanScanner.route,
+        AppScreen.GoogleTimeSync.route,
+        AppScreen.HttpsCert.route,
+        AppScreen.DeviceInfo.route,
+        AppScreen.BulkActions.route,
+        AppScreen.Settings.route,
+        AppScreen.MoreTools.route
+    )
+    val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true || isMoreToolsSelected
+    NavigationBarItem(
+        selected = selected,
+        onClick = { /* ... */ },
+    )
+}
+```
+
+**How it works:**
+
+1. `isMoreToolsSelected` is `true` when:
+   - The screen being rendered is `MoreTools`, **AND**
+   - The current destination route is one of the 9 "More-related" routes (8 hidden screens + MoreTools itself)
+
+2. `selected` is `true` when:
+   - The screen's route is in the current navigation **hierarchy** (standard selection), **OR**
+   - `isMoreToolsSelected` is true (the special "More" override)
+
+**Result:** The "More" tab stays **highlighted** whenever the user is on any hidden screen or on the MoreTools list itself. Without this logic, the "More" tab would unhighlight as soon as the user navigates to a hidden screen (because the current destination would be, say, "traceroute", which is not in the bottom bar).
+
+### More Tab Click Behavior
+
+```kotlin
+onClick = {
+    if (selected) {
+        // If clicking the already selected tab, act like a "pop to root" of that tab
+        navController.popBackStack(screen.route, inclusive = false)
+    } else {
+        navController.navigate(screen.route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+}
+```
+
+When the user taps the "More" tab:
+- **If already selected:** `popBackStack(MoreTools.route, inclusive = false)` — pops back to the MoreTools screen (the list of hidden tools), effectively acting as a "reset" to the More menu
+- **If not selected:** navigates to MoreTools with `popUpTo` at the start destination (to avoid building up a large back-stack), `launchSingleTop = true` (prevent multiple instances), and `restoreState = true` (preserve the back-stack state of other tabs)
+
+This is the same behavior as the other three primary tabs — tapping an already-selected tab pops back to that tab's root.
+
+---
+
+## MoreToolsScreen — The Tool List
+
+**File:** `app/src/main/java/.../MoreToolsScreen.kt`
+
+`MoreToolsScreen` is a **stateless composable** that renders a vertically scrollable list of 8 tool cards. It receives a single callback (`onNavigate`) for navigation.
+
+### Screen Composable
+
+```kotlin
+@Composable
+fun MoreToolsScreen(
+    onNavigate: (String) -> Unit
+) {
+    val extraTools = listOf(
+        AppScreen.Settings,
+        AppScreen.BulkActions,
+        AppScreen.Traceroute,
+        AppScreen.PortScanner,
+        AppScreen.LanScanner,
+        AppScreen.GoogleTimeSync,
+        AppScreen.HttpsCert,
+        AppScreen.DeviceInfo,
+    )
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        items(extraTools) { tool ->
+            ToolCard(
+                title = tool.label,
+                icon = tool.icon,
+                onClick = { onNavigate(tool.route) }
+            )
+        }
+    }
+}
+```
+
+**Design notes:**
+- `extraTools` is a **hardcoded list of 8 `AppScreen` objects** — the same 8 screens that `isMoreToolsSelected` checks for in the bottom bar selection logic
+- The order is intentional: Settings first (most frequently used), Bulk Actions second (power user feature), then the remaining tools in a consistent order
+- `LazyColumn` with `fillMaxSize()` ensures the list scrolls when the device screen is too small to fit all 8 cards
+- `contentPadding = 16.dp` adds uniform spacing around the list edges
+- `verticalArrangement = Arrangement.spacedBy(16.dp)` adds 16 dp of vertical space between cards
+- Each `ToolCard` receives `tool.label` (the screen's display name), `tool.icon` (the screen's icon), and an `onClick` that calls `onNavigate(tool.route)`
+
+### ToolCard — The Card Component
+
+```kotlin
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ToolCard(
+    title: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = "Navigate",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+```
+
+**Visual structure:**
+
+```
+┌──────────────────────────────────────────────────┐
+│  [icon]  Settings                  →             │
+├──────────────────────────────────────────────────┤
+│  [icon]  Bulk Actions              →             │
+├──────────────────────────────────────────────────┤
+│  [icon]  Traceroute                →             │
+│  ...                                           │
+└──────────────────────────────────────────────────┘
+```
+
+**Design notes:**
+- The `Card`'s `onClick` is set to `onClick` — the entire card is clickable, not just the text or chevron
+- `containerColor = MaterialTheme.colorScheme.surfaceVariant` gives cards a slightly different background from the screen background
+- `defaultElevation = 2.dp` provides subtle depth (cards are raised above the surface)
+- The icon is tinted `MaterialTheme.colorScheme.primary` (the only colored element in the card), making it visually distinct from the gray text and chevron
+- The title uses `titleMedium` style with `onSurfaceVariant` color — readable but not as prominent as a heading
+- `Modifier.weight(1f)` on the title `Text` ensures it expands to fill available space, pushing the chevron to the right edge
+- `Icons.Filled.ChevronRight` is a right-pointing arrow indicating the card is navigable
+- `contentDescription = null` on the tool icon makes it decorative (announced by accessibility services only in context); the chevron has `contentDescription = "Navigate"` for accessibility
+
+### Navigation from MoreToolsScreen
+
+When the user taps a `ToolCard`, `onClick` calls `onNavigate(tool.route)`, which is wired in `AppRoot()`:
+
+```kotlin
+MoreToolsScreen(
+    onNavigate = { route ->
+        navController.navigate(route) {
+            popUpTo(AppScreen.MoreTools.route) {}
+        }
+    }
+)
+```
+
+The `popUpTo(MoreTools.route) {}` inside the navigate lambda **clears the MoreTools route from the back stack** when navigating to a hidden screen. This means:
+- If the user navigates More → Settings → presses back, they go to the **previous screen before More** (e.g., NTP Check), not back to More
+- The More tab unhighlights when the user backs out of a hidden screen to a non-More screen
+- The More tab **stays highlighted** while the user is inside a hidden screen (because `isMoreToolsSelected` checks the current destination)
+
+---
+
+## Data Flow
+
+### Navigating to a Hidden Screen
+
+```
+User taps "Settings" card in MoreToolsScreen
+   → ToolCard.onClick()
+   → onNavigate("settings")
+   → AppRoot's MoreToolsScreen onNavigate callback
+   → navController.navigate("settings") { popUpTo("more_tools") {} }
+   → NavHost pops "more_tools" from back stack, pushes "settings"
+   → MoreToolsScreen is removed from back stack
+   → SettingsScreen composable is displayed
+   → Bottom bar: "More" tab stays highlighted (isMoreToolsSelected = true because currentDest.route == "settings")
+   → Top app bar: shows Settings icon + "Settings" label (derived from allAppScreens.firstOrNull { route matches })
+```
+
+### Pressing Back from a Hidden Screen
+
+```
+User is on Settings screen, presses back
+   → navController.popBackStack()
+   → "settings" is popped from back stack
+   → "more_tools" is NOT on the back stack (it was cleared by popUpTo)
+   → Previous screen before More is revealed (e.g., "ping")
+   → Bottom bar: "More" tab unhighlights (currentDest.route == "ping" is not in isMoreToolsSelected list)
+   → Bottom bar: "Ping" tab highlights (currentDest.route == "ping" matches DigTest's route)
+   → Top app bar: shows Ping icon + "Ping" label
+```
+
+### Tapping "More" While on a Hidden Screen
+
+```
+User is on Traceroute screen, taps "More" bottom bar item
+   → NavigationBarItem.onClick() for MoreTools
+   → selected == true (isMoreToolsSelected is true)
+   → navController.popBackStack("more_tools", inclusive = false)
+   → Pops "traceroute" and any intermediate destinations from back stack
+   → MoreToolsScreen is displayed
+   → Bottom bar: "More" tab stays highlighted
+   → Top app bar: shows More icon + "More" label
+```
+
+---
+
+## Screen Ordering Rationale
+
+### Bottom Bar (bottomNavItems)
+
+```kotlin
+private val bottomNavItems = listOf(
+    AppScreen.NtpCheck,    // 1 — Primary tool, default screen
+    AppScreen.DigTest,     // 2 — Primary tool, DNS lookup
+    AppScreen.Ping,        // 3 — Primary tool, connectivity check
+    AppScreen.MoreTools,   // 4 — Gateway to remaining 8 tools
+)
+```
+
+The first three tabs are the app's **three most frequently used tools** — NTP Check, DIG Test, and Ping. These are the tools that the app was originally designed around (the app's name "ntp_dig_ping_more" literally lists them). The fourth tab is the "More" gateway.
+
+### More Tools List (extraTools)
+
+```kotlin
+val extraTools = listOf(
+    AppScreen.Settings,         // 1 — Most used (proxy config, logging)
+    AppScreen.BulkActions,      // 2 — Power user / CI automation
+    AppScreen.Traceroute,       // 3 — Network path analysis
+    AppScreen.PortScanner,      // 4 — Port scanning
+    AppScreen.LanScanner,       // 5 — LAN device discovery
+    AppScreen.GoogleTimeSync,   // 6 — Alternative time sync
+    AppScreen.HttpsCert,        // 7 — Certificate inspection
+    AppScreen.DeviceInfo,       // 8 — Device identity
+)
+```
+
+The More tools list is ordered by **usage frequency and importance**:
+1. **Settings** — accessed frequently for proxy configuration and timeout tuning
+2. **Bulk Actions** — power user / CI automation feature (core to the app's unique value proposition)
+3. **Traceroute** — similar to Ping (network path analysis)
+4. **Port Scanner** — network reconnaissance
+5. **LAN Scanner** — network discovery
+6. **Google Time Sync** — alternative to NTP Check
+7. **HTTPS Cert** — security inspection
+8. **Device Info** — diagnostic utility
+
+---
+
+## Top App Bar Integration
+
+The top app bar in `AppRoot()` dynamically shows the **current screen's icon and label**:
+
+```kotlin
+val currentScreen = allAppScreens.firstOrNull { screen ->
+    currentDest?.hierarchy?.any { it.route == screen.route } == true
+} ?: AppScreen.NtpCheck
+
+TopAppBar(
+    title = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = currentScreen.icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(currentScreen.label, fontWeight = FontWeight.SemiBold)
+        }
+    },
+    // ...
+)
+```
+
+**How it works:**
+- `currentDest` is derived from `navController.currentBackStackEntryAsState()`
+- `allAppScreens.firstOrNull { ... }` finds the first `AppScreen` whose route is in the current navigation hierarchy
+- If no match is found (e.g., on app startup before the first navigation completes), it defaults to `AppScreen.NtpCheck`
+- The matched screen's `icon` and `label` are displayed in the top app bar
+
+This means the top app bar **changes dynamically** as the user navigates — tapping "Settings" in the More menu changes the top bar from "More" to "Settings" with the Settings icon.
+
+---
+
+## Testing
+
+There are **no dedicated unit or composable tests** for the More Tools feature. The reason is straightforward:
+
+- `MoreToolsScreen` is a **purely presentational composable** — it has no internal state, no ViewModel, no I/O
+- Its only logic is rendering a hardcoded list and calling an `onNavigate` callback
+- The `ToolCard` composable is similarly stateless
+
+The More Tools feature is effectively tested **indirectly** through:
+- Manual testing (tapping cards, verifying navigation, pressing back)
+- The `MainActivity.kt` tests (if any exist for `AppRoot` — none were found)
+- The individual hidden screen tests (e.g., `SettingsViewModelTest`, `TracerouteViewModelTest`) which verify the screens work correctly once navigated to
+
+---
+
+## Key Design Decisions
+
+### 1. Sealed Class for Screen Registry
+
+All screens are declared as objects inside a single sealed class (`AppScreen`). This ensures:
+- **Single source of truth** — adding a new screen requires one change (adding a new object)
+- **Compile-time safety** — the compiler ensures all references to `AppScreen.Xxx` are valid
+- **Easy iteration** — `bottomNavItems` and `allAppScreens` are derived from the same source
+- **Consistent routes** — the route string is defined once and used everywhere (bottom bar, NavHost, top bar)
+
+The trade-off is that `MainActivity.kt` is a large file (~350 lines) because it contains the screen registry, `AppRoot`, and the NTP Check screen (which also lives here rather than in a separate file).
+
+### 2. Special Selection Logic for "More"
+
+The `isMoreToolsSelected` override is necessary because the "More" tab is a **gateway**, not a destination. Without it, the "More" tab would unhighlight immediately upon navigating to a hidden screen, which would be confusing (the user would see the first tab "NTP Check" highlighted instead of "More", even though they're clearly not on NTP Check).
+
+The list of 9 routes in `isMoreToolsSelected` must be kept in sync with the `extraTools` list in `MoreToolsScreen`. If a new hidden screen is added to `extraTools` but not to the `isMoreToolsSelected` list, the "More" tab would incorrectly unhighlight when that screen is displayed.
+
+### 3. popUpTo(MoreTools.route) on Navigation
+
+When navigating from MoreToolsScreen to a hidden screen, `popUpTo(MoreTools.route) {}` clears the MoreTools route from the back stack. This means:
+- Pressing back from a hidden screen skips the More menu and goes to the screen that was active before the user opened More
+- The More menu is not a "step" in the navigation — it's a **launchpad** to hidden destinations
+
+This is the same pattern used by the other three primary tabs (tapping a tab pops to the start destination), but applied specifically to the MoreTools route.
+
+### 4. Stateless Composable
+
+`MoreToolsScreen` has no internal state, no ViewModel, and no side effects. It receives all its data from parameters (`onNavigate`) and renders a hardcoded list. This makes it:
+- Easy to reason about (no state transitions to track)
+- Easy to test (in theory — though no tests exist)
+- Hard to reuse (the list is hardcoded, not configurable)
+
+If the app ever needs to make the More Tools list configurable (e.g., per-user preferences, or a dynamic list from a remote config), this would need to be refactored to accept the list as a parameter rather than hardcoding it.
+
+### 5. Hardcoded Ordering
+
+The order of `extraTools` and `isMoreToolsSelected` routes is hardcoded and manual. There is no automatic synchronization — adding a new hidden screen requires updating:
+- The `AppScreen` sealed class (the screen declaration)
+- The `allAppScreens` list (for top bar matching)
+- The `isMoreToolsSelected` list (for bottom bar highlighting)
+- The `extraTools` list (for the More Tools screen)
+- The NavHost `composable { }` block (for navigation routing)
+- The `BulkActionsScreen` composable registration (if it needs intent arguments)
+
+This is a known maintenance risk — a new screen added to `AppScreen` but forgotten in one of these places will result in broken behavior (e.g., a screen that is never reachable, or a "More" tab that unhighlights prematurely).
+
+---
+
+## Integration with Bulk Actions ADB Automation
+
+The "More" menu has a **special relationship** with Bulk Actions. When the app is launched via ADB intent extras (for headless automation), the `AppRoot()` composable navigates directly to Bulk Actions on first launch:
+
+```kotlin
+if (configUri != null) {
+    LaunchedEffect(configUri, autoRun) {
+        navController.navigate(AppScreen.BulkActions.route) {
+            popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
+}
+```
+
+This bypasses the normal navigation flow and goes directly to Bulk Actions **regardless of which tab was active**. The `popUpTo(findStartDestination().id) { inclusive = true }` clears the entire back stack and starts fresh with Bulk Actions as the only destination.
+
+Bulk Actions is registered as a **separate NavHost entry** (after the MoreTools entry) because it needs special arguments (`configUri` and `autoRun`) that other screens don't receive. If Bulk Actions were registered inside the MoreToolsScreen navigation, it would not have access to these intent arguments.
+
+---
+
+## Known Limitations
+
+### No Search or Filtering
+
+The More Tools list shows all 8 hidden tools in a single scrollable list. There is no search, filtering, or categorization. On very small screens, the user must scroll to see all options. On larger screens (tablets), all 8 cards are visible at once.
+
+### No Tool Descriptions
+
+Each `ToolCard` shows only the tool's name and icon — there is no description, subtitle, or hint about what the tool does. Users unfamiliar with the app may not know what "Port Scan" or "HTTPS Cert" means.
+
+### Manual Sync Risk
+
+As noted above, adding a new hidden screen requires updating 5+ places in the codebase. A missing update in any of these places will result in broken behavior. There is no compile-time check that ensures all lists are in sync.
+
+### No Deep Link Support
+
+Hidden screens are not accessible via deep links (URI-based navigation) from outside the app. The only external navigation entry point is Bulk Actions (via ADB intent data URI + auto_run flag). A user cannot, for example, open a URL like `ntp-dig-ping-more://traceroute` to launch the Traceroute screen directly.

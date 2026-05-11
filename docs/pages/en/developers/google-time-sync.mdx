@@ -1,0 +1,804 @@
+---
+title: Google Time Sync — Deep Dive
+description: How Google Time Sync works, HTTP-based NTP, clock offset calculation, XSSI prefix stripping, and proxy-aware HTTP
+---
+# Google Time Sync — Implementation Deep Dive
+How Google Time Sync works: HTTP-based NTP, clock offset calculation, XSSI prefix stripping, and proxy-aware HTTP
+
+## Overview
+
+Google Time Sync queries **Google's HTTP time endpoint** (`http://clients2.google.com/time/1/current`) to measure the clock offset between the local device and Google's NTP servers. Unlike the NTP Check screen (which uses UDP/123 and the `commons-net` library), this feature uses a plain **HTTP GET** request and parses a JSON response.
+
+The endpoint returns a JSON object like:
+
+```
+)]}'
+{"current_time_millis": 1705312200000}
+```
+
+The `)]}'` prefix is **XSSI (Cross-Site Script Injection) protection** — it prevents the response from being executed as JavaScript if embedded in a `<script>` tag. The app strips the first 4 characters before parsing.
+
+From the single JSON field (`current_time_millis`), the app computes:
+
+- **RTT** (round-trip time) — `T4 − T1`
+- **Corrected server time** — `serverTime + RTT / 2`
+- **Clock offset** — `correctedServerTime − T4` (positive = local clock is behind, negative = ahead)
+
+The feature supports a **customizable URL**, allowing users to query alternative Google time endpoints or their own time-sync servers.
+
+The feature is implemented across **four files** (the only feature that uses a **sealed class** for UI state instead of a `data class` with an `isLoading` boolean):
+
+| File | Role |
+|---|---|
+| `GoogleTimeSyncRepository.kt` | Network I/O — `HttpURLConnection`, JSON parsing, proxy resolution, XSSI stripping |
+| `GoogleTimeSyncViewModel.kt` | State management — `StateFlow<GoogleTimeSyncScreenState>`, sealed class sync state, history deduplication by URL |
+| `GoogleTimeSyncHistoryStore.kt` | Persistence — DataStore-backed history (last 5 entries, pipe-delimited) |
+| `GoogleTimeSyncScreen.kt` | UI — Jetpack Compose screen with color-coded offset display, copy-to-clipboard, and retry button |
+
+## GoogleTimeSyncRepository — HTTP Time Query
+
+**File:** `app/src/main/java/.../GoogleTimeSyncRepository.kt`
+
+### Domain model
+
+```kotlin
+data class TimeSyncResult(
+    val serverTimeMillis: Long,           // Raw current_time_millis from JSON
+    val rttMillis: Long,                  // T4 − T1
+    val offsetMillis: Long,               // correctedServerTime − T4
+    val correctedServerTimeMillis: Long,  // serverTime + RTT / 2
+    val requestTimestamp: Long,           // T1: client timestamp before request
+    val responseTimestamp: Long,          // T4: client timestamp after response fully read
+)
+```
+
+This is the most mathematically rich data class in the app — it captures all four timestamps needed for NTP-style offset calculation (though only one server timestamp is received, T1 and T4 are measured locally).
+
+### Result sealed hierarchy
+
+```kotlin
+sealed class GoogleTimeSyncResult {
+    data class Success(val data: TimeSyncResult) : GoogleTimeSyncResult()
+    data object NoNetwork : GoogleTimeSyncResult()
+    data class Timeout(val host: String) : GoogleTimeSyncResult()
+    data class HttpError(val code: Int, val host: String) : GoogleTimeSyncResult()
+    data class ParseError(val message: String) : GoogleTimeSyncResult()
+    data class Error(val message: String) : GoogleTimeSyncResult()
+}
+```
+
+Six variants — more than any other feature. This granularity lets the UI display specific error messages:
+
+| Variant | User message |
+|---|---|
+| `NoNetwork` | "No network connection" |
+| `Timeout(host)` | "Request timed out" |
+| `HttpError(code, host)` | `"HTTP error \${code}"` |
+| `ParseError(message)` | `"Parse error: \${message}"` |
+| `Error(message)` | `"\${message}"` |
+
+### The `fetchGoogleTime()` method
+
+```kotlin
+class GoogleTimeSyncRepository(
+    private val proxyResolver: ProxyResolver? = null,
+) {
+
+    companion object {
+        const val DEFAULT_URL         = "http://clients2.google.com/time/1/current"
+        private const val CONNECT_TIMEOUT_MS = 10_000   // 10 s
+        private const val READ_TIMEOUT_MS     = 15_000   // 15 s
+        private const val XSSI_PREFIX_LEN    = 4         // )]}'
+    }
+
+    suspend fun fetchGoogleTime(
+        url: String = DEFAULT_URL,
+    ): GoogleTimeSyncResult = withContext(Dispatchers.IO) {
+        var connection: HttpURLConnection? = null
+
+        try {
+             // T1: record timestamp BEFORE the request goes out.
+            val t1 = System.currentTimeMillis()
+
+             // Resolve proxy (if configured); null → direct connection
+            val proxy = proxyResolver?.resolveProxy(url)
+
+            connection = if (proxy != null) {
+                URL(url).openConnection(proxy) as HttpURLConnection
+             } else {
+                URL(url).openConnection() as HttpURLConnection
+             }
+            connection.apply {
+                requestMethod         = "GET"
+                connectTimeout        = CONNECT_TIMEOUT_MS
+                readTimeout           = READ_TIMEOUT_MS
+                instanceFollowRedirects = true
+                setRequestProperty("Accept", "application/json")
+             }
+
+            val responseCode = connection.responseCode
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                return@withContext GoogleTimeSyncResult.HttpError(responseCode, url)
+             }
+
+            val rawBody = connection.inputStream.bufferedReader(Charsets.UTF_8).readText()
+
+             // T4: record timestamp AFTER the response body is fully read.
+            val t4 = System.currentTimeMillis()
+
+             // ── Strip XSSI prefix ────────────────────────────────────────
+            if (rawBody.length < XSSI_PREFIX_LEN) {
+                return@withContext GoogleTimeSyncResult.ParseError(
+                     "Response body too short to contain XSSI prefix (got ${rawBody.length} chars)"
+                 )
+             }
+            val jsonStr = rawBody.substring(XSSI_PREFIX_LEN).trim()
+
+             // ── Parse JSON ───────────────────────────────────────────────
+            val json = try {
+                JSONObject(jsonStr)
+             } catch (e: Exception) {
+                return@withContext GoogleTimeSyncResult.ParseError(
+                     "Malformed JSON: ${e.localizedMessage}"
+                 )
+             }
+
+            if (!json.has("current_time_millis")) {
+                return@withContext GoogleTimeSyncResult.ParseError(
+                     "Missing field: current_time_millis"
+                 )
+             }
+            val serverTimeMillis = json.getLong("current_time_millis")
+
+             // ── Time-sync calculation ────────────────────────────────────
+             // RTT = T4 − T1
+            val rtt = t4 - t1
+             // correctedServerTime = serverTime + RTT / 2
+            val correctedServerTime = serverTimeMillis + (rtt / 2L)
+             // offset = correctedServerTime − T4
+             // Positive   → local clock is behind
+             // Negative   → local clock is ahead
+            val offset = correctedServerTime - t4
+
+            GoogleTimeSyncResult.Success(
+                TimeSyncResult(
+                    serverTimeMillis           = serverTimeMillis,
+                    rttMillis                  = rtt,
+                    offsetMillis               = offset,
+                    correctedServerTimeMillis = correctedServerTime,
+                    requestTimestamp           = t1,
+                    responseTimestamp          = t4,
+                 )
+             )
+
+         } catch (e: SocketTimeoutException) {
+            GoogleTimeSyncResult.Timeout(url)
+
+         } catch (e: IOException) {
+            val msg = e.message.orEmpty()
+            if (msg.contains("unreachable", ignoreCase = true) ||
+                msg.contains("connect failed", ignoreCase = true) ||
+                msg.contains("network", ignoreCase = true)
+             ) {
+                GoogleTimeSyncResult.NoNetwork
+             } else {
+                GoogleTimeSyncResult.Error(e.localizedMessage ?: "Network error")
+             }
+
+         } catch (e: Exception) {
+            GoogleTimeSyncResult.Error(e.localizedMessage ?: "Unknown error")
+
+         } finally {
+            connection?.disconnect()
+         }
+     }
+}
+```
+
+### Key implementation details
+
+1. **T1/T4 timestamping** — `t1` is recorded *before* the HTTP request is sent, `t4` is recorded *after* the response body is *fully read*. This gives an accurate RTT measurement that includes network latency + server processing time + response body transfer time.
+
+2. **Proxy support** — `proxyResolver?.resolveProxy(url)` is called before opening the connection. If a PAC (Proxy Auto-Config) script is configured in Settings, the request goes through the resolved proxy. Otherwise, a direct connection is used. This is the only feature (along with Settings) that integrates with the proxy subsystem.
+
+3. **Timeouts** — two separate timeouts:
+       - `connectTimeout = 10_000` (10s) — time to establish the TCP connection
+       - `readTimeout = 15_000` (15s) — time to wait for response data
+       - The **user-configurable timeout** from Settings wraps the entire operation in `withTimeout()`, which is the outer boundary.
+
+4. **XSSI prefix stripping** — the raw response body is at least 4 characters long (to contain `)]}'`), then `rawBody.substring(4).trim()` removes the prefix and whitespace before JSON parsing.
+
+5. **JSON parsing** — `org.json.JSONObject` (Android's built-in JSON library) parses the response. The app checks for the `current_time_millis` field and throws `ParseError` if missing.
+
+6. **Offset calculation**:
+      ```
+      RTT         = T4 − T1
+      correctedServerTime = serverTime + RTT / 2
+      offset    = correctedServerTime − T4
+      ```
+    The `RTT / 2` correction assumes symmetric network latency (same delay in both directions). The corrected server time estimates what the server's time was at the midpoint of the round trip. The offset tells the user how far their local clock differs from the server.
+
+7. **Error classification** — `IOException` is classified by message content:
+       - `"unreachable"`, `"connect failed"`, `"network"` → `NoNetwork`
+       - Otherwise → `Error`
+
+8. **`finally { connection?.disconnect() }`** — ensures the HTTP connection is released even on errors.
+
+## GoogleTimeSyncViewModel — Sealed Class State
+
+**File:** `app/src/main/java/.../GoogleTimeSyncViewModel.kt`
+
+### UI State — sealed class pattern
+
+```kotlin
+sealed class GoogleTimeSyncUiState {
+    /** No sync has been attempted yet (or state was explicitly reset). */
+    data object Idle : GoogleTimeSyncUiState()
+
+    /** A sync request is currently in-flight. */
+    data object Loading : GoogleTimeSyncUiState()
+
+    /** The sync completed successfully. */
+    data class Success(val result: TimeSyncResult) : GoogleTimeSyncUiState()
+
+    /** The sync failed for any reason. */
+    data class Error(val message: String) : GoogleTimeSyncUiState()
+}
+
+data class GoogleTimeSyncScreenState(
+    val syncState: GoogleTimeSyncUiState = GoogleTimeSyncUiState.Idle,
+    /** Up to 5 most-recent sync results, newest-first. */
+    val history: List<GoogleTimeSyncHistoryEntry> = emptyList(),
+)
+```
+
+This is the **only feature** that uses a sealed class for its primary UI state (alongside NTP Check). The pattern has four distinct states:
+
+| State | Meaning | UI behavior |
+|---|---|---|
+| `Idle` | No sync attempted, or explicitly reset | Show URL field + "Sync Now" button |
+| `Loading` | Sync request in-flight | Show spinner, disable button |
+| `Success(result)` | Sync completed successfully | Show `TimeSyncResultCard` with offset |
+| `Error(message)` | Sync failed | Show `ErrorCard` with retry button |
+
+The `GoogleTimeSyncScreenState` data class wraps `syncState` and `history` — a single data class that holds a sealed class, mirroring the NTP screen pattern.
+
+### The `syncTime()` method
+
+```kotlin
+fun syncTime(url: String) {
+    val effectiveUrl = url.trim().ifBlank { GoogleTimeSyncRepository.DEFAULT_URL }
+
+    syncJob?.cancel()
+        _uiState.value = _uiState.value.copy(syncState = GoogleTimeSyncUiState.Loading)
+
+    syncJob = viewModelScope.launch {
+        val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+        val result = try {
+            withTimeout(timeoutMs) {
+                repository.fetchGoogleTime(effectiveUrl)
+             }
+         } catch (_: TimeoutCancellationException) {
+            GoogleTimeSyncResult.Timeout(effectiveUrl)
+         }
+
+        val syncState: GoogleTimeSyncUiState
+        val newEntry: GoogleTimeSyncHistoryEntry
+
+        val timestamp = LocalDateTime.now()
+             .format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
+
+        when (result) {
+            is GoogleTimeSyncResult.Success -> {
+                syncState = GoogleTimeSyncUiState.Success(result.data)
+                newEntry   = GoogleTimeSyncHistoryEntry(
+                    timestamp = timestamp,
+                    url        = effectiveUrl,
+                    offsetMs   = result.data.offsetMillis,
+                    rttMs      = result.data.rttMillis,
+                    success    = true,
+                 )
+             }
+            else -> {
+                val message = when (result) {
+                    is GoogleTimeSyncResult.NoNetwork   -> "No network connection"
+                    is GoogleTimeSyncResult.Timeout     -> "Request timed out"
+                    is GoogleTimeSyncResult.HttpError   -> "HTTP error ${result.code}"
+                    is GoogleTimeSyncResult.ParseError -> "Parse error: ${result.message}"
+                    is GoogleTimeSyncResult.Error       -> result.message
+                    else                                -> "Unknown error"
+                 }
+                syncState = GoogleTimeSyncUiState.Error(message)
+                newEntry   = GoogleTimeSyncHistoryEntry(
+                    timestamp = timestamp,
+                    url        = effectiveUrl,
+                    offsetMs   = 0L,
+                    rttMs      = 0L,
+                    success    = false,
+                 )
+             }
+         }
+
+          // Prepend new entry; remove duplicates by URL; cap at 5.
+        val updatedHistory = (listOf(newEntry) + _uiState.value.history
+             .filter { it.url != effectiveUrl })
+             .take(5)
+
+         _uiState.value = _uiState.value.copy(
+            syncState = syncState,
+            history    = updatedHistory,
+         )
+
+        historyStore.save(updatedHistory)
+     }
+}
+```
+
+### Key implementation details
+
+1. **Blank URL defaults to Google** — `url.trim().ifBlank { DEFAULT_URL }` means the user can leave the URL field empty (or fill it with only whitespace) and the default endpoint is used.
+
+2. **Job cancellation** — `syncJob?.cancel()` cancels any in-flight request before starting a new one. This is important because the user might change the URL and hit "Sync Now" again while the previous request is still pending.
+
+3. **Loading state** — `syncState = Loading` is set *before* the coroutine launches, so the UI immediately shows the spinner.
+
+4. **Dual timeout** — `withTimeout(timeoutMs)` wraps the repository call. If the user-configurable timeout expires, a `TimeoutCancellationException` is caught and converted to `GoogleTimeSyncResult.Timeout`. Note: the repository's own `readTimeout` (15s) is an inner timeout — the outer `withTimeout` can expire first if the user sets a short timeout.
+
+5. **Result classification** — the `when` block maps each `GoogleTimeSyncResult` variant to both a UI state and a history entry. Success entries capture `offsetMs` and `rttMs`; failure entries set both to `0L` and `success = false`.
+
+6. **History deduplication by URL** — `_uiState.value.history.filter { it.url != effectiveUrl }` removes any existing entry with the same URL before prepending the new entry. This means querying the same URL twice results in only one history entry (the newest).
+
+7. **History cap** — `.take(5)` ensures at most 5 entries, same as other features.
+
+### The `reset()` method
+
+```kotlin
+fun reset() {
+    syncJob?.cancel()
+         _uiState.value = _uiState.value.copy(syncState = GoogleTimeSyncUiState.Idle)
+}
+```
+
+Cancels any in-flight request and returns to `Idle`. **History is preserved** — `reset()` only clears the `syncState`, not the `history` field. This is the only way to dismiss a result/error without performing another sync.
+
+### The `selectHistoryEntry()` method
+
+```kotlin
+fun selectHistoryEntry(entry: GoogleTimeSyncHistoryEntry, onUrlSelected: (String) -> Unit) {
+    onUrlSelected(entry.url)
+    syncTime(entry.url)
+}
+```
+
+Unlike other features that populate the text field directly, this method uses a **callback pattern** (`onUrlSelected`). The screen passes `{ url = it }` as the callback, which updates a local `mutableStateOf` variable (`url`) rather than the ViewModel. This is because the URL field is a local screen state, not part of the ViewModel's UI state.
+
+### Factory delegate — with ProxyResolver
+
+```kotlin
+companion object {
+    fun factory(context: Context): ViewModelProvider.Factory =
+        object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                val appContext = context.applicationContext
+                val settingsRepo = SettingsRepository(appContext)
+                val logger = ProxyPacLogger.getInstance(
+                    logFile = java.io.File(appContext.filesDir, "proxypac-logs.txt"),
+                 )
+                val proxyResolver = ProxyResolver(settingsRepo, QuickJsEngine(), logger = logger)
+                return GoogleTimeSyncViewModel(
+                    repository    = GoogleTimeSyncRepository(proxyResolver),
+                    historyStore = GoogleTimeSyncHistoryStore(appContext),
+                    settingsRepository = settingsRepo,
+                      ) as T
+                }
+            }
+}
+```
+
+This is the **only factory** that constructs a `ProxyResolver` and `ProxyPacLogger` — dependencies that are passed through to `GoogleTimeSyncRepository`. The proxy resolver is optional (`ProxyResolver?`), so other features that don't need network proxy support don't have to deal with it.
+
+## GoogleTimeSyncHistoryStore — Persistence
+
+**File:** `app/src/main/java/.../GoogleTimeSyncHistoryStore.kt`
+
+### DataStore setup
+
+```kotlin
+private val Context.googleTimeSyncHistoryDataStore: DataStore<Preferences>
+    by preferencesDataStore(name = "google_time_sync_history")
+```
+
+Uses `"google_time_sync_history"` as the DataStore name.
+
+### Serialization format
+
+A single `String` preference key (`"google_time_sync_history"`) contains all entries, one per line, fields separated by `|`:
+
+```
+2026/05/10 14:30:00|http://clients2.google.com/time/1/current|45|120|true
+2026/05/09 09:15:22|http://clients2.google.com/time/1/current|-30|95|true
+```
+
+| Field | Example | Notes |
+|---|---|---|
+| `timestamp` | `2026/05/10 14:30:00` | `yyyy/MM/dd HH:mm:ss` |
+| `url` | `http://clients2.google.com/time/1/current` | Full URL (never contains `|`) |
+| `offsetMs` | `45` | Long, may be negative |
+| `rttMs` | `120` | Long, always positive |
+| `success` | `true` | Boolean |
+
+### Deserialization with backward compatibility
+
+```kotlin
+private fun deserialise(raw: String): List<GoogleTimeSyncHistoryEntry> =
+    raw.split(ENTRY_SEP)
+             .filter { it.isNotBlank() }
+             .mapNotNull { line ->
+            val parts = line.split(FIELD_SEP)
+            if (parts.size >= 4) {
+                val offsetMs = parts.getOrNull(2)?.toLongOrNull() ?: return@mapNotNull null
+                val rttMs    = parts.getOrNull(3)?.toLongOrNull() ?: return@mapNotNull null
+                  // parts[4] may be absent in entries saved before the success field was added
+                val success  = parts.getOrNull(4)?.toBooleanStrictOrNull() ?: false
+                GoogleTimeSyncHistoryEntry(
+                    timestamp = parts[0],
+                    url        = parts[1],
+                    offsetMs   = offsetMs,
+                    rttMs      = rttMs,
+                    success    = success,
+                      )
+                 } else null
+             }
+             .take(MAX_ENTRIES)
+```
+
+- Requires at least 4 fields (timestamp, url, offsetMs, rttMs); 5th field (`success`) defaults to `false` if missing — **backward compatibility** for entries saved before the `success` field was added
+- `toLongOrNull()` and `toBooleanStrictOrNull()` return `null`/`false` for malformed values, and `mapNotNull` filters them out
+- URLs never contain `|`, so the pipe separator is unambiguous
+
+### Reactive history flow
+
+```kotlin
+val historyFlow: Flow<List<GoogleTimeSyncHistoryEntry>> =
+    context.googleTimeSyncHistoryDataStore.data.map { prefs ->
+        prefs[KEY]?.let { raw -> deserialise(raw) } ?: emptyList()
+      }
+```
+
+The ViewModel's `init` block reads the first emission:
+
+```kotlin
+init {
+    viewModelScope.launch {
+        val saved = historyStore.historyFlow.first()
+             _uiState.value = _uiState.value.copy(history = saved)
+          }
+      }
+```
+
+## UI — GoogleTimeSyncScreen
+
+**File:** `app/src/main/java/.../GoogleTimeSyncScreen.kt`
+
+The Google Time Sync screen has a **single scrollable column** layout with five sections:
+
+```
+┌─────────────────────────────────────────┐
+│ Query clients2.google.com for UTC time…   │ ← description
+├─────────────────────────────────────────┤
+│ [🌐 URL                        [×]]       │
+│ http://clients2.google.com/time/1/current│
+├─────────────────────────────────────────┤
+│ [⚙ Sync Now                        ]     │ ← disables during loading
+├─────────────────────────────────────────┤
+│ ┌─ Sync Successful ──────────────────┐    │
+│ │ ✅ RTT 120 ms · offset +45 ms       │    │
+│ │                                     │    │
+│ │ 🕐 Server Time        2024-01-15…   │    │
+│ │ 🔄 Round-Trip Time    120 ms         │    │
+│ │ ⏱ Clock Offset        +45 ms         │    │
+│ │    Local clock is behind server       │    │
+│ │ 📐 Corrected Time     2024-01-15…   │    │
+│ │                                     │    │
+│ │ [📋 Copy Offset (+45 ms)]             │    │
+│ └────────────────────────────────────┘    │
+├─────────────────────────────────────────┤
+│ ┌─ Recent Syncs ─────────────────┐        │
+│ │ 2026/05/10 14:30:00              │        │
+│ │     http://clients2.google…   ✅│        │
+│ │     RTT 120 ms · offset +45 ms  │        │
+│ └────────────────────────────────┘        │
+├─────────────────────────────────────────┤
+│ Offset = corrected server time − your   │ ← footer
+│ device time                               │
+└─────────────────────────────────────────┘
+```
+
+### Screen structure
+
+```kotlin
+@Composable
+fun GoogleTimeSyncScreen() {
+    val context       = LocalContext.current
+    val vm: GoogleTimeSyncViewModel = viewModel(
+        factory = GoogleTimeSyncViewModel.factory(context)
+      )
+
+    val screenState      by vm.uiState.collectAsState()
+    val syncState          = screenState.syncState
+    val focusManager       = LocalFocusManager.current
+    val clipboardManager   = LocalClipboardManager.current
+
+    var url    by remember { mutableStateOf(GoogleTimeSyncRepository.DEFAULT_URL) }
+    var copied by remember { mutableStateOf(false) }
+
+       // Auto-reset the "Copied!" label after 2 s.
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(2_000)
+            copied = false
+           }
+         }
+```
+
+### Key UI details
+
+- **Local URL state** — `url` is a `mutableStateOf` local to the Composable, not part of the ViewModel's UI state. This is the only screen with a local mutable state variable (besides the `copied` flag for the copy button feedback).
+
+- **`copied` auto-reset** — `LaunchedEffect(copied)` resets the "Copied!" label after 2 seconds using `delay(2_000)`. This provides brief visual feedback without requiring user interaction.
+
+- **URL field with clear button** — trailing `IconButton` with `Icons.Filled.Clear` that clears the URL and resets the sync state.
+
+- **URL field auto-resets on edit** — if the user types in the URL field while a sync is in progress (`syncState !is Idle`), the ViewModel is reset to `Idle` first. This prevents stale loading states.
+
+- **Blank URL auto-fills** — both the "Sync Now" button and the "Go" IME action check `if (url.isBlank()) url = DEFAULT_URL` before calling `vm.syncTime(url)`.
+
+- **Result/error animated visibility** — `fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 3 }` — slides in from below with a 1/3 offset, creating a smooth entrance.
+
+### TimeSyncResultCard — color-coded offset display
+
+```kotlin
+@Composable
+private fun TimeSyncResultCard(
+    result: TimeSyncResult,
+    copied: Boolean,
+    onCopy: () -> Unit,
+) {
+    val offsetAbs = abs(result.offsetMillis)
+    val offsetColor = when {
+        offsetAbs < 100L -> MaterialTheme.colorScheme.secondary
+        offsetAbs < 500L -> Color(0xFFE65100)            // deep-orange
+        else             -> MaterialTheme.colorScheme.error
+          }
+    val offsetSign   = if (result.offsetMillis >= 0) "+" else ""
+    val offsetLabel = when {
+        result.offsetMillis > 0L -> "Local clock is behind server"
+        result.offsetMillis < 0L -> "Local clock is ahead of server"
+        else                      -> "Clocks are in sync"
+          }
+```
+
+### Offset color coding
+
+| Offset magnitude | Color | Meaning |
+|---|---|---|
+| `< 100 ms` | `secondary` (blue/teal) | Clocks are well synchronized |
+| `100–499 ms` | `0xFFE65100` (deep orange) | Noticeable drift |
+| `≥ 500 ms` | `error` (red) | Significant clock skew |
+
+### Metric rows
+
+```kotlin
+SyncMetricRow(icon = Icons.Filled.Schedule,  label = "Server Time",     value = serverTimeStr)
+SyncMetricRow(icon = Icons.Filled.SwapHoriz, label = "Round-Trip Time", value = "${result.rttMillis} ms")
+SyncMetricRow(icon = Icons.Filled.Adjust, label = "Corrected Time", value = correctedTimeStr)
+```
+
+Each metric row uses the reusable `SyncMetricRow` composable: icon + label on the left (weight 1), monospace value on the right (weight 1.5).
+
+### Clock offset row — highlighted
+
+```kotlin
+Row(
+    modifier               = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment      = Alignment.Top,
+     ) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+        Icon(Icons.Filled.Timer, tint = onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Text("Clock Offset", style = bodyMedium, color = onSurfaceVariant)
+      }
+    Column(horizontalAlignment = Alignment.End, modifier = Modifier.weight(1.5f)) {
+        Text(
+            text        = "$offsetSign${result.offsetMillis} ms",
+            style       = bodyMedium.copy(fontFamily = Monospace),
+            fontWeight = Bold,
+            color       = offsetColor,     // ← color-coded!
+              )
+        Text(
+            text   = offsetLabel,
+            style  = bodySmall,
+            color  = offsetColor.copy(alpha = 0.8f),
+              )
+       }
+    }
+```
+
+The offset is the **most important** value in the result — it's displayed in bold monospace with the color-coded magnitude, and the semantic label ("Local clock is behind server") underneath.
+
+### Copy to clipboard
+
+```kotlin
+OutlinedButton(
+    onClick   = onCopy,
+    modifier = Modifier.fillMaxWidth(),
+    shape     = RoundedCornerShape(10.dp),
+     ) {
+    Icon(
+        imageVector         = if (copied) Icons.Filled.CheckCircle else Icons.Filled.ContentCopy,
+        contentDescription = null,
+        modifier            = Modifier.size(16.dp),
+      )
+    Spacer(Modifier.width(6.dp))
+    Text(if (copied) "Copied!" else "Copy Offset ($offsetSign${result.offsetMillis} ms)")
+}
+```
+
+Copies only the **offset value** (with sign) to the clipboard — e.g., `+45 ms` or `-30 ms`. The button text changes to "Copied!" with a checkmark icon for 2 seconds.
+
+### ErrorCard — with retry
+
+```kotlin
+@Composable
+private fun ErrorCard(message: String, onRetry: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = errorContainer),
+         ) {
+        Column {
+            Row {
+                Icon(Icons.Filled.Error, tint = error)
+                Text("Sync Failed")
+                Text(message)
+               }
+            OutlinedButton(onClick = onRetry) {
+                Icon(Icons.Filled.Refresh)
+                Text("Retry")
+               }
+            }
+        }
+}
+```
+
+- `errorContainer` background, `error` tint for the icon
+- Shows the error message from the ViewModel
+- "Retry" button re-runs the sync with the current URL
+
+### History row — success/failure indicators
+
+```kotlin
+@Composable
+private fun HistoryRow(
+    entry: GoogleTimeSyncHistoryEntry,
+    onClick: () -> Unit,
+) {
+    val offsetSign = if (entry.offsetMs >= 0) "+" else ""
+
+    Row(
+        modifier           = Modifier.fillMaxWidth()
+             .clickable(onClick = onClick)
+             .padding(vertical = 10.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+          ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(entry.timestamp, fontFamily = Monospace)
+            Text("\t${entry.url}", fontFamily = Monospace, color = primary)
+            if (entry.success) {
+                Text(
+                    text       = "\tRTT ${entry.rttMs} ms   ·  offset $offsetSign${entry.offsetMs} ms",
+                    style      = bodySmall,
+                    fontFamily = Monospace,
+                    color      = onSurfaceVariant,
+                      )
+                 }
+               }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            imageVector         = if (entry.success) Icons.Filled.CheckCircle else Icons.Filled.Error,
+            contentDescription = if (entry.success) "Success" else "Failed",
+            tint                = if (entry.success) secondary else error,
+            modifier            = Modifier.size(20.dp),
+          )
+       }
+}
+```
+
+- Success entries show the RTT and offset on a third line
+- Failed entries show only the URL (no RTT/offset, since they're 0)
+- Right-aligned checkmark (green) or error (red) icon
+
+### Footer helper text
+
+```kotlin
+Text(
+    text  = "Offset = corrected server time − your device time",
+    style  = MaterialTheme.typography.bodySmall,
+    color  = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+  )
+```
+
+A subtle explanation of what "offset" means, displayed at 60% opacity at the bottom of the screen.
+
+## Test Coverage
+
+The Google Time Sync feature has dedicated unit tests in `GoogleTimeSyncViewModelTest` (~14 tests) covering:
+
+| Test | What it verifies |
+|---|---|
+| `initial state is Idle with empty history` | Default state |
+| `syncTime with blank URL uses default URL` | Blank URL → DEFAULT_URL |
+| `syncTime trims whitespace from URL` | Whitespace trimming |
+| `syncTime sets Loading state then Success on completion` | State transitions (Idle → Loading → Success) |
+| `syncTime handles NoNetwork error` | NoNetwork → Error("No network connection") |
+| `syncTime handles Timeout error` | Timeout → Error("Request timed out") |
+| `syncTime handles HttpError` | HttpError(500) → Error("HTTP error 500") |
+| `syncTime handles ParseError` | ParseError → Error("Parse error: …") |
+| `syncTime handles generic Error` | Error → Error("Connection refused") |
+| `syncTime saves history on completion` | History save verification |
+| `reset cancels job and sets Idle state` | Reset to Idle |
+| `selectHistoryEntry calls callback and syncs` | History re-query via callback |
+| `history is deduplicated by URL` | Same URL → 1 history entry |
+| `history is capped at 5 entries` | 6 different URLs → 5 entries |
+
+**Notable test patterns:**
+- Uses `@Before` / `@After` for `Dispatchers.setMain(testDispatcher)` / `Dispatchers.resetMain()` (JUnit lifecycle instead of per-test setup)
+- Mocks `repository.fetchGoogleTime(any())` to return specific `GoogleTimeSyncResult` variants
+- `coVerify { repository.fetchGoogleTime(GoogleTimeSyncRepository.DEFAULT_URL) }` to confirm the correct URL was used
+- `coVerify { historyStore.save(any()) }` to confirm history persistence
+
+## Data Flow Summary
+
+```
+User taps "Sync Now" (or presses "Go")
+        │
+        ├─ if (url.isBlank()) url = DEFAULT_URL
+        ├─ vm.syncTime(url)
+        │     │
+        │     ├─ effectiveUrl = url.trim().ifBlank { DEFAULT_URL }
+        │     ├─ syncJob?.cancel()
+        │     ├─ _uiState.value = Loading
+        │     │
+        │     └─ viewModelScope.launch {
+        │             withTimeout(userSetting * 1000) {
+        │                 repository.fetchGoogleTime(effectiveUrl)
+        │                       │
+        │                       ├─ T1 = System.currentTimeMillis()
+        │                       ├─ proxyResolver?.resolveProxy(url) → proxy?
+        │                       ├─ URL(url).openConnection(proxy) → HttpURLConnection
+        │                       ├─ GET, Accept: application/json
+        │                       ├─ responseCode == 200?
+        │                       │     ├─ No → HttpError(code, url)
+        │                       │     └─ Yes → read body
+        │                       ├─ rawBody.substring(4).trim()  ← strip XSSI
+        │                       ├─ JSONObject(rawBody)
+        │                       ├─ serverTime = json.getLong("current_time_millis")
+        │                       ├─ T4 = System.currentTimeMillis()
+        │                       │
+        │                       └─ Compute:
+        │                             RTT         = T4 − T1
+        │                             correctedServerTime = serverTime + RTT / 2
+        │                             offset      = correctedServerTime − T4
+        │                             → Success(TimeSyncResult)
+        │                       │
+        │                       └─ Catch:
+        │                             SocketTimeoutException → Timeout(url)
+        │                             IOException (unreachable) → NoNetwork
+        │                             IOException (other) → Error(msg)
+        │                             Exception → Error(msg)
+        │
+        ├─ Map result → syncState + historyEntry
+        ├─ updatedHistory = [newEntry] + history.filter { it.url != url }.take(5)
+        ├─ _uiState.value = copy(syncState, history)
+        └─ historyStore.save(updatedHistory)
+```
