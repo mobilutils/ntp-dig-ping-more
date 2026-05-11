@@ -12,5 +12,5 @@ export default {
   'device-info': 'Device Info',
   'bulk-actions': 'Bulk Actions',
   'settings': 'Settings',
-  'more': '...More',
+  'more-menu': '...More',
 }

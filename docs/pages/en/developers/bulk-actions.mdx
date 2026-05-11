@@ -1,0 +1,1475 @@
+---
+title: Bulk Actions — Deep Dive
+description: How the Bulk Actions feature works, JSON config parsing, sequential command dispatch across 10 tool types, proxy routing, and file I/O
+---
+
+# Bulk Actions — Implementation Deep Dive
+How the Bulk Actions feature works: JSON config parsing, sequential command dispatch across 10 tool types, proxy routing, and file I/O
+
+## Overview
+
+Bulk Actions is the app's **batch execution engine**. It loads a JSON configuration file that describes a sequence of commands, each mapped to one of the app's 9 built-in tools (ping, dig, ntp, port-scan, checkcert, device-info, tracert, google-timesync, lan-scan) plus a generic `sleep` command and a catch-all `raw` executor. Commands run **sequentially**, each with its own timeout, and results are streamed live to the UI.
+
+You can go to the dedicated screen ...More/Bulk Actions and load a JSON configuration of you choice.
+
+The feature is also designed for **headless automation** via ADB intents — a config file is pushed to the app's private directory, then the app is launched with `--ez auto_run true` and a `file://` URI pointing to the config. The app loads, executes, and writes results to a marker file that external scripts poll.
+
+The feature supports:
+
+- **10 command types** — `ping`, `dig`, `ntp`, `port-scan`, `checkcert`, `device-info`, `tracert`, `google-timesync`, `lan-scan`, `sleep` (plus raw shell execution as a catch-all)
+- **Per-command timeouts** — `-t N` in the command string overrides the config-level timeout
+- **Config-level timeout** — `timeout` in the JSON root (seconds)
+- **Proxy routing** — optional PAC URL or file path for `checkcert` and `google-timesync` commands
+- **Output file auto-save** — `output-file` in the JSON triggers automatic result writing after execution
+- **CSV export** — toggleable output format
+- **Marker file** — `.running-tasks` file in the app's private directory signals active execution to external scripts
+
+The feature is implemented across **four files** (the most complex feature in the app):
+
+| File | Role |
+|---|---|
+| `BulkActionsRepository.kt` | Command dispatch — `BulkConfigParser` (JSON parsing), `BulkActionsRepository` (10 command executors, proxy setup, port range parsing) |
+| `BulkActionsViewModel.kt` | State management — `BulkUiState`, file I/O (SAF + direct), marker file management, CSV generation |
+| `BulkActionsHistoryStore.kt` | Persistence — DataStore-backed config URI history (last 5 entries) |
+| `BulkActionsScreen.kt` | UI — Jetpack Compose screen with config loading, progress bar, result list, file writing |
+
+## BulkConfigParser — JSON Parsing
+
+**File:** `app/src/main/java/.../BulkActionsRepository.kt` (object `BulkConfigParser`)
+
+### Expected JSON structure
+
+```json
+{
+  "output-file": "~/BulkActions/output.txt",
+  "timeout": 300,
+  "outputAsCsv": false,
+  "url-proxypac": "http://proxy.example.com/proxy.pac",
+  "log-proxy": true,
+  "run": {
+    "ping-google": "ping -c 4 google.com",
+    "dig-ns": "dig @1.1.1.1 google.com",
+    "ntp-sync": "ntp pool.ntp.org",
+    "port-scan": "port-scan -p 22,80,443 google.com",
+    "checkcert": "checkcert -p 443 google.com",
+    "lan-scan": "lan-scan",
+    "sleep-wait": "sleep 5",
+    "device-info": "device-info"
+  }
+}
+```
+
+### The `parse()` method
+
+```kotlin
+object BulkConfigParser {
+
+    /** Application context, set once by BulkActionsViewModel factory. */
+    @Volatile
+    internal var appContext: Context? = null
+
+    /** When true, skip file existence checks during parse (for unit tests). */
+    @Volatile
+    internal var skipFileValidation: Boolean = false
+
+    @Throws(IllegalArgumentException::class)
+    fun parse(json: String): BulkConfig {
+        val root = JSONObject(json)
+
+        val outputFile = runCatching {
+            val path = root.optString("output-file", "")
+            if (path.isNullOrBlank()) null
+            else expandTilde(path)
+        }.getOrNull()
+
+        val timeoutMs = runCatching {
+            val seconds = root.optLong("timeout", 0L)
+            if (seconds == null || seconds <= 0) null
+            else seconds * 1000L
+        }.getOrNull()
+
+        val outputAsCsv = runCatching {
+            root.optBoolean("outputAsCsv", false)
+        }.getOrDefault(false)
+
+        val urlProxyPac = runCatching {
+            val url = root.optString("url-proxypac", "")
+            if (url.isNullOrBlank()) null else url.trim()
+        }.getOrNull()
+
+        val fileProxyPac = runCatching {
+            val path = root.optString("file-proxypac", "")
+            if (path.isNullOrBlank()) null else expandTilde(path.trim())
+        }.getOrNull()
+
+        // Mutual exclusion validation — throw if both are present
+        if (!urlProxyPac.isNullOrBlank() && !fileProxyPac.isNullOrBlank()) {
+            throw IllegalArgumentException(
+                "Cannot specify both 'url-proxypac' and 'file-proxypac'. They are mutually exclusive."
+            )
+        }
+
+        // Validate file-proxypac exists and is readable
+        if (!fileProxyPac.isNullOrBlank() && !skipFileValidation) {
+            val file = java.io.File(fileProxyPac)
+            if (!file.exists()) {
+                throw IllegalArgumentException("file-proxypac file not found: $fileProxyPac")
+            }
+            if (!file.canRead()) {
+                throw IllegalArgumentException("file-proxypac is not readable: $fileProxyPac")
+            }
+        }
+
+        val logProxy: Boolean? = if (root.has("log-proxy")) {
+            runCatching { root.optBoolean("log-proxy", false) }.getOrNull()
+        } else {
+            null
+        }
+
+        val runObj = root.optJSONObject("run")
+            ?: throw IllegalArgumentException("Missing required 'run' object in configuration")
+
+        val commands = mutableMapOf<String, String>()
+        val keys = runObj.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val value = runObj.getString(key).trim()
+            if (value.isNotBlank()) {
+                commands[key] = value
+            }
+        }
+
+        return BulkConfig(outputFile, commands, timeoutMs, outputAsCsv, urlProxyPac, fileProxyPac, logProxy)
+    }
+}
+```
+
+### Key implementation details
+
+1. **`runCatching` per field** — each optional field is parsed in its own `runCatching` block, so a malformed `output-file` doesn't prevent parsing of `run`. Only the `run` object is strictly required — all other fields are optional.
+
+2. **Tilde expansion** — `expandTilde()` replaces `~/` with the app's private files directory (`context.filesDir.absolutePath`). This is critical for SDK 33+ where the app can't write to `/sdcard/` directly. The `appContext` is set once by the ViewModel factory.
+
+3. **PAC mutual exclusion** — `url-proxypac` and `file-proxypac` are mutually exclusive. If both are present, `parse()` throws `IllegalArgumentException`.
+
+4. **File PAC validation** — if `file-proxypac` is specified, the file is checked for existence and readability **at parse time**. This is skippable in tests via `skipFileValidation = true`.
+
+5. **`log-proxy` is nullable** — if not present in the JSON, `logProxy` is `null` (not `false`). This means the global logging toggle from Settings applies; only when `log-proxy: true` does it override the global setting.
+
+6. **Command map iteration** — `runObj.keys()` returns keys in **undefined order** (JSONObject uses `JSONArray` internally, which preserves insertion order, but the spec doesn't guarantee this). Commands are executed in the order they appear in the JSON file, which `JSONObject` preserves on Android.
+
+7. **Blank command filtering** — `if (value.isNotBlank())` skips empty or whitespace-only commands.
+
+### Tilde expansion
+
+```kotlin
+private fun expandTilde(path: String): String {
+    if (!path.startsWith("~/")) return path
+    val privateDir = appContext?.applicationContext?.filesDir?.absolutePath
+        ?: Environment.getExternalStorageDirectory().absolutePath
+    return "$privateDir${path.substring(1)}"
+}
+```
+
+- `~/Downloads/output.txt` → `/data/user/0/io.github.mobilutils.ntp_dig_ping_more/files/Downloads/output.txt`
+- If `appContext` is null (shouldn't happen in practice), falls back to external storage directory
+
+### Output file validation
+
+```kotlin
+fun validateOutputFile(rawPath: String): OutputFileValidationResult {
+    val expanded = expandTilde(rawPath)
+
+    val parent = File(expanded).parentFile
+    val canCreateDirs = parent?.mkdirs() == true || parent?.exists() == true
+    if (!canCreateDirs) {
+        val suggested = suggestFallbackPath(rawPath)
+        return OutputFileValidationResult.Invalid(rawPath, suggested)
+    }
+
+    val testFile = File(expanded)
+    val canWrite = try {
+        testFile.createNewFile() && testFile.canWrite()
+    } catch (_: Exception) {
+        false
+    }
+
+    return if (canWrite) {
+        runCatching { testFile.delete() }
+        OutputFileValidationResult.Valid(expanded)
+    } else {
+        val suggested = suggestFallbackPath(rawPath)
+        OutputFileValidationResult.Invalid(rawPath, suggested)
+    }
+}
+```
+
+Creates parent directories and a test file to verify writability. If the path is not writable, `suggestFallbackPath()` suggests a path within the app's private `BulkActions/` directory.
+
+### Per-command timeout extraction
+
+```kotlin
+fun extractCommandTimeout(cmd: String): Long? {
+    val parts = cmd.trim().split(Regex("\\s+"))
+    val tIdx = parts.indexOf("-t")
+    if (tIdx >= 0 && tIdx < parts.size - 1) {
+        return parts[tIdx + 1].toLongOrNull()?.takeIf { it > 0 }?.let { it * 1000L }
+    }
+    return null
+}
+```
+
+Parses `-t N` from the command string and returns the timeout in milliseconds. For example, `"ping -c 4 -t 10 google.com"` → `10_000L`.
+
+## BulkActionsRepository — Command Dispatch
+
+**File:** `app/src/main/java/.../BulkActionsRepository.kt` (class `BulkActionsRepository`)
+
+### Constructor
+
+```kotlin
+class BulkActionsRepository(
+    private val context: Context,
+    private val digRepo: DigRepository = DigRepository(),
+    private val ntpRepo: NtpRepository = NtpRepository(),
+    private val certRepo: HttpsCertRepository = HttpsCertRepository(),
+) {
+```
+
+The repository holds **singleton instances** of `DigRepository`, `NtpRepository`, and `HttpsCertRepository` for delegating individual commands. These are constructor parameters with default values, allowing tests to inject mocks.
+
+### Proxy resolver lifecycle
+
+```kotlin
+@Volatile
+private var bulkProxyResolver: ProxyResolver? = null
+
+fun setupProxyResolver(pacUrl: String?, forceLogging: Boolean = false) {
+    bulkProxyResolver = pacUrl?.let { buildProxyResolver(it, forceLogging) }
+}
+
+fun clearProxyResolver() {
+    bulkProxyResolver = null
+}
+```
+
+The `bulkProxyResolver` is set **once** at the start of bulk execution (from the config's `url-proxypac` or `file-proxypac`) and cleared **once** at the end. All proxy-aware commands (`checkcert`, `google-timesync`) use this resolver for the lifetime of the batch.
+
+### Command dispatch
+
+```kotlin
+suspend fun executeSingleCommand(name: String, cmd: String, timeoutMs: Long? = null): BulkCommandResult {
+    val trimmed = cmd.trim()
+    val parts = trimmed.split(Regex("\\s+"))
+    val prefix = parts.firstOrNull()?.lowercase() ?: ""
+
+    return when {
+        prefix == "ping"              -> executePing(name, trimmed, parts, timeoutMs)
+        prefix == "dig"               -> executeDig(name, trimmed, timeoutMs)
+        prefix == "ntp"               -> executeNtp(name, trimmed, timeoutMs)
+        prefix == "port-scan"         -> executePortScan(name, trimmed, timeoutMs)
+        prefix == "checkcert"         -> executeCheckcert(name, trimmed, timeoutMs)
+        prefix == "device-info"       -> executeDeviceInfo(name, trimmed)
+        prefix == "tracert"           -> executeTracert(name, trimmed, timeoutMs)
+        prefix == "google-timesync"   -> executeGoogleTimeSync(name, trimmed, timeoutMs)
+        prefix == "lan-scan"          -> executeLanScan(name, trimmed, timeoutMs)
+        prefix == "sleep"             -> executeSleep(name, trimmed, timeoutMs)
+        else                          -> executeRaw(name, trimmed, timeoutMs)
+    }
+}
+```
+
+The `when` block matches the **first word** of the command (lowercased) to one of 10 executors. The 11th branch (`else`) is the **raw executor** — it runs the command as a shell command via `Runtime.exec()`.
+
+### Sequential execution
+
+```kotlin
+suspend fun executeCommands(
+    config: BulkConfig,
+    cancellationToken: AtomicBoolean = AtomicBoolean(false),
+    onProgress: ((BulkProgress) -> Unit)? = null,
+): List<BulkCommandResult> {
+    val pacSource = config.urlProxyPac ?: config.fileProxyPac
+    bulkProxyResolver = pacSource?.let {
+        buildProxyResolver(it, forceLogging = config.logProxy == true)
+    }
+
+    val results = mutableListOf<BulkCommandResult>()
+    val commands = config.commands.toList()
+    val total = commands.size
+    val defaultTimeoutMs = config.timeoutMs ?: 30_000L
+
+    try {
+        commands.forEachIndexed { index, (name, cmd) ->
+            if (cancellationToken.get()) {
+                results.add(BulkCommandTimeout(name, cmd))
+                return@forEachIndexed
+            }
+
+            onProgress?.invoke(BulkProgress(index, total, name, cmd))
+
+            val commandTimeoutMs = extractCommandTimeout(cmd) ?: defaultTimeoutMs
+
+            val result = withTimeoutOrNull(commandTimeoutMs) {
+                executeSingleCommand(name, cmd, commandTimeoutMs)
+            }
+
+            val finalResult = result ?: BulkCommandTimeout(name, cmd)
+            results.add(finalResult)
+        }
+    } finally {
+        bulkProxyResolver = null
+    }
+
+    return results
+}
+```
+
+Key behaviors:
+1. **Proxy setup** — `bulkProxyResolver` is set before the loop, cleared in `finally`
+2. **Cancellation check** — `cancellationToken.get()` is checked at the start of each iteration
+3. **Per-command timeout** — `extractCommandTimeout(cmd)` extracts `-t N` from the command string; falls back to config-level `defaultTimeoutMs`
+4. **`withTimeoutOrNull`** — wraps each command in a coroutine timeout. Returns `null` on timeout (converted to `BulkCommandTimeout`)
+5. **`finally { bulkProxyResolver = null }`** — ensures proxy resolver is always cleared, even on cancellation
+
+### Command executors
+
+#### `ping` — subprocess ping
+
+```kotlin
+private suspend fun executePing(name: String, cmd: String, parts: List<String>, timeoutMs: Long?): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        val countIdx = parts.indexOf("-c")
+        val count = if (countIdx >= 0 && countIdx < parts.size - 1) {
+            parts[countIdx + 1].toIntOrNull() ?: 4
+        } else { 4 }
+
+        val timeoutIdx = parts.indexOf("-t")
+        val timeout = if (timeoutIdx >= 0 && timeoutIdx < parts.size - 1) {
+            parts[timeoutIdx + 1].toIntOrNull() ?: 0
+        } else { 0 }
+
+        // Host = first non-flag argument
+        val host = run {
+            var i = 1
+            val flags = setOf("-c", "-t", "-W", "-i", "-I", "-D", "-S", "-p", "-f", "-q", "-C", "-N", "-R", "-r", "-l", "-L", "-M", "-n", "-O", "-s", "-T", "-v")
+            while (i < parts.size) {
+                if (parts[i] in flags && i + 1 < parts.size) i += 2
+                else if (parts[i].startsWith("-")) i++
+                else break
+            }
+            parts.getOrNull(i) ?: parts.last()
+        }
+
+        val pingArgs = mutableListOf("ping", "-c", count.toString())
+        if (timeout > 0) { pingArgs.add("-W"); pingArgs.add(timeout.toString()) }
+        pingArgs.add(host)
+
+        val process = Runtime.getRuntime().exec(pingArgs.toTypedArray())
+        val output = process.inputStream.bufferedReader().readLines()
+        val exitCode = process.waitFor()
+        val duration = System.currentTimeMillis() - t0
+
+        when (exitCode) {
+            0 -> BulkCommandSuccess(name, cmd, lines, duration)
+            else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+        }
+    }
+}
+```
+
+Parses `-c` (count), `-t` (per-packet timeout), and the host from the command string. Builds a clean `ping` argument list (strips the Bulk Actions-specific `-t` flag). Exit code 0 = `BulkCommandSuccess`, non-zero = `BulkCommandError`.
+
+#### `dig` — DNS query via DigRepository
+
+```kotlin
+private suspend fun executeDig(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val parts = cmd.split(Regex("\\s+"))
+        val serverIdx = parts.indexOfFirst { it.startsWith("@") }
+        val (server, fqdn) = if (serverIdx >= 0 && serverIdx < parts.size && (serverIdx > 1 || serverIdx + 1 < parts.size)) {
+            val serverHost = parts[serverIdx].substring(1)
+            val fqdnIdx = if (serverIdx == 1) {
+                // dig @server [-t N] fqdn
+                var i = serverIdx + 1
+                while (i < parts.size && parts[i] == "-t" && i + 1 < parts.size) i += 2
+                i
+            } else {
+                // dig fqdn @server -> FQDN is right before @server
+                serverIdx - 1
+            }
+            serverHost to parts[fqdnIdx]
+        } else {
+            "8.8.8.8" to parts.last()
+        }
+
+        val result = digRepo.resolve(server, fqdn)
+        // ... build output lines based on result type ...
+        when (result) {
+            is DigResult.Success -> BulkCommandSuccess(name, cmd, lines, duration)
+            else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+        }
+    }
+}
+```
+
+Parses `dig @server fqdn` or `dig fqdn @server` formats, skipping `-t N` timeout pairs. Falls back to default server `8.8.8.8` and last word as FQDN if no `@` is found.
+
+#### `ntp` — NTP query via NtpRepository
+
+```kotlin
+private suspend fun executeNtp(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val parts = cmd.split(Regex("\\s+"))
+        val pool = parts.getOrNull(1) ?: "pool.ntp.org"
+        val result = ntpRepo.query(pool)
+        // ... build output lines ...
+        when (result) {
+            is NtpResult.Success -> BulkCommandSuccess(name, cmd, lines, duration)
+            else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+        }
+    }
+}
+```
+
+Simple: second word is the NTP pool/server, defaults to `pool.ntp.org`.
+
+#### `port-scan` — concurrent TCP/UDP port scan
+
+```kotlin
+private suspend fun executePortScan(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val parts = cmd.split(Regex("\\s+"))
+        val portIdx = parts.indexOfFirst { it == "-p" }
+        val (portStr, hasFlag) = if (portIdx >= 0) {
+            parts.getOrNull(portIdx + 1) to true
+        } else {
+            // Positional: port-scan <ports> [-t timeout] <host>
+            parts.getOrNull(1) to false
+        } ?: ("22" to false)
+
+        val host = run {
+            val hostStart = if (hasFlag) portIdx + 2 else 2
+            var i = hostStart
+            val skipFlags = setOf("-t")
+            while (i < parts.size) {
+                if (parts[i] in skipFlags && i + 1 < parts.size) i += 2
+                else if (parts[i].startsWith("-")) i++
+                else break
+            }
+            parts.getOrNull(i)
+        } ?: parts.last()
+
+        val tIdx = parts.indexOf("-t")
+        val connectTimeout = if (tIdx >= 0 && tIdx < parts.size - 1) {
+            parts[tIdx + 1].toIntOrNull()?.times(1000) ?: 2000
+        } else { 2000 }
+
+        val ports = parsePortRange(portStr ?: "22")
+
+        // Validate host resolves before scanning
+        try {
+            java.net.InetAddress.getByName(host)
+        } catch (e: java.net.UnknownHostException) {
+            return@withContext BulkCommandError(name, cmd, e.message ?: "Unknown host")
+        }
+
+        val openPorts = mutableListOf<Int>()
+        val mutex = Mutex()
+        val concurrencyLimit = 50
+        val chunks = ports.chunked(concurrencyLimit)
+
+        for (chunk in chunks) {
+            val deferreds = chunk.map { port ->
+                async {
+                    val isOpen = try {
+                        val socket = Socket()
+                        socket.connect(InetSocketAddress(host, port), connectTimeout)
+                        socket.close()
+                        true
+                    } catch (_: Exception) { false }
+                    mutex.withLock { if (isOpen) openPorts.add(port) }
+                }
+            }
+            deferreds.awaitAll()
+        }
+        openPorts.sort()
+
+        if (openPorts.isEmpty()) BulkCommandClosed(name, cmd, lines, duration)
+        else BulkCommandSuccess(name, cmd, lines, duration)
+    }
+}
+```
+
+Supports both `port-scan -p 22,80,443 host` and `port-scan 22,80,443 host` (positional). Parses port ranges like `80-443`. Uses the same concurrent chunked scanning pattern as the LAN Scanner ViewModel (50 ports/chunk, `Mutex`-protected list). Returns `BulkCommandClosed` if no ports are open (instead of `BulkCommandError`).
+
+#### `checkcert` — HTTPS certificate inspection
+
+```kotlin
+private suspend fun executeCheckcert(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val parts = cmd.split(Regex("\\s+"))
+        val portIdx = parts.indexOfFirst { it == "-p" }
+        val port = parts.getOrNull(portIdx + 1)?.toIntOrNull() ?: 443
+        val tIdx = parts.indexOf("-t")
+        val host = if (tIdx > portIdx && tIdx < parts.size - 1) {
+            parts.getOrNull(tIdx + 2) ?: parts.last()
+        } else {
+            parts.getOrNull(portIdx + 2) ?: parts.last()
+        }
+
+        // Use proxy-aware repo if bulk config provides a PAC URL
+        val repo = bulkProxyResolver?.let { HttpsCertRepository(proxyResolver = it) } ?: certRepo
+        val result = repo.fetchCertificate(host, port)
+
+        val lines = mutableListOf<String>()
+        var warningResult: BulkCommandWarning? = null
+        when (result) {
+            is HttpsCertResult.Success -> {
+                lines.add("  Subject: CN=${result.info.subject.cn}")
+                lines.add("  Issuer: CN=${result.info.issuer.cn}")
+                // ...
+                BulkCommandSuccess(name, cmd, lines, duration)
+            }
+            is HttpsCertResult.CertExpired -> {
+                lines.add("  Subject: CN=${result.chain.firstOrNull()?.subject.cn}")
+                lines.add("  Expired: ${result.chain.firstOrNull()?.notAfter}")
+                warningResult = BulkCommandWarning(name, cmd, lines, duration)
+            }
+            is HttpsCertResult.UntrustedChain -> {
+                result.chain.forEachIndexed { index, ci ->
+                    val tag = when {
+                        index == 0 -> "[Leaf]"
+                        index == result.chain.size - 1 -> "[Root]"
+                        else -> "[Intermediate $index]"
+                    }
+                    lines.add("      $tag Subject: CN=${ci.subject.cn ?: "(none)"}")
+                    lines.add("      Issuer:  CN=${ci.issuer.cn ?: "(none)"}")
+                    // ...
+                    if (index < result.chain.size - 1) lines.add("          ---")
+                }
+                warningResult = BulkCommandWarning(name, cmd, lines, duration)
+            }
+            // ...
+        }
+
+        when {
+            warningResult != null -> warningResult
+            result is HttpsCertResult.Success -> BulkCommandSuccess(name, cmd, lines, duration)
+            else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+        }
+    }
+}
+```
+
+Key behaviors:
+1. **Proxy-aware repo** — `bulkProxyResolver?.let { HttpsCertRepository(proxyResolver = it) }` creates a proxy-aware repository if a PAC URL is configured
+2. **Warning results** — `CertExpired` and `UntrustedChain` return `BulkCommandWarning` (not `BulkCommandError`). The command itself succeeded — the warning is about the certificate's trust status.
+3. **Chain markers** — `UntrustedChain` output uses `[Leaf]`, `[Intermediate N]`, `[Root]` tags for each certificate in the chain, with `---` separators.
+4. **Port parsing** — `-p N` flag, defaults to 443.
+
+#### `device-info` — device identity
+
+```kotlin
+private suspend fun executeDeviceInfo(name: String, cmd: String): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val repo = SystemInfoRepository(context)
+        val di = repo.getDeviceInfo()
+        // ... outputs 20+ device properties ...
+        BulkCommandSuccess(name, cmd, lines, duration)
+    }
+}
+```
+
+No argument parsing — just calls `SystemInfoRepository.getDeviceInfo()` and formats all properties. Always returns `BulkCommandSuccess` (or `BulkCommandError` if an exception occurs).
+
+#### `tracert` — TTL-based traceroute
+
+```kotlin
+private suspend fun executeTracert(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val parts = cmd.split(Regex("\\s+"))
+        val host = parts.getOrNull(1)
+            ?: return@withContext BulkCommandError(name, cmd, "Usage: tracert <host>")
+
+        val tIdx = parts.indexOf("-t")
+        val maxHops = if (tIdx >= 0 && tIdx < parts.size - 1) {
+            parts[tIdx + 1].toIntOrNull()?.takeIf { it > 0 } ?: 30
+        } else {
+            timeoutMs?.toInt()?.takeIf { it > 0 } ?: 30
+        }
+
+        // TTL probing loop (same as Traceroute screen)
+        for (ttl in 1..maxHops) {
+            val proc = Runtime.getRuntime().exec(
+                arrayOf("ping", "-c", "1", "-t", ttl.toString(), "-W", "2", host)
+            )
+            // ... parse ICMP responses ...
+        }
+
+        BulkCommandSuccess(name, cmd, out, dur)
+    }
+}
+```
+
+Same TTL-probing algorithm as the Traceroute screen. `-t N` in the command string means **max hops** (not per-packet timeout), defaulting to 30. Falls back to config-level timeout if `-t` is not specified.
+
+#### `google-timesync` — HTTP time sync
+
+```kotlin
+private suspend fun executeGoogleTimeSync(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val repo = GoogleTimeSyncRepository(proxyResolver = bulkProxyResolver)
+        val result = repo.fetchGoogleTime()
+        // ... format output ...
+        when (result) {
+            is GoogleTimeSyncResult.Success -> BulkCommandSuccess(name, cmd, lines, dur)
+            else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+        }
+    }
+}
+```
+
+Always queries the default Google endpoint (`http://clients2.google.com/time/1/current`). Uses the bulk proxy resolver if configured.
+
+#### `lan-scan` — LAN device discovery
+
+```kotlin
+private suspend fun executeLanScan(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val repo = LanScannerRepository(context)
+        val subnet = repo.getLocalSubnetInfo()
+            ?: return@withContext BulkCommandError(name, cmd, "No active WiFi network found")
+
+        val devices = mutableListOf<String>()
+        val limit = minOf(subnet.numHosts, 256L).toInt()
+        for (i in 0 until limit) {
+            val ip = repo.longToIp(subnet.baseIp + i.toLong() + 1)
+            val rtt = repo.ping(ip)
+            if (rtt == null) continue
+            val mac = repo.getMacFromArpTable(ip)
+            val host = repo.resolveHostname(ip)
+            val isRouter = (i == 0)
+            // ... build device info string ...
+        }
+
+        BulkCommandSuccess(name, cmd, out, dur)
+    }
+}
+```
+
+Scans up to **256 hosts** on the active WiFi subnet (capped to prevent extremely long scans). Sequential ping (no concurrency), then ARP + reverse DNS for each alive host.
+
+#### `sleep` — coroutine delay
+
+```kotlin
+private suspend fun executeSleep(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val parts = cmd.trim().split(Regex("\\s+"))
+        if (parts.size < 2 || parts[1].toIntOrNull() == null) {
+            return@withContext BulkCommandError(name, cmd, "Invalid sleep argument. Expected: sleep N (integer)")
+        }
+
+        var n = parts[1].toInt()
+        val actualSeconds = if (n > 3600) 3600 else if (n < 1) {
+            return@withContext BulkCommandError(name, cmd, "Sleep duration must be between 1 and 3600 seconds")
+        } else n
+
+        var remaining = actualSeconds.toLong()
+        while (remaining > 0) {
+            ensureActive()
+            delay(minOf(remaining, 1L))
+            remaining--
+        }
+
+        BulkCommandSuccess(name, cmd, listOf("Slept for $actualSeconds seconds (${durationMs}ms)"), durationMs)
+    } catch (e: TimeoutCancellationException) {
+        BulkCommandTimeout(name, cmd)
+    } catch (e: CancellationException) {
+        BulkCommandClosed(name, cmd, emptyList(), System.currentTimeMillis() - t0)
+    } catch (e: Exception) {
+        BulkCommandError(name, cmd, e.message ?: "Unknown error")
+    }
+}
+```
+
+Key behaviors:
+1. **Validation** — must be `sleep N` where N is an integer between 1 and 3600
+2. **Clamping** — values > 3600 are clamped to 3600 (1 hour max)
+3. **1-second granularity** — delays in 1-second increments with `ensureActive()` check each iteration (allows cancellation mid-sleep)
+4. **Three exception types** — `TimeoutCancellationException` → `BulkCommandTimeout`, `CancellationException` → `BulkCommandClosed`, other `Exception` → `BulkCommandError`
+
+#### `raw` — generic shell execution
+
+```kotlin
+private suspend fun executeRaw(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
+    return withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        val parts = cmd.split(Regex("\\s+"))
+        val process = Runtime.getRuntime().exec(parts.toTypedArray())
+        val output = process.inputStream.bufferedReader().readLines()
+        val error = process.errorStream.bufferedReader().readLines()
+        val exitCode = process.waitFor()
+        val duration = System.currentTimeMillis() - t0
+
+        val lines = buildList {
+            add("[${timestampFmt.format(LocalDateTime.now())}] $cmd")
+            add("[${timestampFmt.format(LocalDateTime.now())}] Exit code: $exitCode (${duration}ms)")
+            addAll(output)
+            if (error.isNotEmpty()) {
+                add("--- stderr ---")
+                addAll(error)
+            }
+        }
+        BulkCommandSuccess(name, cmd, lines, duration)
+    }
+}
+```
+
+Splits the command on whitespace and passes each token as a separate argument to `Runtime.exec()`. Captures both stdout and stderr (separated by `--- stderr ---`). Always returns `BulkCommandSuccess` — even non-zero exit codes are treated as success (the exit code is in the output lines).
+
+### Port range parsing
+
+```kotlin
+private fun parsePortRange(range: String): List<Int> {
+    val ports = mutableListOf<Int>()
+    range.split(",").forEach { segment ->
+        if (segment.contains("-")) {
+            val (start, end) = segment.split("-").map { it.trim().toInt() }
+            ports.addAll(start..end)
+        } else {
+            segment.toIntOrNull()?.let { ports.add(it) }
+        }
+    }
+    return ports
+}
+```
+
+Parses `80,443,8080-8090` into `[80, 443, 8080, 8081, ..., 8090]`. Uses `toIntOrNull()` for safe parsing (skips invalid segments).
+
+## BulkActionsViewModel — State Management & File I/O
+
+**File:** `app/src/main/java/.../BulkActionsViewModel.kt`
+
+### UI State
+
+```kotlin
+data class BulkUiState(
+    val configLoaded: Boolean = false,
+    val configFileName: String? = null,
+    val configUri: String? = null,
+    val commandCount: Int = 0,
+    val configTimeoutMs: Long? = null,
+    val csvOutputEnabled: Boolean = false,
+    val isExecuting: Boolean = false,
+    val currentCommand: String? = null,
+    val progress: Float = 0f,
+    val results: List<BulkCommandResult> = emptyList(),
+    val isFileWriting: Boolean = false,
+    val outputFileWritten: Boolean? = null,
+    val autoSaved: Boolean = false,
+    val autoSavedPath: String? = null,
+    val validatedOutputFile: String? = null,
+    val validationMessage: ValidationMessage? = null,
+    val outputFilePath: String? = null,
+)
+```
+
+17 fields — the most complex UI state in the app. Covers config loading, execution state, progress tracking, results, file I/O, and validation messages.
+
+### Three code paths for loading/running
+
+| Method | Trigger | Behavior |
+|---|---|---|
+| `onFileSelected(uri, fileName)` | User taps "Load JSON Config" | Parses config, updates UI state, **does not execute** |
+| `onLoadAndRun(uri, fileName)` | ADB intent with `--ez auto_run true` + `-d file://...` | Parses config, **immediately executes**, returns `Job` for completion polling |
+| `onRunClicked()` | User taps "Run All Commands" | Re-reads config from URI (stored during `onFileSelected`), **executes** |
+
+#### `onFileSelected` — manual config loading
+
+```kotlin
+fun onFileSelected(uri: Uri, fileName: String) {
+    viewModelScope.launch {
+        var json: String? = null
+        var readError: String? = null
+        withContext(Dispatchers.IO) {
+            try {
+                json = context.contentResolver.openInputStream(uri)?.readBytes()?.decodeToString()
+            } catch (e: java.io.IOException) {
+                readError = e.message ?: "Permission denied or file not found"
+                json = ""
+            }
+        }
+        if (json.isNullOrBlank()) {
+            _uiState.value = _uiState.value.copy(
+                configLoaded = false,
+                validationMessage = ValidationMessage.Error(readError ?: "Failed to read config file: $fileName")
+            )
+            return@launch
+        }
+
+        try {
+            val config = BulkConfigParser.parse(json)
+            val csvFromStore = csvOutputEnabled.value
+            val (validatedOutputFile, validationMsg) = config.outputFile?.let { rawPath ->
+                val validation = BulkConfigParser.validateOutputFile(rawPath)
+                // ...
+            } ?: (null to null)
+
+            _uiState.value = _uiState.value.copy(
+                configLoaded = true,
+                configFileName = fileName,
+                configUri = uri.toString(),
+                commandCount = config.commands.size,
+                configTimeoutMs = config.timeoutMs,
+                csvOutputEnabled = config.outputAsCsv || csvFromStore,
+                validatedOutputFile = validatedOutputFile,
+                outputFilePath = config.outputFile,
+                validationMessage = validationMsg,
+                results = emptyList(),
+                progress = 0f,
+                outputFileWritten = null,
+            )
+        } catch (e: IllegalArgumentException) {
+            _uiState.value = _uiState.value.copy(
+                configLoaded = false,
+                validationMessage = ValidationMessage.Error("Failed to parse config: ${e.message}"),
+            )
+        }
+    }
+}
+```
+
+#### `onLoadAndRun` — ADB automation path
+
+```kotlin
+fun onLoadAndRun(uri: Uri, fileName: String): Job {
+    return viewModelScope.launch {
+        // 1. Read JSON (same as onFileSelected)
+        var json: String? = null
+        var readError: String? = null
+        withContext(Dispatchers.IO) {
+            try {
+                json = context.contentResolver.openInputStream(uri)?.readBytes()?.decodeToString()
+            } catch (e: java.io.IOException) {
+                readError = e.message ?: "Permission denied or file not found"
+                json = ""
+            }
+        }
+        if (json.isNullOrBlank()) { /* error state */ return@launch }
+
+        // 2. Parse config
+        val config = try { BulkConfigParser.parse(json) } catch (e: IllegalArgumentException) { /* error state */ return@launch }
+
+        // 3. Update UI state
+        _uiState.value = _uiState.value.copy(
+            configLoaded = true, configFileName = fileName, configUri = uri.toString(),
+            commandCount = config.commands.size, configTimeoutMs = config.timeoutMs,
+            csvOutputEnabled = config.outputAsCsv || csvFromStore,
+            validatedOutputFile = validatedOutputFile, outputFilePath = config.outputFile,
+            validationMessage = validationMsg, results = emptyList(), progress = 0f,
+        )
+
+        // 4. Execute immediately (same as onRunClicked body)
+        cancellationToken.set(false)
+        createRunningFile()
+        _uiState.value = _uiState.value.copy(isExecuting = true, results = emptyList(), progress = 0f, currentCommand = null)
+
+        val commands = config.commands.toList()
+        val defaultTimeoutMs = config.timeoutMs ?: 30_000L
+        val allResults = mutableListOf<BulkCommandResult>()
+
+        val pacSource = config.fileProxyPac ?: config.urlProxyPac
+        repository.setupProxyResolver(pacSource, forceLogging = config.logProxy == true)
+
+        try {
+            commands.forEachIndexed { index, (name, cmd) ->
+                if (cancellationToken.get()) { allResults.add(BulkCommandError(name, cmd, "Cancelled")); return@forEachIndexed }
+                _uiState.value = _uiState.value.copy(currentCommand = "$name: $cmd", progress = index.toFloat() / total)
+                val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
+                val result = try {
+                    withTimeout(commandTimeoutMs) { repository.executeSingleCommand(name, cmd, commandTimeoutMs) }
+                } catch (e: Exception) { null }
+                allResults.add(result ?: BulkCommandTimeout(name, cmd))
+            }
+
+            // Auto-save if output-file is defined
+            var autoSavedPath: String? = null
+            if (config.outputFile != null) {
+                val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
+                val saved = autoSaveResults(outputPath, allResults)
+                if (saved) autoSavedPath = outputPath
+            }
+
+            _uiState.value = _uiState.value.copy(
+                isExecuting = false, results = allResults, progress = 1f, currentCommand = null,
+                autoSaved = autoSavedPath != null, autoSavedPath = autoSavedPath,
+            )
+        } finally {
+            repository.clearProxyResolver()
+            deleteRunningFile()
+        }
+    }
+}
+```
+
+This method **duplicates** the execution logic from `onRunClicked` but starts execution immediately after parsing (no separate re-read of the config file). This avoids a race condition where `onRunClicked` might be called before `onFileSelected` finishes.
+
+#### `onRunClicked` — manual execution
+
+```kotlin
+fun onRunClicked() {
+    if (_uiState.value.isExecuting) return
+
+    cancellationToken.set(false)
+    createRunningFile()
+    _uiState.value = _uiState.value.copy(isExecuting = true, results = emptyList(), progress = 0f, currentCommand = null)
+
+    executionJob = viewModelScope.launch {
+        try {
+            val configUriStr = _uiState.value.configUri
+            if (configUriStr == null) { _uiState.value = _uiState.value.copy(isExecuting = false); return@launch }
+
+            // Re-read config from stored URI
+            val config = withContext(Dispatchers.IO) {
+                val json = context.contentResolver.openInputStream(android.net.Uri.parse(configUriStr))?.readBytes()?.decodeToString() ?: ""
+                BulkConfigParser.parse(json)
+            }
+
+            val commands = config.commands.toList()
+            val total = commands.size
+            val defaultTimeoutMs = config.timeoutMs ?: 30_000L
+            val allResults = mutableListOf<BulkCommandResult>()
+
+            val pacSource = config.fileProxyPac ?: config.urlProxyPac
+            repository.setupProxyResolver(pacSource, forceLogging = config.logProxy == true)
+
+            commands.forEachIndexed { index, (name, cmd) ->
+                if (cancellationToken.get()) { allResults.add(BulkCommandError(name, cmd, "Cancelled")); return@forEachIndexed }
+                _uiState.value = _uiState.value.copy(currentCommand = "$name: $cmd", progress = index.toFloat() / total)
+                val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
+                val result = try {
+                    withTimeout(commandTimeoutMs) { repository.executeSingleCommand(name, cmd, commandTimeoutMs) }
+                } catch (e: Exception) { null }
+                allResults.add(result ?: BulkCommandTimeout(name, cmd))
+            }
+
+            // Auto-save if output-file is defined
+            var autoSavedPath: String? = null
+            if (config.outputFile != null) {
+                val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
+                val saved = autoSaveResults(outputPath, allResults)
+                if (saved) autoSavedPath = outputPath
+            }
+
+            _uiState.value = _uiState.value.copy(
+                isExecuting = false, results = allResults, progress = 1f, currentCommand = null,
+                autoSaved = autoSavedPath != null, autoSavedPath = autoSavedPath,
+            )
+        } finally {
+            repository.clearProxyResolver()
+            deleteRunningFile()
+        }
+    }
+}
+```
+
+**Key difference from `onLoadAndRun`:** `onRunClicked` **re-reads the config file** from the stored URI. This means if the config file was modified after loading, the re-read gets the latest version. `onLoadAndRun` uses the already-parsed config object (no re-read).
+
+### Output content generation
+
+```kotlin
+private fun generateOutputContent(results: List<BulkCommandResult>): String {
+    val total = results.size
+    val successCount = results.count { it is BulkCommandSuccess }
+    val errorCount = results.count { it is BulkCommandError }
+    val timeoutCount = results.count { it is BulkCommandTimeout }
+    val closedCount = results.count { it is BulkCommandClosed }
+    val warningCount = results.count { it is BulkCommandWarning }
+    val totalDurationMs = results
+        .filterIsInstance<BulkCommandSuccess>().sumOf { it.durationMs }
+        .plus(results.filterIsInstance<BulkCommandClosed>().sumOf { it.durationMs })
+
+    val lines = mutableListOf<String>()
+
+    // Header
+    lines.add("══════════════════════════════════════════════════════")
+    lines.add("  BULK ACTIONS — OUTPUT REPORT")
+    lines.add("══════════════════════════════════════════════════════")
+    lines.add("  Generated: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}")
+    lines.add("══════════════════════════════════════════════════════")
+    lines.add("")
+
+    // Individual results
+    lines.add("── COMMAND RESULTS ──────────────────────────────────")
+    lines.add("")
+    results.forEachIndexed { index, result ->
+        when (result) {
+            is BulkCommandSuccess -> {
+                lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
+                lines.add("    Status: SUCCESS (${result.durationMs}ms)")
+                result.outputLines.forEach { line -> lines.add("  $line") }
+            }
+            is BulkCommandError -> {
+                lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
+                lines.add("    Status: ERROR")
+                lines.add("      ${result.errorMessage}")
+            }
+            is BulkCommandTimeout -> {
+                lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
+                lines.add("    Status: TIMEOUT")
+            }
+            is BulkCommandClosed -> {
+                lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
+                lines.add("    Status: CLOSED (${result.durationMs}ms)")
+                result.outputLines.forEach { line -> lines.add("     $line") }
+            }
+            is BulkCommandWarning -> {
+                lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
+                lines.add("    Status: WARNING (${result.durationMs}ms)")
+                result.outputLines.forEach { line -> lines.add("      $line") }
+            }
+        }
+        lines.add("")
+    }
+
+    // Summary table
+    val successPct = if (total > 0) String.format("%5.1f%%", successCount.toFloat() / total * 100) else "     0.0%"
+    // ... similar for error, timeout, closed, warning ...
+
+    lines.add("── SUMMARY ──────────────────────────────────────────")
+    lines.add("")
+    lines.add("     ┌───────────────────────┬──────────┬─────────────┐")
+    lines.add("     │ Metric                   │ Count       │ Percentage     │")
+    lines.add("     ├───────────────────────┼──────────┼─────────────┤")
+    lines.add("     │ Total commands           │ ${total.toString().padStart(6)} │ ${"100.0%".padStart(7)} │")
+    // ... rows for SUCCESS, ERROR, TIMEOUT, CLOSED, WARNING ...
+    lines.add("     └───────────────────────┴──────────┴─────────────┘")
+    lines.add("")
+    lines.add("  Progress: [$successBar] $successCount/$total")
+    lines.add("")
+    lines.add("══════════════════════════════════════════════════════")
+
+    return lines.joinToString("\n")
+}
+```
+
+Generates a formatted text report with:
+1. **Header** — title, generation timestamp
+2. **Command results** — numbered entries with status, output/error lines
+3. **Summary table** — ASCII table with counts, percentages, total duration
+4. **Progress bar** — `█` characters for successes, `░` for failures
+
+### CSV generation
+
+```kotlin
+private fun generateCsvContent(results: List<BulkCommandResult>): String {
+    val lines = mutableListOf<String>()
+    lines.add("cmdname,command,time,result")
+    results.forEach { result ->
+        when (result) {
+            is BulkCommandSuccess -> {
+                val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+                val resultText = result.outputLines.joinToString("; ")
+                lines.add("${result.commandName},${result.command},${time},${resultText}")
+            }
+            is BulkCommandError -> {
+                val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+                lines.add("${result.commandName},${result.command},${time},${result.errorMessage}")
+            }
+            is BulkCommandTimeout -> {
+                val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+                lines.add("${result.commandName},${result.command},${time},TIMEOUT")
+            }
+            is BulkCommandClosed -> {
+                val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+                val resultText = result.outputLines.joinToString("; ")
+                lines.add("${result.commandName},${result.command},${time},${resultText}")
+            }
+            is BulkCommandWarning -> {
+                val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+                val resultText = result.outputLines.joinToString("; ")
+                lines.add("${result.commandName},${result.command},${time},WARNING")
+            }
+        }
+    }
+    return lines.joinToString("\n")
+}
+```
+
+Simple CSV with columns: `cmdname,command,time,result`. Output lines are joined with `; ` to avoid CSV delimiter conflicts.
+
+### File I/O — three strategies
+
+| Method | Path type | Behavior |
+|---|---|---|
+| `writeViaSAF(path, results)` | `file://` URI | Uses `contentResolver.openOutputStream(uri)` |
+| `writeDirect(path, results)` | Plain file path | Uses `File(path).writeText(content)` |
+| `autoSaveResults(path, results)` | Either | Tries SAF first, falls through to direct |
+
+```kotlin
+private suspend fun autoSaveResults(outputPath: String, results: List<BulkCommandResult>): Boolean {
+    return try {
+        val success = writeViaSAF(outputPath, results)
+        if (!success) writeDirect(outputPath, results)
+        else true
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private suspend fun writeViaSAF(path: String, results: List<BulkCommandResult>): Boolean {
+    val uri = android.net.Uri.parse(path)
+    // Plain file paths (not file:// URIs) skip SAF and fall through to writeDirect
+    if (uri == null) return false
+    val csvEnabled = csvOutputEnabled.value
+    return try {
+        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+            val content = if (csvEnabled) generateCsvContent(results) else generateOutputContent(results)
+            outputStream.write(content.toByteArray())
+            true
+        } ?: false
+    } catch (_: Exception) { false }
+}
+
+private suspend fun writeDirect(path: String, results: List<BulkCommandResult>): Boolean {
+    return try {
+        withContext(Dispatchers.IO) {
+            val file = File(path)
+            file.parentFile?.mkdirs()
+            val csvEnabled = csvOutputEnabled.value
+            val content = if (csvEnabled) generateCsvContent(results) else generateOutputContent(results)
+            file.writeText(content)
+        }
+        true
+    } catch (e: Exception) { false }
+}
+```
+
+### Marker file management
+
+```kotlin
+private val runningFile: File by lazy {
+    File(context.filesDir, ".running-tasks")
+}
+
+private fun createRunningFile() {
+    viewModelScope.launch(Dispatchers.IO) {
+        try {
+            if (runningFile.parentFile?.exists() != true) runningFile.parentFile?.mkdirs()
+            runningFile.createNewFile()
+        } catch (_: Exception) { /* Silently ignore */ }
+    }
+}
+
+private fun deleteRunningFile() {
+    viewModelScope.launch(Dispatchers.IO) {
+        try { runningFile.delete() } catch (_: Exception) { /* Silently ignore */ }
+    }
+}
+```
+
+The `.running-tasks` marker file is created when execution starts and deleted when it ends (or on stop). External ADB scripts poll this file to detect when the app is still running.
+
+### CSV output preference
+
+```kotlin
+private val csvDataStore: DataStore<Preferences> by lazy {
+    context.bulkActionsCsvDataStore
+}
+val csvOutputEnabled: StateFlow<Boolean> = csvDataStore.data.map { prefs ->
+    prefs[booleanPreferencesKey("csv_output_enabled")] ?: false
+}.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), false)
+
+fun toggleCsvOutput() {
+    viewModelScope.launch {
+        val current = csvDataStore.data.first()[booleanPreferencesKey("csv_output_enabled")] ?: false
+        csvDataStore.edit { it[booleanPreferencesKey("csv_output_enabled")] = !current }
+    }
+}
+```
+
+The CSV preference is stored in a **separate DataStore** (`bulk_actions_csv`) from the history (`bulk_actions_history`). It's also loaded from JSON (`outputAsCsv`) and OR'd with the persisted preference: `csvOutputEnabled = config.outputAsCsv || csvFromStore`.
+
+### Factory delegate
+
+```kotlin
+companion object {
+    fun factory(context: Context): ViewModelProvider.Factory =
+        object : ViewModelProvider.Factory {
+               @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                // Set app context for BulkConfigParser to use private dir path expansion
+                BulkConfigParser.appContext = context.applicationContext
+                return BulkActionsViewModel(
+                    context = context.applicationContext,
+                    repository = BulkActionsRepository(context.applicationContext),
+                ) as T
+            }
+        }
+}
+```
+
+Note: `BulkConfigParser.appContext` is set as a **static property** on the companion object before creating the ViewModel. This is the only place in the app where a static property is set from a ViewModel factory — it's necessary because `BulkConfigParser` is a `object` (singleton) with no constructor parameters.
+
+## BulkActionsScreen — UI
+
+**File:** `app/src/main/java/.../BulkActionsScreen.kt`
+
+The screen has three distinct code paths:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ ADB Intent (configUri + autoRun)                        │
+│                                                         │
+│ configUri != null && autoRun == true                    │
+│   → LaunchedEffect(configUri, autoRun)                  │
+│     → viewModel.onLoadAndRun(uri, fileName)             │
+│       → parse + execute in one coroutine                │
+│                                                         │
+│ configUri != null && autoRun == false                   │
+│   → LaunchedEffect(configUri, autoRun)                  │
+│     → manual parse + update UI state only               │
+│                                                         │
+│ configUri == null (manual UI)                           │
+│   → User taps "Load JSON Config"                        │
+│     → filePickerLauncher.launch("application/json")     │
+│       → viewModel.onFileSelected(uri, fileName)         │
+│         → parse + update UI state only                  │
+│                                                         │
+│   → User taps "Run All Commands"                        │
+│     → viewModel.onRunClicked()                          │
+│       → re-read config from URI + execute               │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screen structure
+
+```
+┌─────────────────────────────────────────┐
+│ [🖥 Terminal] Bulk Actions                │
+├─────────────────────────────────────────┤
+│ [📂 Load JSON Config                   ]  │
+├─────────────────────────────────────────┤
+│ ☑ CSV output                              │
+├─────────────────────────────────────────┤
+│ ┌─ Config loaded ───────────────────┐     │
+│ │ 5 command(s)                        │     │
+│ │ ✓ output-file: /data/.../output.txt │     │
+│ │ timeout: 300s                       │     │
+│ └───────────────────────────────────┘     │
+├─────────────────────────────────────────┤
+│ [▶ Run All Commands] / [⏹ Stop]           │
+├─────────────────────────────────────────┤
+│ ████████████████████░░░░░░░░ 60%          │ ← progress bar
+│ dig-ns: dig @1.1.1.1 google.com            │ ← current command
+├─────────────────────────────────────────┤
+│ Results (3/5)          [Clear]             │
+│ ┌─ Result items ───────────────────┐       │
+│ │ ✓ ping-google (SUCCESS)            │       │
+│ │ ✓ dig-ns (SUCCESS)                 │       │
+│ │ ✗ checkcert (ERROR)                │       │
+│ └──────────────────────────────────┘       │
+├─────────────────────────────────────────┤
+│ [📄 Write to File]                        │
+├─────────────────────────────────────────┤
+│ ┌─ File saved to: /data/... ──────┐       │
+│ │ ✓ File saved to: /data/...       │       │
+│ └────────────────────────────────┘       │
+└─────────────────────────────────────────┘
+```
+
+### Key UI details
+
+- **Config loaded card** — shows command count, output file validation status, and config-level timeout
+- **Progress bar** — `LinearProgressIndicator` with `clip(RoundedCornerShape(3.dp))`, shows current command name below
+- **Result items** — `LazyColumn` with 300dp max height, each result shows icon + name + command string + output/error lines
+- **Write to File** — only visible when at least one result is `BulkCommandSuccess`
+- **Auto-save card** — green `tertiaryContainer` card showing the auto-saved file path (only when `autoSaved && autoSavedPath != null`)
+- **Validation messages** — auto-dismiss `Info` messages after 3 seconds; `Error` messages persist until cleared
+
+### Result item display
+
+```kotlin
+@Composable
+private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null) {
+    val (icon, statusText, statusColor) = when (result) {
+        is BulkCommandSuccess ->
+            Triple(Icons.Filled.CheckCircle, "SUCCESS", MaterialTheme.colorScheme.secondary)
+        is BulkCommandError ->
+            Triple(Icons.Filled.Error, "ERROR", MaterialTheme.colorScheme.error)
+        is BulkCommandTimeout ->
+            Triple(Icons.Filled.Close, "TIMEOUT", MaterialTheme.colorScheme.tertiary)
+        is BulkCommandClosed ->
+            Triple(Icons.Filled.Warning, "CLOSED", MaterialTheme.colorScheme.error)
+        is BulkCommandWarning ->
+            Triple(Icons.Filled.Warning, "WARNING", MaterialTheme.colorScheme.tertiary)
+    }
+    // ... display result ...
+}
+```
+
+Five result types with distinct visual treatments:
+
+| Result | Icon | Status | Color |
+|---|---|---|---|
+| `BulkCommandSuccess` | CheckCircle | SUCCESS | secondary (green/teal) |
+| `BulkCommandError` | Error | ERROR | error (red) |
+| `BulkCommandTimeout` | Close | TIMEOUT | tertiary (orange) |
+| `BulkCommandClosed` | Warning | CLOSED | error (red) |
+| `BulkCommandWarning` | Warning | WARNING | tertiary (orange) |
+
+## BulkActionsHistoryStore — Persistence
+
+**File:** `app/src/main/java/.../BulkActionsHistoryStore.kt`
+
+### Serialization format
+
+A single `String` preference key (`"bulk_history"`) contains all entries, one per line, fields separated by `|`:
+
+```
+1715340600000|file:///data/user/0/.../config.json|blkacts_single_ping_success.json
+```
+
+| Field | Example | Notes |
+|---|---|---|
+| `timestamp` | `1715340600000` | Epoch millis (not formatted string) |
+| `uri` | `file:///data/user/0/.../config.json` | Full file URI |
+| `fileName` | `blkacts_single_ping_success.json` | Last path segment |
+
+### Deserialization
+
+```kotlin
+private fun deserialise(raw: String): List<BulkHistoryEntry> =
+    raw.split(ENTRY_SEP)
+        .filter { it.isNotBlank() }
+        .mapNotNull { line ->
+            val parts = line.split(FIELD_SEP)
+            if (parts.size >= 3) {
+                parts.getOrNull(0)?.toLongOrNull()?.let { ts ->
+                    BulkHistoryEntry(timestamp = ts, uri = parts[1], fileName = parts[2])
+                }
+            } else null
+        }
+        .take(MAX_ENTRIES)
+```
+
+Requires at least 3 fields; entries with missing timestamp are filtered out.
+
+### Note
+
+Despite having a `BulkActionsHistoryStore`, the `BulkActionsViewModel` does **not** use it. The history store is defined but never referenced in the ViewModel. It appears to be a leftover from an earlier design or intended for future use (e.g., showing recently loaded config files in the UI).
+
+## Test Coverage
+
+### ViewModel tests — `BulkActionsViewModelTest` (~6 tests)
+
+| Test | What it verifies |
+|---|---|
+| `initialState_allDefaults` | All 17 fields have default values |
+| `onStopClicked_stopsExecution` | Execution state cleared |
+| `onClearResults_clearsResultsAndProgress` | Results, progress, currentCommand cleared |
+| `onRunClicked_setsExecutingTrueBeforeCoroutineRuns` | Synchronous `isExecuting = true` before coroutine |
+| `uiState_isImmutableCopy` | Original state unchanged after `onClearResults` |
+| `initialState_configTimeoutMsDefaultsToNull` | Config timeout defaults to null |
+
+**Notable gaps:** Tests use a relaxed mock of `BulkActionsRepository`, so actual command execution is never tested. Tests focus on state management, not command dispatch.
+
+### Repository tests — `BulkActionsRepositoryTest` (~15 tests)
+
+Only tests the `sleep` command executor (the only pure-Kotlin executor that doesn't require Android APIs):
+
+| Test | What it verifies |
+|---|---|
+| `sleep1_executesSuccessfully` | 1-second sleep |
+| `sleep5_executesSuccessfully` | 5-second sleep |
+| `sleep3601_clampedToMaxAndExecutesSuccessfully` | >3600 clamped to 3600 |
+| `sleep7200_clampedToMaxAndExecutesSuccessfully` | 7200 clamped to 3600 |
+| `sleep3600_clampedToMaxAndExecutesSuccessfully` | Exactly 3600 |
+| `sleep0_returnsError` | 0 duration rejected |
+| `sleepNegative_returnsError` | Negative duration rejected |
+| `sleepNonInteger_returnsError` | Non-integer rejected |
+| `sleepNoArgument_returnsError` | Missing argument |
+| `sleepFloat_returnsError` | Float rejected |
+| `sleepExceedsTimeout_returnsTimeout` | Timeout result type |
+| `sleepInterruptedByUserStop_returnsClosed` | Cancellation result type |
+| `sleepInvalidArgs_returnsError` | Invalid args result type |
+| `sleepCompletesBeforeTimeout_returnsSuccess` | Normal completion |
+| `sleepWithExtraWhitespace_parsesCorrectly` | Whitespace handling |
+
+Tests use `runTest`'s virtual time dispatcher — `delay()` advances virtually, so 3600-second sleeps are testable in milliseconds.
+
+### Checkcert tests — `BulkActionsCheckcertTest` (~4 tests)
+
+Tests the `UntrustedChain` output formatting for the `checkcert` command:
+
+| Test | What it verifies |
+|---|---|
+| `checkcert_untrustedSingleCert_displaysLeafMarker` | Leaf-only chain formatting |
+| `checkcert_untrustedMultiCert_displaysAllChainMarkers` | Leaf + Intermediate + Root chain with markers |
+| `checkcert_untrustedTwoCertChain_leafAndRootOnly` | Leaf + Root (no intermediate) chain |
+| `checkcert_untrustedNullCN_displaysNone` | Null CN displays "(none)" |
+
+Tests mirror the `UntrustedChain` formatting logic from the repository to verify `[Leaf]`, `[Intermediate N]`, `[Root]` markers with correct cert metadata.
+
+## Data Flow Summary
+
+```
+User selects JSON config (or ADB intent triggers onLoadAndRun)
+         │
+         ├─ Read file: contentResolver.openInputStream(uri)?.readBytes()
+         ├─ Decode: decodeToString()
+         ├─ Parse: BulkConfigParser.parse(json)
+         │      │
+         │      ├─ Extract: output-file, timeout, outputAsCsv
+         │      ├─ Extract: url-proxypac / file-proxypac (mutually exclusive)
+         │      ├─ Expand tilde: ~/ → filesDir
+         │      ├─ Validate output-file: create dirs, test write
+         │      ├─ Validate file-proxypac: exists + canRead
+         │      └─ Extract run object → Map<commandName, commandString>
+         │
+         ├─ Update UI state: configLoaded, commandCount, configTimeoutMs
+         │
+         └─ User taps "Run All Commands" (or auto-run)
+                │
+                ├─ cancellationToken.set(false)
+                ├─ createRunningFile()
+                ├─ repository.setupProxyResolver(pacSource, forceLogging)
+                │
+                └─ forEachIndexed { index, (name, cmd) ->
+                         if (cancellationToken.get()) → BulkCommandError("Cancelled")
+                         │
+                         ├─ commandTimeoutMs = extractCommandTimeout(cmd) ?: defaultTimeoutMs
+                         ├─ withTimeout(commandTimeoutMs) {
+                         │       repository.executeSingleCommand(name, cmd, commandTimeoutMs)
+                         │              │
+                         │              └─ when (prefix) {
+                         │                      "ping" → Runtime.exec("ping -c N -W T host")
+                         │                      "dig" → digRepo.resolve(server, fqdn)
+                         │                      "ntp" → ntpRepo.query(pool)
+                         │                      "port-scan" → Socket.connect(port, timeout) x N
+                         │                      "checkcert" → certRepo.fetchCertificate(host, port)
+                         │                      "device-info" → SystemInfoRepository.getDeviceInfo()
+                         │                      "tracert" → TTL probing loop
+                         │                      "google-timesync" → GoogleTimeSyncRepository.fetchGoogleTime()
+                         │                      "lan-scan" → LanScannerRepository subnet scan
+                         │                      "sleep" → delay(seconds)
+                         │                      else → Runtime.exec(parts)
+                         │                  }
+                         │              }
+                         │              → BulkCommandSuccess / Error / Timeout / Warning / Closed
+                         │
+                         └─ allResults.add(finalResult)
+                         └─ _uiState.value.copy(currentCommand, progress)
+                        }
+                │
+                ├─ if (config.outputFile != null) → autoSaveResults(outputPath, allResults)
+                │      │
+                │      └─ writeViaSAF(path) → contentResolver.openOutputStream(uri)
+                │             OR
+                │      writeDirect(path) → File(path).writeText(content)
+                │
+                ├─ repository.clearProxyResolver()
+                └─ deleteRunningFile()
+```
