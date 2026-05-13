@@ -1,0 +1,5 @@
+{
+    "run": {
+        "ping_google": "ping -c 2 google.com"
+    }
+}

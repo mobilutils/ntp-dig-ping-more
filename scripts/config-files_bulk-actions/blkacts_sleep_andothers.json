@@ -1,0 +1,10 @@
+{
+   "timeout": 30,
+   "run": {
+     "check-ntp": "ntp time.google.com",
+     "wait-5s": "sleep 5",
+     "check-dig": "dig @8.8.8.8 example.com",
+     "wait-short": "sleep 1",
+     "ping-google": "ping -c 3 google.com"
+   }
+}

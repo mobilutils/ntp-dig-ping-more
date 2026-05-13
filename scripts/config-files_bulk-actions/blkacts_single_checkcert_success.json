@@ -1,0 +1,7 @@
+{
+   "output-file": "~/files/blkacts_single_checkcert_success.txt",
+   "run": {
+    "sleep-for-adb": "sleep 1",
+     "checkcert_google": "checkcert -p 443 google.com"
+   }
+}
