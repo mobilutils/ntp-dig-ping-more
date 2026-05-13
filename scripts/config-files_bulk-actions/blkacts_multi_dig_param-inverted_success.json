@@ -1,0 +1,8 @@
+{
+    "output-file": "~/files/blkacts_multi_dig_param-inverted_success.txt",
+    "run": {
+        "sleep-for-adb": "sleep 2",
+        "dig_google_1": "dig @8.8.8.8 google.com",
+        "dig_google_2": "dig google.com @8.8.8.8"
+    }
+}

@@ -1,0 +1,9 @@
+{
+   "output-file": "~/files/blkacts_proxy_checkcert_timesync.txt",
+   "url-proxypac": "http://proxy.corp.com/proxy.pac",
+   "run": {
+     "checkcert_google": "checkcert -p 443 google.com",
+     "checkcert_example": "checkcert -p 443 example.com",
+     "google_timesync": "google-timesync"
+   }
+}

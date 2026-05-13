@@ -1,0 +1,159 @@
+---
+title: Bulk Actions — Create & Use JSON Configs
+description: Quick guide on creating Bulk Actions JSON configs, using them manually via ADB, and loading them in the app UI
+---
+
+# Bulk Actions — Create & Use JSON Configs
+
+How to create a Bulk Actions JSON config, load it in the app, and run it via ADB.
+
+---
+
+## 1. Create a JSON Config
+
+A config is a JSON file with two parts: an optional **header** and a required **`run`** object.
+
+### Minimal config
+
+```json
+{
+    "output-file": "~/blkacts_single_ping_success.txt",
+    "run": {
+        "ping_google": "ping -c 2 google.com"
+    }
+}
+```
+
+### Config header fields
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `output-file` | string | No | — | Path where results are saved after execution. `~` expands to the app's private directory. |
+| `output-as-csv` | string | No | `"false"` | Set to `"true"` for CSV output instead of the plain text report. |
+| `timeout` | integer | No | 30 | Per-command timeout in seconds. Overridden by inline `-t N`. |
+| `url-proxypac` | string | No | — | PAC URL for proxy routing (applies to `checkcert` and `google-timesync`). |
+| `file-proxypac` | string | No | — | PAC file path for proxy routing (mutually exclusive with `url-proxypac`). |
+| `log-proxy` | boolean | No | — | When `true`, overrides the global proxy logging setting. |
+
+### The `run` object
+
+A map of command names (any string key) to command strings:
+
+```json
+{
+    "run": {
+        "ping-google": "ping -c 4 google.com",
+        "dig-cloudflare": "dig @1.1.1.1 example.com",
+        "wait": "sleep 5",
+        "port-scan": "port-scan -p 80,443 google.com"
+    }
+}
+```
+
+### Supported commands
+
+| Prefix | Example | Description |
+|---|---|---|
+| `ping` | `ping -c 4 google.com` | ICMP ping |
+| `dig` | `dig @8.8.8.8 google.com` | DNS lookup |
+| `ntp` | `ntp pool.ntp.org` | NTP time query |
+| `port-scan` | `port-scan -p 80,443 google.com` | TCP port scan |
+| `checkcert` | `checkcert -p 443 google.com` | HTTPS certificate check |
+| `device-info` | `device-info` | Device identity info |
+| `tracert` | `tracert -t 20 google.com` | Traceroute |
+| `google-timesync` | `google-timesync` | Google Time Sync |
+| `lan-scan` | `lan-scan` | LAN device discovery |
+| `sleep` | `sleep 5` | Coroutine delay (1–3600s) |
+
+Unknown prefixes fall through to raw shell execution.
+
+### Timeout precedence
+
+Highest → lowest:
+
+1. Inline `-t N` in the command string
+2. Config-level `"timeout"` field
+3. Default 30 seconds
+
+### Output file paths
+
+| Path format | Example | Expands to |
+|---|---|---|
+| `~/path/to/file.txt` | `~/blkacts_output.txt` | App private dir: `/data/user/0/<pkg>/files/blkacts_output.txt` |
+| `~/subdir/file.txt` | `~/files/output.txt` | App private dir + subdir: `/data/user/0/<pkg>/files/files/output.txt` |
+| `/abs/path/file.txt` | `/sdcard/Download/out.txt` | Absolute path (SAF path — may require write permission) |
+
+---
+
+## 2. Use in the App UI
+
+Open the app → navigate to **Bulk Actions** (under **More**):
+
+1. Tap **Load JSON Config** → select your JSON file from the SAF picker
+2. The config is parsed and validated — command count, timeout, and output file status are displayed
+3. Tap **Run All Commands** → commands execute sequentially with live progress
+4. Results are auto-saved to `output-file` if defined (green card shows the path)
+
+**Optional:**
+- Toggle **CSV output** to export results in CSV format (persisted preference)
+- Tap **Write to File** to save results manually to a custom location via SAF picker
+
+---
+
+## 3. Use via ADB (Manual)
+
+Three-step pattern for headless execution:
+
+### Step 1 — Push config
+
+```bash
+APP_ID="io.github.mobilutils.ntp_dig_ping_more"
+PRIVATE_DIR="/data/user/0/$APP_ID/files"
+
+cat blkacts_single_ping_success.json \
+    | adb shell "run-as $APP_ID sh -c 'cat > $PRIVATE_DIR/blkacts_single_ping_success.json'"
+```
+
+### Step 2 — Launch with auto-run
+
+```bash
+# IMPORTANT: use --ez (boolean), NOT --es (string)
+adb shell am force-stop "$APP_ID"
+adb shell am start \
+       -n "$APP_ID/.MainActivity" \
+       -d "file://$PRIVATE_DIR/blkacts_single_ping_success.json" \
+       --ez auto_run true
+```
+
+### Step 3 — Pull results
+
+```bash
+sleep 60  # adjust based on your config timeout
+
+adb shell "run-as $APP_ID cat $PRIVATE_DIR/blkacts_single_ping_success.txt" \
+    > ./test-results/output.txt
+```
+
+**Key rules:**
+- Use `run-as` pipe (`cat file \| adb shell "run-as ... sh -c 'cat > path'"`) — `adb push` cannot write to app private dir
+- Use `--ez auto_run true` (boolean extra) — `--es auto_run true` passes a String and the app won't auto-run
+- Use `run-as cat` to pull results — `adb pull` cannot read from app private dir
+
+---
+
+## 4. Use via Automation Script
+
+For batch/CI execution, use the provided script:
+
+```bash
+# Single config (default emulator)
+./scripts/BULKACTIONS-ADB-SCRIPT.sh -f blkacts_single_ping_success.json
+
+# Real device mode (no emulator)
+./scripts/BULKACTIONS-ADB-SCRIPT.sh -f blkacts_multi_all9_success.json --real-device --no-interact
+
+# Absolute path to config
+./scripts/BULKACTIONS-ADB-SCRIPT.sh -f ~/Downloads/my-config.json --no-interact
+```
+
+The script handles emulator management, file push/pull, execution polling, and result collection automatically.

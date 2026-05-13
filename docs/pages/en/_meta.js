@@ -4,6 +4,8 @@ export default {
     'available-features': 'Available Features',
     'pseudo-commands': 'Pseudo-Commands',
     'developers': 'Developers',
+    'bulk-actions': 'Bulk Actions',
+
    github: {
      title: 'GitHub',
      href: 'https://github.com/mobilutils/ntp-dig-ping-more',
