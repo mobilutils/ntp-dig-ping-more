@@ -1,0 +1,42 @@
+---
+title: Bulk Actions
+description: Run multiple network diagnostic commands in a single batch — the heart of ntp_dig_ping_more for rapid corporate environment testing
+---
+
+# Bulk Actions
+
+Run multiple network diagnostic commands in a single batch, without touching the device.
+
+Write a JSON config, push it via ADB, and the app executes every command — ping, dig, NTP, port-scan, traceroute, certificate check, and more — collecting results into a single output file. No UI interaction required.
+
+---
+
+## Why Bulk Actions?
+
+This is the feature the app was built around. In corporate environments, diagnosing network issues often means running a sequence of tools — check DNS resolution, verify NTP sync, probe ports, trace routes — and the result of each depends on the previous. Bulk Actions lets you author a config once and re-run the entire test suite against any device, emulator, or CI pipeline.
+
+It's how I test the app itself: every new tool, every edge case, every timeout scenario runs through the same JSON configs that you use to validate your network. That's not a side effect — it's the reason this feature exists.
+
+---
+
+## Quick Start
+
+1. **Write a config** — see [Create & Use JSON Configs](/en/bulk-actions/bulk-actions-create-use-jsonconfig)
+2. **Push & run** — via ADB script or manual commands
+3. **Check results** — plain text or CSV output
+
+---
+
+## Also Works in the App
+
+Bulk Actions isn't just for ADB. Load a JSON config directly from the app's UI via the file picker, review it, and run commands interactively with live progress. Toggle CSV output, write results to a custom location, or test a config before automating it.
+
+---
+
+## Further Reading
+
+| Topic | Link |
+|---|---|
+| Create & use JSON configs | [Bulk Actions — Create & Use JSON Configs](/en/developers/bulk-actions-create-use-jsonconfig) |
+| JSON config reference | [Bulk Actions — JSON Config Reference](/en/developers/bulk-actions-jsonconfig) |
+| Implementation details | [Bulk Actions — Implementation Deep Dive](/en/developers/bulk-actions) |
