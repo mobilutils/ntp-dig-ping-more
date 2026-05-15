@@ -56,8 +56,6 @@ node_modules/
 package.json
 package-lock.json
 
-
-
 # -- NEXTRA RELATED ----------------------------------------------------------------------
 
 # === Documentation Nextra (/docs) ===
@@ -90,3 +88,9 @@ docs/.idea/
 docs/*.log
 docs/Thumbs.db
 docs/.DS_Store
+
+# So I never make the same mistake
+## ... and if I do
+## it won't get track
+
+notes/
