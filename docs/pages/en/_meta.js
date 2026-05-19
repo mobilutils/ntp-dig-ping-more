@@ -5,6 +5,7 @@ export default {
     'pseudo-commands': 'Pseudo-Commands',
     'developers': 'Developers',
     'bulk-actions': 'Bulk Actions',
+    'mdm-managed-configuration-explained': 'MDM Guide',
 
    github: {
      title: 'GitHub',

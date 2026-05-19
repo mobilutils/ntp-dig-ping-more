@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.settings.ManagedConfigRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,6 +54,7 @@ sealed class HttpsCertUiState {
 class HttpsCertViewModel(
     private val repository:    HttpsCertRepository,
     private val historyStore:  HttpsCertHistoryStore,
+    private val managedConfigRepository: ManagedConfigRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<HttpsCertUiState>(HttpsCertUiState.Idle)
@@ -75,6 +77,15 @@ class HttpsCertViewModel(
         // Load persisted history on first creation
         viewModelScope.launch {
             _history.value = historyStore.historyFlow.first()
+        }
+        // Apply MDM defaults (overridable — user can still change host/port).
+        managedConfigRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.configFlow.collect { config ->
+                    config.httpsCertHost?.let { if (it != _host.value) _host.value = it }
+                    config.httpsCertPort?.let { if (it != _port.value) _port.value = it }
+                }
+            }
         }
     }
 
@@ -227,6 +238,7 @@ class HttpsCertViewModel(
                     return HttpsCertViewModel(
                         repository   = HttpsCertRepository(proxyResolver),
                         historyStore = HttpsCertHistoryStore(appContext),
+                        managedConfigRepository = ManagedConfigRepository(appContext),
                     ) as T
                 }
             }

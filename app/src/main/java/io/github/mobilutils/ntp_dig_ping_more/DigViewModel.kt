@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.settings.ManagedConfigRepository
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -35,6 +36,7 @@ class DigViewModel(
     private val repository: DigRepository = DigRepository(),
     private val historyStore: DigHistoryStore,
     private val settingsRepository: SettingsRepository,
+    private val managedConfigRepository: ManagedConfigRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DigUiState())
@@ -46,6 +48,19 @@ class DigViewModel(
         viewModelScope.launch {
             val saved = historyStore.historyFlow.first()
             _uiState.value = _uiState.value.copy(history = saved)
+        }
+        // Apply MDM defaults (overridable — user can still change these fields).
+        managedConfigRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.configFlow.collect { config ->
+                    val current = _uiState.value
+                    val newServer = config.digServer ?: current.dnsServer
+                    val newFqdn   = config.digFqdn   ?: current.fqdn
+                    if (newServer != current.dnsServer || newFqdn != current.fqdn) {
+                        _uiState.value = current.copy(dnsServer = newServer, fqdn = newFqdn)
+                    }
+                }
+            }
         }
     }
 
@@ -122,6 +137,7 @@ class DigViewModel(
                         repository   = DigRepository(),
                         historyStore = DigHistoryStore(context.applicationContext),
                         settingsRepository = SettingsRepository(context.applicationContext),
+                        managedConfigRepository = ManagedConfigRepository(context.applicationContext),
                     ) as T
             }
     }

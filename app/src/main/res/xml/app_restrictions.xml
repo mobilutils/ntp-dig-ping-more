@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Managed Configuration (App Restrictions) schema.
+    Exposed to MDM/EMM platforms via android.content.APP_RESTRICTIONS meta-data.
+
+    Each restriction maps to a key read at runtime from RestrictionsManager.
+    All restrictions are optional; the app falls back to its built-in defaults
+    when a key is absent (unmanaged device or key not configured by the admin).
+
+    Key groups:
+      1. NTP Client defaults
+      2. DIG / DNS defaults
+      3. Ping defaults
+      4. Port Scanner defaults
+      5. HTTPS Cert Inspector defaults
+      6. Settings / Proxy PAC
+      7. Bulk Actions (zero-touch provisioning)
+-->
+<restrictions xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ════════════════════════════════════════════════════════════════
+         1. NTP Client
+         ════════════════════════════════════════════════════════════════ -->
+
+    <restriction
+        android:key="ntp_default_server"
+        android:title="@string/mdm_ntp_server_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <restriction
+        android:key="ntp_default_port"
+        android:title="@string/mdm_ntp_port_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <!-- ════════════════════════════════════════════════════════════════
+         2. DIG / DNS Lookup
+         ════════════════════════════════════════════════════════════════ -->
+
+    <restriction
+        android:key="dig_default_server"
+        android:title="@string/mdm_dig_server_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <restriction
+        android:key="dig_default_fqdn"
+        android:title="@string/mdm_dig_fqdn_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <!-- ════════════════════════════════════════════════════════════════
+         3. Ping
+         ════════════════════════════════════════════════════════════════ -->
+
+    <restriction
+        android:key="ping_default_host"
+        android:title="@string/mdm_ping_host_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <!-- ════════════════════════════════════════════════════════════════
+         4. Port Scanner
+         ════════════════════════════════════════════════════════════════ -->
+
+    <restriction
+        android:key="port_scanner_default_host"
+        android:title="@string/mdm_port_scanner_host_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <!-- ════════════════════════════════════════════════════════════════
+         5. HTTPS Certificate Inspector
+         ════════════════════════════════════════════════════════════════ -->
+
+    <restriction
+        android:key="https_cert_default_host"
+        android:title="@string/mdm_https_cert_host_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <restriction
+        android:key="https_cert_default_port"
+        android:title="@string/mdm_https_cert_port_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <!-- ════════════════════════════════════════════════════════════════
+         6. Settings — Proxy PAC
+         ════════════════════════════════════════════════════════════════ -->
+
+    <restriction
+        android:key="proxy_enabled"
+        android:title="@string/mdm_proxy_enabled_title"
+        android:restrictionType="bool"
+        android:defaultValue="false" />
+
+    <restriction
+        android:key="proxy_pac_url"
+        android:title="@string/mdm_proxy_pac_url_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <restriction
+        android:key="proxy_logging_enabled"
+        android:title="@string/mdm_proxy_logging_title"
+        android:restrictionType="bool"
+        android:defaultValue="false" />
+
+    <!-- ════════════════════════════════════════════════════════════════
+         7. Bulk Actions — Zero-touch provisioning
+         ════════════════════════════════════════════════════════════════ -->
+
+    <restriction
+        android:key="bulk_actions_json"
+        android:title="@string/mdm_bulk_json_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <restriction
+        android:key="bulk_actions_url"
+        android:title="@string/mdm_bulk_url_title"
+        android:restrictionType="string"
+        android:defaultValue="" />
+
+    <restriction
+        android:key="bulk_actions_auto_run"
+        android:title="@string/mdm_bulk_auto_run_title"
+        android:restrictionType="bool"
+        android:defaultValue="false" />
+
+</restrictions>

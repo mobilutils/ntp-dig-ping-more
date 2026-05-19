@@ -13,4 +13,20 @@
     <string name="google_time_sync_helper">Offset = corrected server time − your device time</string>
     <string name="google_time_sync_copy_offset">Copy Offset</string>
     <string name="google_time_sync_copied">Copied!</string>
+
+    <!-- Managed Configuration (App Restrictions) titles — displayed in MDM consoles -->
+    <string name="mdm_ntp_server_title">NTP Default Server</string>
+    <string name="mdm_ntp_port_title">NTP Default Port</string>
+    <string name="mdm_dig_server_title">DIG Default DNS Server</string>
+    <string name="mdm_dig_fqdn_title">DIG Default FQDN</string>
+    <string name="mdm_ping_host_title">Ping Default Host</string>
+    <string name="mdm_port_scanner_host_title">Port Scanner Default Host</string>
+    <string name="mdm_https_cert_host_title">HTTPS Cert Default Host</string>
+    <string name="mdm_https_cert_port_title">HTTPS Cert Default Port</string>
+    <string name="mdm_proxy_enabled_title">Enable Proxy PAC</string>
+    <string name="mdm_proxy_pac_url_title">Proxy PAC URL</string>
+    <string name="mdm_proxy_logging_title">Enable Proxy PAC Logging</string>
+    <string name="mdm_bulk_json_title">Bulk Actions JSON Config</string>
+    <string name="mdm_bulk_url_title">Bulk Actions Config URL</string>
+    <string name="mdm_bulk_auto_run_title">Bulk Actions Auto-Run</string>
 </resources>

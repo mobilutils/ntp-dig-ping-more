@@ -152,6 +152,44 @@ The script handles emulator startup, push, launch, wait for marker file `.runnin
 
 See [notes/20260501_BulkActions-ADB-Script-fixed.md](notes/20260501_BulkActions-ADB-Script-fixed.md) for the full root-cause analysis of every fix applied.
 
+---
+
+## 🏢 MDM / Managed Configuration
+
+NTP DIG PING MORE supports **Android Managed Configurations** (App Restrictions),
+enabling IT administrators to remotely pre-configure the application via any MDM/EMM platform
+(Intune, Jamf, Workspace ONE, Mosyle, Kandji, …).
+
+### Key restriction keys
+
+| Key | Type | What it pre-fills |
+|---|---|---|
+| `ntp_default_server` | string | NTP server address |
+| `ntp_default_port` | string | NTP UDP port |
+| `dig_default_server` | string | DNS resolver |
+| `dig_default_fqdn` | string | Domain name to query |
+| `ping_default_host` | string | Ping target host |
+| `port_scanner_default_host` | string | Port scanner host |
+| `https_cert_default_host` | string | HTTPS cert host |
+| `https_cert_default_port` | string | HTTPS cert port |
+| `proxy_enabled` | bool | Enable Proxy PAC |
+| `proxy_pac_url` | string | PAC script URL |
+| `proxy_logging_enabled` | bool | Enable PAC logging |
+| `bulk_actions_json` | string | Inline Bulk Actions JSON (zero file transfer) |
+| `bulk_actions_url` | string | URL to fetch Bulk Actions JSON from |
+| `bulk_actions_auto_run` | bool | Auto-execute Bulk Actions on launch |
+
+All values are **overridable defaults** — users retain full control.
+
+> **Zero-touch Bulk Actions:** Paste a full JSON payload into `bulk_actions_json` +
+> set `bulk_actions_auto_run = true`. The app executes the test sequence on first
+> launch without any user interaction — no file transfer to the device required.
+
+📖 Full IT administrator guide: [MDM Managed Configuration Explained](docs/pages/en/mdm-managed-configuration-explained.mdx)  
+🛠️ Developer reference: [Managed Configuration (MDM)](docs/pages/en/developers/managed-configuration-(mdm).mdx)
+
+---
+
 ## Stack
 
 | Layer | Technology |
