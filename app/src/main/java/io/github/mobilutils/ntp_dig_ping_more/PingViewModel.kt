@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.settings.ManagedConfigRepository
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,6 +54,7 @@ data class PingUiState(
 class PingViewModel(
     private val historyStore: PingHistoryStore,
     private val settingsRepository: SettingsRepository,
+    private val managedConfigRepository: ManagedConfigRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PingUiState())
@@ -68,6 +70,18 @@ class PingViewModel(
         viewModelScope.launch {
             val saved = historyStore.historyFlow.first()
             _uiState.value = _uiState.value.copy(history = saved)
+        }
+        // Apply MDM default host (overridable — user can still change it).
+        managedConfigRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.configFlow.collect { config ->
+                    val current = _uiState.value
+                    val newHost = config.pingHost ?: current.host
+                    if (newHost != current.host) {
+                        _uiState.value = current.copy(host = newHost)
+                    }
+                }
+            }
         }
     }
 
@@ -206,6 +220,7 @@ class PingViewModel(
                     PingViewModel(
                         historyStore = PingHistoryStore(context.applicationContext),
                         settingsRepository = SettingsRepository(context.applicationContext),
+                        managedConfigRepository = ManagedConfigRepository(context.applicationContext),
                     ) as T
             }
     }

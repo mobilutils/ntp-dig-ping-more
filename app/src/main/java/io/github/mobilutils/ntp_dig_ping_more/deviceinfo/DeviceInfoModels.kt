@@ -22,6 +22,7 @@ data class DeviceInfo(
     val timeSinceReboot: String? = null,
     val timeSinceScreenOff: String? = null,
     val mdmStatus: String? = null,
+    val isAppManaged: Boolean = false,
     val installedCertificates: List<CertificateInfo> = emptyList(),
 
     // ── Additional suggested fields ───────────────────────────────────

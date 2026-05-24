@@ -1,0 +1,175 @@
+---
+title: MDM Managed Configuration Explained
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# MDM Managed Configuration — IT Administrator Guide
+
+This guide explains how to remotely configure **NTP DIG PING MORE** for your organisation
+using your Mobile Device Management (MDM) / Enterprise Mobility Management (EMM) platform.
+
+<Callout type="info">
+No changes are required on the device.  
+All configuration is pushed from your MDM console.  
+The app reads the restrictions at launch and reacts to changes in real time.
+</Callout>
+
+---
+
+## What can be configured?
+
+| Category | What you can pre-set |
+|---|---|
+| **NTP Client** | Default server address and UDP port |
+| **DIG / DNS** | Default DNS resolver and domain name |
+| **Ping** | Default target host |
+| **Port Scanner** | Default scan host |
+| **HTTPS Certificate** | Default host and port for TLS inspection |
+| **Proxy PAC** | Enable proxy, PAC script URL, logging toggle |
+| **Bulk Actions** | Full JSON config payload or a URL to fetch it from, plus auto-run on launch |
+
+All settings are **overridable defaults** — users retain full control and can
+change any pre-filled value at any time.
+
+---
+
+## Quick-start: Zero-touch Bulk Actions
+
+The most powerful feature is the ability to deploy an automated network test sequence
+without transferring any files to the device.
+
+<Steps>
+
+### Prepare your Bulk Actions JSON
+
+Write your Bulk Actions configuration in JSON format:
+
+```json
+{
+  "timeout-ms": 10000,
+  "commands": [
+    { "ntp": { "server": "pool.ntp.org" } },
+    { "dig": { "server": "8.8.8.8", "fqdn": "example.com" } },
+    { "ping": { "host": "8.8.8.8" } }
+  ]
+}
+```
+
+### Push via your MDM console
+
+In your MDM console, locate the **Managed App Config** (or App Restrictions) section
+for NTP DIG PING MORE, then set:
+
+| Key | Value |
+|---|---|
+| `bulk_actions_json` | Paste the full JSON string from step 1 |
+| `bulk_actions_auto_run` | `true` |
+
+### Deploy
+
+Push the configuration to your device group.  
+The app will parse the inline JSON and automatically run all commands on next launch —
+no user interaction required.
+
+</Steps>
+
+---
+
+## All available restriction keys
+
+### NTP Client
+
+| Key | Type | Description | Example |
+|---|---|---|---|
+| `ntp_default_server` | String | NTP server hostname or IP | `pool.ntp.org` |
+| `ntp_default_port` | String | NTP UDP port | `123` |
+
+### DIG / DNS Lookup
+
+| Key | Type | Description | Example |
+|---|---|---|---|
+| `dig_default_server` | String | DNS resolver address | `8.8.8.8` |
+| `dig_default_fqdn` | String | Domain name to resolve | `example.com` |
+
+### Ping
+
+| Key | Type | Description | Example |
+|---|---|---|---|
+| `ping_default_host` | String | Target host or IP | `8.8.8.8` |
+
+### Port Scanner
+
+| Key | Type | Description | Example |
+|---|---|---|---|
+| `port_scanner_default_host` | String | Host to scan | `192.168.1.1` |
+
+### HTTPS Certificate Inspector
+
+| Key | Type | Description | Example |
+|---|---|---|---|
+| `https_cert_default_host` | String | Hostname for TLS inspection | `internal.corp.example.com` |
+| `https_cert_default_port` | String | HTTPS port | `443` |
+
+### Proxy PAC
+
+| Key | Type | Description | Example |
+|---|---|---|---|
+| `proxy_enabled` | Boolean | Enable proxy PAC routing | `true` |
+| `proxy_pac_url` | String | URL to the PAC script | `http://proxy.corp.com/proxy.pac` |
+| `proxy_logging_enabled` | Boolean | Enable PAC event logging | `false` |
+
+### Bulk Actions (zero-touch provisioning)
+
+| Key | Type | Description |
+|---|---|---|
+| `bulk_actions_json` | String | Complete Bulk Actions JSON payload (inline — no file transfer needed) |
+| `bulk_actions_url` | String | URL to fetch the JSON config from at startup |
+| `bulk_actions_auto_run` | Boolean | Auto-execute on launch without user interaction |
+
+<Callout type="warning">
+`bulk_actions_json` takes precedence over `bulk_actions_url`.  
+If both are set, the inline JSON is used and the URL is ignored.
+</Callout>
+
+---
+
+## Typical MDM console workflow (generic)
+
+Most MDM platforms (Jamf, Intune, VMware Workspace ONE, Mosyle, Kandji, etc.)
+expose Managed App Config under the app's policy or configuration profile.
+
+1. **Find the app** in your MDM app catalog.
+2. **Open App Config** (sometimes labelled "Managed App Configuration", "App Restrictions", or "Custom Config").
+3. **Add key-value pairs** from the tables above.
+4. **Assign and deploy** to a device group.
+
+The app reads restrictions at startup and also responds to live pushes while running —
+users see pre-filled fields immediately after a policy update, without restarting the app.
+
+---
+
+## Detecting managed status
+
+When the app is operating under active MDM restrictions, the **Device Info** screen
+displays a prominent **🛡️ App is managed** badge in the Security & MDM card.  
+Users and support teams can use this to confirm that the managed configuration is active.
+
+---
+
+## FAQ
+
+**Q: Will users be able to change the values set by MDM?**  
+A: Yes. All restrictions are *overridable defaults* — they pre-fill fields but do not lock them.
+
+**Q: What happens on a factory reset or fresh install?**  
+A: The app immediately reads the managed configuration on first launch. Pre-filled values appear before the user opens any screen.
+
+**Q: Can I use both `bulk_actions_json` and `bulk_actions_url`?**  
+A: Yes, but `bulk_actions_json` always wins. Use `bulk_actions_url` as a fallback for long JSON payloads that would be cumbersome to paste into the MDM console.
+
+**Q: Is network access required for the inline JSON mode?**  
+A: No. `bulk_actions_json` is read entirely from the MDM bundle — no network request is made to load the configuration. Network access is only needed when the commands themselves execute (NTP checks, DIG queries, etc.).
+
+**Q: What happens if the JSON in `bulk_actions_json` is invalid?**  
+A: The parse error is silently discarded to avoid crashing the app on startup. The user sees the Bulk Actions screen in its default empty state. Verify your JSON with a linter before deploying.

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
+import io.github.mobilutils.ntp_dig_ping_more.settings.ManagedConfigRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
+import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Top-level DataStore instance for CSV output preference. */
@@ -59,6 +61,7 @@ data class BulkUiState(
 class BulkActionsViewModel(
     private val context: Context,
     private val repository: BulkActionsRepository,
+    private val managedConfigRepository: ManagedConfigRepository? = null,
 ) : ViewModel() {
 
     internal val _uiState = MutableStateFlow(BulkUiState())
@@ -79,6 +82,77 @@ class BulkActionsViewModel(
     val csvOutputEnabled: StateFlow<Boolean> = csvDataStore.data.map { prefs ->
         prefs[booleanPreferencesKey("csv_output_enabled")] ?: false
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), false)
+
+    init {
+        // MDM zero-touch: load and optionally auto-run Bulk Actions config from managed restrictions.
+        managedConfigRepository?.let { repo ->
+            viewModelScope.launch {
+                val config = repo.configFlow.first()
+                val json: String? = when {
+                    config.bulkActionsJson != null -> config.bulkActionsJson
+                    config.bulkActionsUrl != null  -> withContext(Dispatchers.IO) {
+                        runCatching { URL(config.bulkActionsUrl).readText() }.getOrNull()
+                    }
+                    else -> null
+                }
+                if (json != null) {
+                    try {
+                        val bulkConfig = BulkConfigParser.parse(json)
+                        loadConfig(bulkConfig, sourceName = "MDM")
+                        if (config.bulkActionsAutoRun) {
+                            onRunClicked()
+                        }
+                    } catch (_: Exception) {
+                        // Silently ignore malformed MDM-provided JSON to avoid crashing on startup.
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Shared helper: applies a parsed [BulkConfig] to [_uiState].
+     * Used by [onFileSelected], [onLoadAndRun], and the MDM init block to avoid
+     * duplicating the UI state update logic.
+     */
+    private suspend fun loadConfig(
+        config: BulkConfig,
+        sourceName: String? = null,
+    ) {
+        val csvFromStore = csvOutputEnabled.value
+        val outputFilePath = config.outputFile
+        val (validatedOutputFile, validationMsg) = config.outputFile?.let { rawPath ->
+            val validation = BulkConfigParser.validateOutputFile(rawPath)
+            val msg = when (validation) {
+                is BulkConfigParser.OutputFileValidationResult.Valid ->
+                    ValidationMessage.Success("output-file: ${validation.path} is writable")
+                is BulkConfigParser.OutputFileValidationResult.Invalid ->
+                    ValidationMessage.Info(
+                        "'$rawPath' is not writable. Use: ${validation.suggestedPath}"
+                    )
+            }
+            val resolvedPath = when (validation) {
+                is BulkConfigParser.OutputFileValidationResult.Valid   -> validation.path
+                is BulkConfigParser.OutputFileValidationResult.Invalid -> validation.suggestedPath
+            }
+            resolvedPath to msg
+        } ?: (null to null)
+
+        _uiState.value = _uiState.value.copy(
+            configLoaded        = true,
+            configFileName      = sourceName,
+            configUri           = null,
+            commandCount        = config.commands.size,
+            configTimeoutMs     = config.timeoutMs,
+            csvOutputEnabled    = config.outputAsCsv || csvFromStore,
+            validatedOutputFile = validatedOutputFile,
+            outputFilePath      = outputFilePath,
+            validationMessage   = validationMsg,
+            results             = emptyList(),
+            progress            = 0f,
+            outputFileWritten   = null,
+        )
+    }
 
     /**
      * Called when the user selects a JSON config file via the file picker.
@@ -771,6 +845,7 @@ class BulkActionsViewModel(
                     return BulkActionsViewModel(
                         context = context.applicationContext,
                         repository = BulkActionsRepository(context.applicationContext),
+                        managedConfigRepository = ManagedConfigRepository(context.applicationContext),
                     ) as T
                 }
             }

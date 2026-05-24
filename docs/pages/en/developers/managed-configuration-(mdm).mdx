@@ -1,0 +1,163 @@
+---
+title: Managed Configuration (MDM)
+---
+
+import { Callout } from 'nextra/components'
+
+# Managed Configuration (MDM)
+
+NTP DIG PING MORE supports **Android Managed Configurations** (formerly *App Restrictions*),
+allowing enterprise Mobile Device Management platforms to remotely pre-configure the application
+without requiring users to manually enter network parameters.
+
+---
+
+## Architecture overview
+
+```
+MDM console
+    │  pushes Bundle via RestrictionsManager
+    ▼
+ManagedConfigRepository  ←─ BroadcastReceiver (live updates)
+    │  StateFlow<ManagedConfig>
+    ▼
+ViewModels (NTP, DIG, Ping, PortScanner, HttpsCert, Settings, BulkActions)
+    │  apply as overridable defaults
+    ▼
+UI state  (user can still edit all fields)
+```
+
+### Key files
+
+| File | Purpose |
+|---|---|
+| `app/src/main/res/xml/app_restrictions.xml` | Schema exposed to MDM consoles |
+| `settings/ManagedConfigRepository.kt` | Reads `RestrictionsManager`, exposes `StateFlow<ManagedConfig>` |
+| `settings/ManagedConfig.kt` | Typed data class (14 fields) |
+| `AndroidManifest.xml` | `android.content.APP_RESTRICTIONS` meta-data registration |
+
+---
+
+## ManagedConfigRepository
+
+```kotlin
+// Instantiation (already wired in each ViewModel factory)
+val repo = ManagedConfigRepository(context)
+
+// Consume in a ViewModel coroutine
+viewModelScope.launch {
+    repo.configFlow.collect { config ->
+        config.ntpServer?.let { _uiState.update { s -> s.copy(serverAddress = it) } }
+    }
+}
+
+// Check managed status (e.g. for the Device Info badge)
+val isManaged: Boolean = repo.isAppManaged
+
+// Clean up (called automatically from ViewModel.onCleared)
+repo.unregister()
+```
+
+### Live updates
+
+`ManagedConfigRepository` registers a `BroadcastReceiver` for
+`Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED`.  
+When the MDM admin changes a restriction the `configFlow` emits a new value
+**without restarting the app**.
+
+### Non-managed devices
+
+`RestrictionsManager.getApplicationRestrictions()` returns an **empty Bundle**
+on non-managed devices.  All `ManagedConfig` fields default to `null` / `false`,
+so the app behaves identically to before — no code path is affected.
+
+---
+
+## Restriction keys
+
+### Network tools (all `string` type)
+
+| Key | ViewModel field | Default |
+|---|---|---|
+| `ntp_default_server` | `NtpUiState.serverAddress` | `pool.ntp.org` |
+| `ntp_default_port` | `NtpUiState.port` | `123` |
+| `dig_default_server` | `DigUiState.dnsServer` | `""` |
+| `dig_default_fqdn` | `DigUiState.fqdn` | `""` |
+| `ping_default_host` | `PingUiState.host` | `""` |
+| `port_scanner_default_host` | `PortScannerUiState.host` | `""` |
+| `https_cert_default_host` | `HttpsCertViewModel._host` | `google.com` |
+| `https_cert_default_port` | `HttpsCertViewModel._port` | `443` |
+
+### Proxy PAC (`Settings` screen)
+
+| Key | Type | Default | ViewModel field |
+|---|---|---|---|
+| `proxy_enabled` | `bool` | `false` | `SettingsUiState.proxyEnabled` |
+| `proxy_pac_url` | `string` | `""` | `SettingsUiState.proxyPacUrl` |
+| `proxy_logging_enabled` | `bool` | `false` | `SettingsUiState.proxyLoggingEnabled` |
+
+### Bulk Actions (zero-touch provisioning)
+
+| Key | Type | Default | Behaviour |
+|---|---|---|---|
+| `bulk_actions_json` | `string` | `""` | Inline JSON payload — parsed directly, no file transfer needed |
+| `bulk_actions_url` | `string` | `""` | URL fetched at startup if `bulk_actions_json` is absent |
+| `bulk_actions_auto_run` | `bool` | `false` | Executes the loaded config on launch without user interaction |
+
+<Callout type="info">
+`bulk_actions_json` takes precedence over `bulk_actions_url` when both are set.
+</Callout>
+
+---
+
+## Overridable defaults pattern
+
+Every ViewModel follows the same guard pattern to avoid overwriting user edits
+mid-session:
+
+```kotlin
+managedConfigRepository?.let { repo ->
+    viewModelScope.launch {
+        repo.configFlow.collect { config ->
+            val current = _uiState.value
+            val newServer = config.ntpServer ?: current.serverAddress  // keep user value if MDM absent
+            if (newServer != current.serverAddress) {
+                _uiState.value = current.copy(serverAddress = newServer)
+            }
+        }
+    }
+}
+```
+
+The user can **always change any field** after it has been pre-filled — MDM
+provides an initial value, not a lock.
+
+---
+
+## Unit testing
+
+`ManagedConfigRepository` accepts an `android.os.Bundle` via `RestrictionsManager`.
+In unit tests, pass a `null` (or a mocked repository) to isolate ViewModel logic:
+
+```kotlin
+val vm = SimpleNtpViewModel(
+    historyStore = mockHistoryStore,
+    settingsRepository = mockSettingsRepo,
+    managedConfigRepository = null,   // no MDM in tests by default
+)
+```
+
+To test MDM defaults:
+
+```kotlin
+val fakeRepo = mockk<ManagedConfigRepository> {
+    every { configFlow } returns flowOf(ManagedConfig(ntpServer = "time.corp.example.com"))
+}
+val vm = SimpleNtpViewModel(
+    historyStore = mockHistoryStore,
+    settingsRepository = mockSettingsRepo,
+    managedConfigRepository = fakeRepo,
+)
+advanceUntilIdle()
+assertEquals("time.corp.example.com", vm.uiState.value.serverAddress)
+```

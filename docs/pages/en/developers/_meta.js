@@ -14,4 +14,6 @@ export default {
   'bulk-actions': 'Bulk Actions',
   'settings': 'Settings',
   'more-menu': '...More',
+  'managed-configuration-(mdm)': 'Managed Config (MDM)',
+  'tests': 'Tests',
 }

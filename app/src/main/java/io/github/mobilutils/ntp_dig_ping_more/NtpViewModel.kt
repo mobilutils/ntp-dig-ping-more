@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.mobilutils.ntp_dig_ping_more.settings.ManagedConfigRepository
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -53,6 +54,7 @@ class SimpleNtpViewModel(
     private val repository: NtpRepository = NtpRepository(),
     private val historyStore: NtpHistoryStore,
     private val settingsRepository: SettingsRepository,
+    private val managedConfigRepository: ManagedConfigRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NtpUiState())
@@ -66,6 +68,22 @@ class SimpleNtpViewModel(
         viewModelScope.launch {
             val savedHistory = historyStore.historyFlow.first()
             _uiState.value = _uiState.value.copy(history = savedHistory)
+        }
+        // Apply MDM defaults if a ManagedConfigRepository is available.
+        managedConfigRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.configFlow.collect { config ->
+                    val currentState = _uiState.value
+                    val newServer = config.ntpServer ?: currentState.serverAddress
+                    val newPort   = config.ntpPort   ?: currentState.port
+                    if (newServer != currentState.serverAddress || newPort != currentState.port) {
+                        _uiState.value = currentState.copy(
+                            serverAddress = newServer,
+                            port          = newPort,
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -152,6 +170,7 @@ class SimpleNtpViewModel(
                         repository = NtpRepository(),
                         historyStore = NtpHistoryStore(context.applicationContext),
                         settingsRepository = SettingsRepository(context.applicationContext),
+                        managedConfigRepository = ManagedConfigRepository(context.applicationContext),
                     ) as T
             }
     }

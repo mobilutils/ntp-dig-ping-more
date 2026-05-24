@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.RestrictionsManager
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
@@ -60,6 +61,8 @@ class SystemInfoRepository(
         context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
     private val batteryManager =
         context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+    private val restrictionsManager =
+        context.getSystemService(Context.RESTRICTIONS_SERVICE) as RestrictionsManager
 
     /**
      * Gathers all device information in one call.
@@ -84,6 +87,9 @@ class SystemInfoRepository(
             timeSinceReboot = getTimeSinceReboot(),
             timeSinceScreenOff = getTimeSinceScreenOff(),
             mdmStatus = getMdmStatus(),
+            isAppManaged = restrictionsManager.applicationRestrictions.size() > 0
+                    || devicePolicyManager.isDeviceOwnerApp(context.packageName)
+                    || devicePolicyManager.isProfileOwnerApp(context.packageName),
             installedCertificates = getInstalledCertificates(),
 
             // Additional suggested fields
@@ -519,30 +525,17 @@ class SystemInfoRepository(
      */
     fun getMdmStatus(): String {
         return try {
-            // Check if this app is the device owner
-            val isDeviceOwner = devicePolicyManager.isDeviceOwnerApp(context.packageName)
-
-            // Check if this app is the profile owner
+            val hasRestrictions = restrictionsManager.applicationRestrictions.size() > 0
+            val isDeviceOwner  = devicePolicyManager.isDeviceOwnerApp(context.packageName)
             val isProfileOwner = devicePolicyManager.isProfileOwnerApp(context.packageName)
-
-            // Check for managed profiles (Android 7.0+)
-            // getManagedProfiles() returns list of managed profiles for the calling user
-            val hasManagedProfile = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                // We need to be a device/profile owner to call this reliably
-                // Fallback: check if any admin is active
-                false
-            } else {
-                false
-            }
-
             when {
-                isDeviceOwner -> "Device Owner (this app)"
-                isProfileOwner -> "Profile Owner (this app)"
-                hasManagedProfile -> "Managed Profile"
-                else -> "None"
+                isDeviceOwner   -> "Device Owner (this app)"
+                isProfileOwner  -> "Profile Owner (this app)"
+                hasRestrictions -> "Managed (restrictions active)"
+                else            -> "Not managed"
             }
         } catch (e: Exception) {
-            "None"
+            "Not managed"
         }
     }
 

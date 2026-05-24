@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyPacLogger
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import io.github.mobilutils.ntp_dig_ping_more.proxy.QuickJsEngine
+import io.github.mobilutils.ntp_dig_ping_more.settings.ManagedConfigRepository
 import io.github.mobilutils.ntp_dig_ping_more.settings.ProxyConfig
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsKeys
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
@@ -98,7 +99,8 @@ class SettingsViewModel(
     private val settingsRepository: SettingsRepository,
     private val proxyResolver: ProxyResolver,
     private val proxyPacLogger: ProxyPacLogger,
-    private val appContext: Context? = null,     // NEW — for file-based PAC (copy-to-storage)
+    private val appContext: Context? = null,     // for file-based PAC (copy-to-storage)
+    private val managedConfigRepository: ManagedConfigRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -128,7 +130,7 @@ class SettingsViewModel(
              }
          }
 
-         // Load persisted proxy config on creation
+         // Load persisted proxy config on creation, then apply MDM overrides on top.
         viewModelScope.launch {
             val config = settingsRepository.proxyConfigFlow.first()
              _uiState.value = _uiState.value.copy(
@@ -141,6 +143,43 @@ class SettingsViewModel(
              // Sync logger toggle from persisted state
             proxyPacLogger.enabled = config.loggingEnabled
          }
+
+        // Apply MDM proxy defaults (overridable — user retains full control).
+        managedConfigRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.configFlow.collect { config ->
+                    val current = _uiState.value
+                    var changed = false
+                    var updated = current
+
+                    config.proxyEnabled?.let { mdmEnabled ->
+                        if (mdmEnabled != current.proxyEnabled) {
+                            updated = updated.copy(proxyEnabled = mdmEnabled)
+                            changed = true
+                        }
+                    }
+                    config.proxyPacUrl?.let { mdmUrl ->
+                        if (mdmUrl != current.proxyPacUrl) {
+                            updated = updated.copy(proxyPacUrl = mdmUrl, proxyPacUrlError = null)
+                            proxyResolver.clearCache()
+                            changed = true
+                        }
+                    }
+                    config.proxyLoggingEnabled?.let { mdmLogging ->
+                        if (mdmLogging != current.proxyLoggingEnabled) {
+                            updated = updated.copy(proxyLoggingEnabled = mdmLogging)
+                            proxyPacLogger.enabled = mdmLogging
+                            changed = true
+                        }
+                    }
+
+                    if (changed) {
+                        _uiState.value = updated
+                        saveCurrentProxyConfig()
+                    }
+                }
+            }
+        }
      }
 
      // ── Timeout actions ──────────────────────────────────────────────────────
@@ -428,13 +467,14 @@ class SettingsViewModel(
                         settingsRepository = settingsRepo,
                         jsEngine = QuickJsEngine(),
                         logger = logger,
-                        appContext = appContext,         // NEW — enables file-based PAC
+                        appContext = appContext,
                      )
                     return SettingsViewModel(
                         settingsRepository = settingsRepo,
                         proxyResolver       = proxyResolver,
                         proxyPacLogger      = logger,
-                        appContext          = appContext,         // NEW
+                        appContext          = appContext,
+                        managedConfigRepository = ManagedConfigRepository(appContext),
                      ) as T
                  }
              }

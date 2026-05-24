@@ -1,0 +1,320 @@
+---
+title: Testing Managed Configuration (MDM)
+description: How to test Managed Configurations (App Restrictions) using TestDPC, ADB, and the emulator
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Testing Managed Configuration (MDM)
+
+This guide walks through testing the **Managed Configuration** (formerly *App Restrictions*) feature of NTP DIG PING MORE using **TestDPC** — Google's Device Policy Controller for development.
+
+<Callout type="info">
+Managed Configurations let an MDM platform push Bundle extras that pre-fill fields across all 9 tools. Testing with TestDPC on an emulator or rooted device is the fastest way to verify the feature locally.
+</Callout>
+
+---
+
+## Prerequisites
+
+- Android 7.0 (API 24) or higher — the app targets API 37, so use **API 26+** for accurate testing
+- An AVD with **Google APIs** system image (not plain AOSP) — TestDPC requires Google services
+- Android Studio with SDK Manager pointing to your target API level
+
+---
+
+## Step 1 — Install TestDPC
+
+### Option A: Google Play Store (recommended)
+
+1. On your emulator or device, open the **Google Play Store**
+2. Search for **Device Policy Controller** (package `com.google.android.apps.work.oobconfig`)
+3. Tap **Install**
+
+### Option B: APK from GitHub (when Play Store is unavailable)
+
+If your emulator or device does not have Google Play:
+
+<Steps>
+
+### Download the TestDPC APK
+
+1. Navigate to the [TestDPC releases on GitHub](https://github.com/googlesamples/android-DevicePolicyManager/releases)
+2. Download the latest `DevicePolicyManager-testdpc-*.apk`
+
+### Install via ADB
+
+```bash
+adb install DevicePolicyManager-testdpc-<version>.apk
+```
+
+### Alternative: Download from APKMirror
+
+If the GitHub releases are outdated, grab a compatible APK from [APKMirror](https://www.apkmirror.com/apk/google-inc/device-policy-controller/):
+
+```bash
+# Example (adjust filename to your downloaded version)
+adb install DevicePolicyController.apk
+```
+
+</Steps>
+
+<Callout type="warning">
+TestDPC requires a **managed device** setup. On emulators, you may need to go through the initial "Work Profile" setup flow. If TestDPC fails to initialise, try a different system image (e.g., `google_apis` instead of `aosp`).
+</Callout>
+
+---
+
+## Step 2 — Set up the Managed Device
+
+<Steps>
+
+### Launch TestDPC
+
+```bash
+adb shell am start -n com.google.android.apps.work.oobconfig/.MainActivity
+```
+
+Or tap the TestDPC icon from the emulator home screen.
+
+### Set as Device Owner (emulator only)
+
+On emulators, TestDPC can be set as the **Device Owner** (full device management):
+
+```bash
+# 1. Create a work profile / device owner
+adb shell dpm set-device-owner \
+    com.google.android.apps.work.oobconfig/.testing.TestDeviceAdminReceiver
+
+# 2. Verify it worked
+adb shell dpm device-owner
+```
+
+### Set as Work Profile Owner (device or if device-owner fails)
+
+```bash
+adb shell dpm set-profile-owner \
+    com.google.android.apps.work.oobconfig/.testing.TestDeviceAdminReceiver \
+    --user 0
+```
+
+### Set up the Work Profile (UI flow)
+
+1. Open TestDPC from the app drawer
+2. Tap **Set up work profile**
+3. Confirm the setup prompts
+4. Once the work profile is active, TestDPC will show your app in the **managed apps** list
+
+</Steps>
+
+---
+
+## Step 3 — Push Managed Configurations
+
+With TestDPC running, you can push restrictions to NTP DIG PING MORE using ADB:
+
+<Steps>
+
+### Verify the app is visible to DPM
+
+```bash
+adb shell dpm list-apps
+```
+
+You should see `io.github.mobilutils.ntp_dig_ping_more` in the output. If not, ensure the app is installed in the **work profile** (not the profile owner space).
+
+### Push individual restrictions
+
+```bash
+# Set NTP default server
+adb shell dpm set-application-restriction \
+    ntp_default_server pool.ntp.org \
+    --user 0 \
+    --profile-owned io.github.mobilutils.ntp_dig_ping_more
+
+# Set DNS server for DIG
+adb shell dpm set-application-restriction \
+    dig_default_server 8.8.8.8 \
+    --user 0 \
+    --profile-owned io.github.mobilutils.ntp_dig_ping_more
+
+# Set Bulk Actions inline JSON
+adb shell dpm set-application-restriction \
+    bulk_actions_json '{"timeout-ms":10000,"commands":[{"ping":{"host":"8.8.8.8"}}]}' \
+    --user 0 \
+    --profile-owned io.github.mobilutils.ntp_dig_ping_more
+
+# Enable auto-run for Bulk Actions
+adb shell dpm set-application-restriction \
+    bulk_actions_auto_run true \
+    --user 0 \
+    --profile-owned io.github.mobilutils.ntp_dig_ping_more
+```
+
+### Push all restrictions at once
+
+Create a shell script (`push-restrictions.sh`):
+
+```bash
+#!/bin/bash
+PKG="io.github.mobilutils.ntp_dig_ping_more"
+USER=0
+
+adb shell dpm set-application-restriction ntp_default_server pool.ntp.org --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction ntp_default_port 123 --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction dig_default_server 8.8.8.8 --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction dig_default_fqdn example.com --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction ping_default_host 8.8.8.8 --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction port_scanner_default_host 192.168.1.1 --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction https_cert_default_host google.com --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction https_cert_default_port 443 --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction proxy_enabled true --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction proxy_pac_url http://proxy.corp.com/proxy.pac --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction proxy_logging_enabled true --user $USER --profile-owned $PKG
+adb shell dpm set-application-restriction bulk_actions_auto_run true --user $USER --profile-owned $PKG
+
+echo "All restrictions pushed."
+```
+
+```bash
+chmod +x push-restrictions.sh
+./push-restrictions.sh
+```
+
+### Verify restrictions are applied
+
+```bash
+adb shell dpm get-application-restrictions --user 0 --profile-owned io.github.mobilutils.ntp_dig_ping_more
+```
+
+Expected output:
+
+```
+{
+  ntp_default_server=pool.ntp.org,
+  ntp_default_port=123,
+  dig_default_server=8.8.8.8,
+  dig_default_fqdn=example.com,
+  ping_default_host=8.8.8.8,
+  bulk_actions_auto_run=true,
+  ...
+}
+```
+
+</Steps>
+
+---
+
+## Step 4 — Launch the App and Verify
+
+<Steps>
+
+### Launch the app normally
+
+```bash
+adb shell am start -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
+```
+
+### Verify pre-filled fields
+
+Open each screen in the app and confirm the fields are pre-populated:
+
+| Screen | Expected Pre-filled Value |
+|---|---|
+| **NTP Client** | Server: `pool.ntp.org`, Port: `123` |
+| **DIG / DNS** | DNS Server: `8.8.8.8`, FQDN: `example.com` |
+| **Ping** | Host: `8.8.8.8` |
+| **Port Scanner** | Host: `192.168.1.1` |
+| **HTTPS Cert** | Host: `google.com`, Port: `443` |
+| **Settings → Proxy** | Proxy enabled, PAC URL: `http://proxy.corp.com/proxy.pac`, Logging: enabled |
+| **Bulk Actions** | Inline JSON loaded, auto-run executed |
+
+### Verify live updates
+
+Change a restriction while the app is running:
+
+```bash
+# Update NTP server while the app is open
+adb shell dpm set-application-restriction \
+    ntp_default_server time.corp.example.com \
+    --user 0 \
+    --profile-owned io.github.mobilutils.ntp_dig_ping_more
+```
+
+Navigate to the NTP Client screen — the server field should update **without restarting the app** (thanks to `BroadcastReceiver` listening for `ACTION_APPLICATION_RESTRICTIONS_CHANGED`).
+
+### Verify the MDM badge
+
+Navigate to the **Device Info** screen — you should see a **🛡️ App is managed** badge in the Security & MDM card.
+
+</Steps>
+
+---
+
+## Step 5 — Clean Up
+
+<Steps>
+
+### Remove restrictions
+
+```bash
+adb shell dpm clear-application-restrictions --user 0 --profile-owned io.github.mobilutils.ntp_dig_ping_more
+```
+
+### Unset Device Owner
+
+```bash
+adb shell dpm remove-device-owner com.google.android.apps.work.oobconfig
+```
+
+### Uninstall TestDPC
+
+```bash
+adb uninstall com.google.android.apps.work.oobconfig
+```
+
+</Steps>
+
+---
+
+## Troubleshooting
+
+### TestDPC won't initialise on emulator
+
+- Ensure you're using a **Google APIs** system image (not plain AOSP)
+- Try a different API level (API 30–34 tends to work most reliably)
+- Wipe the emulator and create a fresh AVD
+
+### `dpm set-application-restriction` returns error
+
+- Verify the work profile is active: `adb shell dpm list-users`
+- Ensure the app is installed in the work profile, not the main profile
+- Check that TestDPC is still the active device owner: `adb shell dpm device-owner`
+
+### Restrictions not showing in the app
+
+- Force-stop the app and relaunch: `adb shell am force-stop io.github.mobilutils.ntp_dig_ping_more`
+- Verify restrictions were pushed: `adb shell dpm get-application-restrictions ...`
+- Check Logcat for `ManagedConfigRepository` logs: `adb logcat | grep ManagedConfig`
+
+### Bulk Actions JSON not parsing
+
+- Validate your JSON with a linter before pushing
+- Ensure special characters (quotes, backslashes) are properly escaped in the ADB command
+- Use single quotes around the JSON value to avoid shell interpretation
+
+---
+
+## Alternative: MDDM Platforms
+
+Once tested with TestDPC, the same restriction keys work with any production MDM platform:
+
+| Platform | Where to configure |
+|---|---|
+| **Microsoft Intune** | Apps → Select app → App configuration policies |
+| **Jamf Pro** | Apps → Managed Configuration |
+| **VMware Workspace ONE** | Apps → Android → Configuration |
+| **Mosyle** | Apps → App Settings → Managed Configuration |
+| **Kandji** | Apps → Add App → Configuration |
+
+All platforms expose the same `RestrictionsManager` API under the hood — the keys listed in [Managed Configuration (MDM)](/developers/managed-configuration-(mdm)) are universal.

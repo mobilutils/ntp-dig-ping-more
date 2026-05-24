@@ -36,6 +36,11 @@
              </intent-filter>
          </activity>
 
+         <!-- Managed Configurations (App Restrictions) schema for MDM/EMM platforms -->
+         <meta-data
+             android:name="android.content.APP_RESTRICTIONS"
+             android:resource="@xml/app_restrictions" />
+
      </application>
 
 </manifest>
