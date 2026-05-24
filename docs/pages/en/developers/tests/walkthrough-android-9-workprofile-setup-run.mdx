@@ -1,0 +1,147 @@
+# Walkthrough - Android 9 (API 28) Work Profile Setup & Run
+
+This developer guide provides step-by-step instructions on how to set up an Android 9 Work Profile (Managed Profile) on an emulator using command-line tools (`adb`), install the NTP DIG PING MORE application inside the work profile, and run/debug it.
+
+---
+
+## Prerequisites
+
+Before starting, ensure that:
+1. You have the **Android SDK** installed and `adb` is available in your shell's `PATH`.
+2. An Android Emulator running **Android 9 (API 28)** is booted and connected to ADB.
+3. You have the Test DPC APK (`testdpc.apk`) and the project's debug APK (`app-debug.apk`) available locally.
+
+---
+
+## Step 1: Launch and Reset the Android 9 Emulator
+
+Start the Android 9 emulator using wiped user data to guarantee a clean environment:
+
+```bash
+emulator -avd Medium_Phone_API_28 -wipe-data
+```
+
+Ensure the emulator is fully booted by verifying:
+
+```bash
+adb devices
+# Output should show: emulator-5554	device
+
+adb shell getprop sys.boot_completed
+# Output should be: 1
+```
+
+---
+
+## Step 2: Create a Work Profile via CLI on Android 9
+
+To create a managed work profile associated with the primary user (User `0`), execute the following command:
+
+```bash
+adb shell pm create-user --profileOf 0 --managed "Work Profile"
+```
+
+> [!IMPORTANT]
+> Note that on Android 9 (API 28), the `--user-type` flag is not supported (it was introduced in Android 11). We must use the `--managed` flag to declare the new profile as a secure managed profile user.
+
+### Expected Output
+```text
+Success: created user id 10
+```
+
+> [!NOTE]
+> The created user ID (typically `10` or higher) will be referred to as `USER_ID` in all subsequent commands.
+
+Start the newly created profile user:
+
+```bash
+adb shell am start-user USER_ID
+```
+
+---
+
+## Step 3: Setup Test DPC as the Profile Owner
+
+Test DPC is an enterprise utility used to simulate device policy constraints. 
+
+1. Install **Test DPC** to the managed profile user:
+   ```bash
+   adb install --user USER_ID testdpc.apk
+   ```
+
+2. Register Test DPC as the official **Profile Owner** of the work profile:
+   ```bash
+   adb shell dpm set-profile-owner --user USER_ID com.afwsamples.testdpc/.DeviceAdminReceiver
+   ```
+
+### Expected Output
+```text
+Success: Active admin and profile owner set to (com.afwsamples.testdpc/com.afwsamples.testdpc.DeviceAdminReceiver) for user 10
+```
+
+---
+
+## Step 4: Install the Application in the Work Profile
+
+Install the project's debug APK inside the work profile using the `--user` flag:
+
+```bash
+adb install --user USER_ID ./app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Expected Output
+```text
+Performing Streamed Install
+Success
+```
+
+---
+
+## Step 5: Launch the Application in the Work Profile
+
+Launch the NTP DIG PING MORE application launcher activity targeting the work profile user:
+
+```bash
+adb shell am start --user USER_ID -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
+```
+
+### Expected Output
+```text
+Starting: Intent ( cmp=io.github.mobilutils.ntp_dig_ping_more/.MainActivity )
+```
+
+In the emulator screen, you should now see the application open with a small **briefcase badge** on the bottom right of its launcher icon and task switcher bar, confirming that it is successfully running inside the secure **Work Profile** partition on Android 9!
+
+---
+
+## Summary of command used to setup and run the app inside the Work Profile on Android 9
+
+Tracking Android execution and ADB commands for Work Profile setup on Android 9.
+
+| Timestamp | Command | Observation/Result |
+|-----------|---------|-------------------|
+| 2026-05-24 22:22:20 | emulator -avd Medium_Phone_API_28 -wipe-data | Successfully launched emulator in background with wiped data |
+| 2026-05-24 22:22:32 | adb devices | emulator-5554 device |
+| 2026-05-24 22:22:46 | adb shell getprop sys.boot_completed | 1 (boot completed successfully) |
+| 2026-05-24 22:22:56 | adb shell pm create-user --profileOf 0 --managed "Work Profile" | Success: created user id 10 |
+| 2026-05-24 22:23:02 | adb shell am start-user 10 | Success: user started |
+| 2026-05-24 22:23:07 | adb install --user 10 testdpc.apk | Success |
+| 2026-05-24 22:23:14 | adb shell dpm set-profile-owner --user 10 com.afwsamples.testdpc/.DeviceAdminReceiver | Success: Active admin and profile owner set |
+| 2026-05-24 22:23:21 | adb install --user 10 app/build/outputs/apk/debug/app-debug.apk | Success |
+| 2026-05-24 22:23:26 | adb shell am start --user 10 -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity | Starting: Intent ( cmp=io.github.mobilutils.ntp_dig_ping_more/.MainActivity ) |
+| 2026-05-24 22:23:31 | adb shell screencap -p /sdcard/workprofile_launch_9.png | Successfully captured screen of running Work Profile app on Android 9 |
+
+### Validation Results
+
+We verified that:
+1. The profile user was created successfully with ID `10`.
+2. Test DPC was set as the profile owner.
+3. The NTP DIG PING MORE app (`io.github.mobilutils.ntp_dig_ping_more`) was successfully installed inside user `10` profile.
+4. The app successfully launched under the profile user `10`.
+
+Here is the captured emulator screenshot verifying that the NTP DIG PING MORE app successfully launched inside the secure Work Profile partition on Android 9:
+
+| User Profile | Work Profile |
+| --- | --- |
+| ![NTP DIG PING MORE in secure Work Profile (Android 9) BYOD](/images/workprofile_launch_9_byod.png) | ![NTP DIG PING MORE in secure Work Profile (Android 9) WP](/images/workprofile_launch_9_wp.png) |
+| ![NTP DIG PING MORE in secure Work Profile (Android 9)](/images/workprofile_launch_9.png) |
