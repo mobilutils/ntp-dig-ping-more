@@ -1,7 +1,7 @@
 # Network Utilities Checker
 
 <p align="left">
-  <img src="notes/icon_ntp-dig-ping-more_macgiver.png" alt="App Icon" width="128" height="128">
+  <img src="docs/public/images/icon_ntp-dig-ping-more_macgiver.png" alt="App Icon" width="128" height="128">
 </p>
 
 A modern Android app for network diagnostics: **NTP reachability testing**, **DNS lookup (DIG)**, **Ping**, **Traceroute**, **Port Scanner**, **LAN Scanner**, **Google Time Sync**, **HTTPS Certificate Inspector**, and **Bulk Actions** (batch execute commands from a JSON config). Includes a global **Settings** screen with configurable operation timeouts and optional **Proxy PAC** routing.
