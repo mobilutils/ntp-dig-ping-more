@@ -3,6 +3,7 @@ export default {
   'jacoco-setup': 'JaCoCo Setup',
   'test-managed-configuration-(mdm)': 'Test Managed Config (MDM)',
   'working-within-workprofile-(mdm)': 'Working within WorkProfile (MDM)',
+  'walkthrough-android-7-realdevice-samsung-xcover4-workprofile-setup-run': 'Samsung Android 7 Walkthrough',
   'walkthrough-android-9-workprofile-setup-run': 'Android 9 WorkProfile Walkthrough',
   'walkthrough-android-9-realdevice-samsung-workprofile-setup-run': 'Samsung Android 9 Walkthrough',
   'walkthrough-android-11-workprofile-setup-run': 'Android 11 WorkProfile Walkthrough',
