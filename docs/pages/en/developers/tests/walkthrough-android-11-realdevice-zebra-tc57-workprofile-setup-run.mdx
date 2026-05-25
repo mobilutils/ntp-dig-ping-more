@@ -1,0 +1,155 @@
+# Walkthrough - Android 11 Real Zebra TC57 Work Profile Setup & Run
+
+This developer guide provides step-by-step instructions on how to set up an Android 11 Work Profile (Managed Profile) on a physical **Zebra TC57 (TC57)** device using command-line tools (`adb`), install the NTP DIG PING MORE application inside the secure work profile, and run/debug it.
+
+This proves that our application runs perfectly on physical Zebra enterprise hardware running Android 11 under secure Mobile Device Management (MDM) profile separations!
+
+---
+
+## Prerequisites
+
+Before starting, ensure that:
+1. You have the **Android SDK** installed and `adb` is available in your shell's `PATH`.
+2. A physical Zebra TC57 running **Android 11** is connected to your host machine via USB.
+3. You have activated **Developer Mode** & **USB Debugging** on the device.
+4. You have the Test DPC APK (`testdpc.apk`) and the project's debug APK (`app-debug.apk`) available locally.
+
+---
+
+## Step 1: Verify the Physical Device Connection
+
+List the connected ADB devices to retrieve your Zebra serial number:
+
+```bash
+adb devices
+```
+
+### Expected Output
+```text
+List of devices attached
+20295522504336	device
+```
+
+> [!NOTE]
+> We will target this physical device using the `-s 20295522504336` flag in all subsequent commands.
+
+Verify the OS release version on the device:
+
+```bash
+adb -s 20295522504336 shell getprop ro.build.version.release
+# Output should be: 11
+```
+
+---
+
+## Step 2: Create a Work Profile via CLI (Zebra Android 11)
+
+Unlike device owner setup, creating a managed work profile does **not** require resetting the device or removing existing accounts. We can safely create a secure parallel partition user `10`.
+
+On Android 11, we use the standard `--user-type` flag:
+
+```bash
+adb -s 20295522504336 shell pm create-user --profileOf 0 --user-type android.os.usertype.profile.MANAGED "Work Profile"
+```
+
+### Expected Output
+```text
+Success: created user id 10
+```
+
+> [!NOTE]
+> The created user ID (typically `10` or higher) will be referred to as `USER_ID` in all subsequent commands.
+
+Start the newly created profile user:
+
+```bash
+adb -s 20295522504336 shell am start-user USER_ID
+```
+
+---
+
+## Step 3: Setup Test DPC as the Profile Owner
+
+Test DPC is an enterprise utility used to simulate device policy constraints.
+
+1. Install **Test DPC** to the managed profile user:
+   ```bash
+   adb -s 20295522504336 install --user USER_ID testdpc.apk
+   ```
+
+2. Register Test DPC as the official **Profile Owner** of the secure work profile:
+   ```bash
+   adb -s 20295522504336 shell dpm set-profile-owner --user USER_ID com.afwsamples.testdpc/.DeviceAdminReceiver
+   ```
+
+### Expected Output
+```text
+Success: Active admin and profile owner set to (com.afwsamples.testdpc/com.afwsamples.testdpc.DeviceAdminReceiver) for user 10
+```
+
+---
+
+## Step 4: Install the Application in the Zebra Work Profile
+
+Install the project's debug APK inside the secure work profile:
+
+```bash
+adb -s 20295522504336 install --user USER_ID ./app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Expected Output
+```text
+Performing Streamed Install
+Success
+```
+
+---
+
+## Step 5: Launch the Application in the Work Profile
+
+Launch the NTP DIG PING MORE application launcher activity targeting the secure work profile user:
+
+```bash
+adb -s 20295522504336 shell am start --user USER_ID -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity
+```
+
+### Expected Output
+```text
+Starting: Intent ( cmp=io.github.mobilutils.ntp_dig_ping_more/.MainActivity )
+```
+
+On your Zebra screen, you will now see the application open with a secure **briefcase badge** on the bottom right of its launcher icon and task switcher card, indicating it is running inside the secure **Work Profile** partition on Android 11!
+
+---
+
+## Summary of command used to setup and run the app inside the Work Profile on Zebra 20295522504336
+
+Tracking Android execution and ADB commands for Work Profile setup on Zebra TC57.
+
+| Timestamp | Command | Observation/Result |
+|-----------|---------|-------------------|
+| 2026-05-25 10:08:59 | adb devices | 20295522504336 device |
+| 2026-05-25 10:09:03 | adb -s 20295522504336 shell "getprop ro.product.model && getprop ro.build.version.release" | TC57, 11 (Android 11 Zebra device) |
+| 2026-05-25 10:09:12 | adb -s 20295522504336 shell pm create-user --profileOf 0 --user-type android.os.usertype.profile.MANAGED "Work Profile" | Success: created user id 10 |
+| 2026-05-25 10:09:16 | adb -s 20295522504336 shell am start-user 10 | Success: user started |
+| 2026-05-25 10:09:30 | adb -s 20295522504336 install --user 10 testdpc.apk | Success |
+| 2026-05-25 10:09:39 | adb -s 20295522504336 shell dpm set-profile-owner --user 10 com.afwsamples.testdpc/.DeviceAdminReceiver | Success: Active admin and profile owner set |
+| 2026-05-25 10:09:58 | adb -s 20295522504336 install --user 10 app/build/outputs/apk/debug/app-debug.apk | Success |
+| 2026-05-25 10:10:01 | adb -s 20295522504336 shell am start --user 10 -n io.github.mobilutils.ntp_dig_ping_more/.MainActivity | Starting: Intent ( cmp=io.github.mobilutils.ntp_dig_ping_more/.MainActivity ) |
+| 2026-05-25 10:10:35 | adb -s 20295522504336 shell screencap -p /sdcard/workprofile_launch_zebra.png | Successfully captured screen of running Work Profile app on Zebra TC57 |
+
+### Validation Results
+
+We verified that:
+1. The profile user was created successfully with ID `10` on the physical device.
+2. Test DPC was set as the profile owner.
+3. The NTP DIG PING MORE app (`io.github.mobilutils.ntp_dig_ping_more`) was successfully installed inside the Zebra work profile.
+4. The app successfully launched under the Zebra work profile user `10`.
+
+Here is the captured screenshot verifying that the NTP DIG PING MORE app successfully launched inside the secure Work Profile partition on the Zebra TC57:
+
+| User Profile | Work Profile |
+| --- | --- |
+| ![NTP DIG PING MORE in secure Work Profile (Android 11) Zebra TC57 BYOD firstmsg](/images/workprofile_launch_11_zebra_tc57_byod_fstmsg.png) | ![NTP DIG PING MORE in secure Work Profile (Android 11) Zebra TC57 WP firstmsg](/images/workprofile_launch_11_zebra_tc57_wp_fstmsg.png) |
+| ![NTP DIG PING MORE in secure Work Profile (Android 11) Zebra TC57 BYOD](/images/workprofile_launch_11_zebra_tc57_byod.png) | ![NTP DIG PING MORE in secure Work Profile (Android 11) Zebra TC57 WP](/images/workprofile_launch_11_zebra_tc57_wp.png) |
+| | ![NTP DIG PING MORE in secure Zebra Work Profile](/images/workprofile_launch_11_zebra_tc57.png) |
