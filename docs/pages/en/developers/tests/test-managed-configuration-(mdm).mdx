@@ -13,6 +13,22 @@ This guide walks through testing the **Managed Configuration** (formerly *App Re
 Managed Configurations let an MDM platform push Bundle extras that pre-fill fields across all 9 tools. Testing with TestDPC on an emulator or rooted device is the fastest way to verify the feature locally.
 </Callout>
 
+<Callout type="error">
+### 🚫 ADB CLI Restrictions Commands Do Not Exist
+
+**Verified on Samsung A34 (Android 16) and Samsung Tab Active 2 (Android 9):** The commands shown
+in Step 3 below (`adb shell dpm set-application-restriction`, `get-application-restrictions`,
+`clear-application-restrictions`, `list-apps`, etc.) **do NOT exist** in the Android OS `dpm` binary.
+Running them will **always** fail with `Unknown command`.
+
+This is **by design** — Android's security model only allows a Device Policy Controller app
+(like TestDPC) to call `DevicePolicyManager.setApplicationRestrictions()` programmatically.
+There is no shell-level interface for this API.
+
+**→ Use the TestDPC UI instead.** See the verified step-by-step guide:
+**[Try MDM with TestDPC (with real-device screenshots)](/try-managed-configuration-via-android-test-dpc)**.
+</Callout>
+
 ---
 
 ## Prerequisites

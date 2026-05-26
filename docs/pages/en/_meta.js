@@ -6,6 +6,7 @@ export default {
     'developers': 'Developers',
     'bulk-actions': 'Bulk Actions',
     'mdm-managed-configuration-explained': 'MDM Guide',
+    'try-managed-configuration-via-android-test-dpc': 'Try MDM with TestDPC',
 
    github: {
      title: 'GitHub',
