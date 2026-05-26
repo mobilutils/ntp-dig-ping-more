@@ -112,14 +112,14 @@ class ProxyResolver(
          *
          * @param pacUrl        PAC script URL (e.g. `http://proxy.corp.com/proxy.pac`).
          * @param context       Application context (needed by [SettingsRepository] internally).
-         * @param jsEngine      JS engine for PAC evaluation (default: [QuickJsEngine]).
+         * @param jsEngine      JS engine for PAC evaluation (default: [QuickJsEngine] with context).
          * @param logger        Optional logger for PAC events.
          * @param forceLogging  When `true`, logging is enabled regardless of [ProxyPacLogger.enabled].
          */
         fun forStaticPacUrl(
             pacUrl: String,
             context: Context,
-            jsEngine: JsEngine = QuickJsEngine(),
+            jsEngine: JsEngine = QuickJsEngine(context),
             logger: ProxyPacLogger? = null,
             forceLogging: Boolean = false,
         ): ProxyResolver = ProxyResolver(

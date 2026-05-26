@@ -465,7 +465,7 @@ class SettingsViewModel(
                      )
                     val proxyResolver = ProxyResolver(
                         settingsRepository = settingsRepo,
-                        jsEngine = QuickJsEngine(),
+                        jsEngine = QuickJsEngine(appContext),
                         logger = logger,
                         appContext = appContext,
                      )

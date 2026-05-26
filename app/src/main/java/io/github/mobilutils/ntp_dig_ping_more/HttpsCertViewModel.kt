@@ -232,7 +232,7 @@ class HttpsCertViewModel(
                     )
                     val proxyResolver = io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver(
                         settingsRepo,
-                        io.github.mobilutils.ntp_dig_ping_more.proxy.QuickJsEngine(),
+                        io.github.mobilutils.ntp_dig_ping_more.proxy.QuickJsEngine(appContext),
                         logger = logger,
                     )
                     return HttpsCertViewModel(

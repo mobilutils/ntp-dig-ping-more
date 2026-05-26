@@ -159,7 +159,7 @@ class ProxyResolverTest {
         coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
             ProxyConfig(enabled = true, pacUrl = "http://pac.example.com/proxy.pac")
           )
-        every { jsEngine.evaluatePac(any(), any(), any()) } throws RuntimeException("JS error")
+        coEvery { jsEngine.evaluatePac(any(), any(), any()) } throws RuntimeException("JS error")
 
           // The PAC fetch will fail (no real network), so resolver returns null
         val result = resolver.resolveProxy("http://example.com")
