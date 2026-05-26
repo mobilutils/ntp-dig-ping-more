@@ -10,13 +10,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Unit tests for [QuickJsEngine] — native `dnsResolve` and `isInNet` bridges,
- * IP parsing, and subnet comparison helpers.
+ * Unit tests for [QuickJsEngine] — IP parsing and subnet comparison helpers.
  *
- * **Note:** Tests that call [QuickJsEngine.evaluatePac] require the QuickJS
- * native library to be available on the classpath (i.e. they run as Android
- * instrumented tests or via Robolectric). Tests for the pure-Kotlin helpers
- * ([parseIp], [compareSubnet]) run as plain JVM unit tests.
+ * The [QuickJsEngine.parseIp] and [QuickJsEngine.compareSubnet] helpers are
+ * pure-Kotlin utilities and run as plain JVM unit tests without any JS engine.
+ *
+ * Integration tests for [QuickJsEngine.evaluatePac] require an Android device
+ * or emulator (JavaScriptSandbox is backed by the system WebView process), so
+ * they live in the instrumented test set.
  */
 class QuickJsEngineTest {
 
@@ -266,13 +267,13 @@ class QuickJsEngineTest {
         assertFalse(QuickJsEngine.compareSubnet(otherHost, pattern, mask))
     }
 
-    // ── DnsResolveService / IsInNetService integration via evaluatePac ───────
+    // ── Integration: evaluatePac ─────────────────────────────────────────────
     //
-    // NOTE: The tests below require the QuickJS native library to be available.
-    // They are marked as instrumented tests (run on an Android device/emulator)
-    // or via Robolectric.  If running as plain JVM unit tests, these will be
-    // skipped gracefully if QuickJs.create() throws UnsatisfiedLinkError.
+    // NOTE: Tests that call evaluatePac require JavaScriptSandbox, which is backed
+    // by the system WebView process and is not available in plain JVM unit tests.
+    // These integration tests live in the androidTest source set (instrumented tests)
+    // and must run on a real device or emulator.
     //
-    // The parseIp / compareSubnet tests above cover the core logic as pure
-    // JVM unit tests without needing the native library.
+    // The parseIp / compareSubnet tests above cover the core pure-Kotlin logic
+    // without requiring any JS engine or Android runtime.
 }
