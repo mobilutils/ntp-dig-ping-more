@@ -204,9 +204,9 @@ class SettingsViewModel(
             isError = parsed == null || parsed < SettingsKeys.MIN_TIMEOUT_SECONDS || parsed > SettingsKeys.MAX_TIMEOUT_SECONDS,
          )
 
-        if (valid && parsed != null) {
+        if (valid) {
             viewModelScope.launch {
-                settingsRepository.updateTimeout(parsed)
+                settingsRepository.updateTimeout(parsed!!)
              }
          }
      }

@@ -161,7 +161,7 @@ object BulkConfigParser {
 
         val timeoutMs = runCatching {
             val seconds = root.optLong("timeout", 0L)
-            if (seconds == null || seconds <= 0) null
+            if (seconds <= 0) null
             else seconds * 1000L
         }.getOrNull()
 
