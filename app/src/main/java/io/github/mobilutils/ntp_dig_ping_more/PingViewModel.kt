@@ -23,6 +23,26 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
+ * Live statistics derived incrementally from ping output lines.
+ *
+ * All fields are reset at the start of each new ping run.
+ */
+data class PingStats(
+    /** Number of packets sent (based on highest icmp_seq seen). */
+    val sent: Int = 0,
+    /** Number of reply packets received (lines containing "bytes from"). */
+    val received: Int = 0,
+    /** Packet-loss percentage (0–100). */
+    val lossPercent: Float = 0f,
+    /** Minimum round-trip time in milliseconds, or null if no replies yet. */
+    val minMs: Float? = null,
+    /** Running average RTT in milliseconds, or null if no replies yet. */
+    val avgMs: Float? = null,
+    /** Maximum round-trip time in milliseconds, or null if no replies yet. */
+    val maxMs: Float? = null,
+)
+
+/**
  * UI state for the Ping screen.
  */
 data class PingUiState(
@@ -34,6 +54,8 @@ data class PingUiState(
     val outputLines: List<String> = emptyList(),
     /** Up to 5 most recent distinct host pings, newest first. */
     val history: List<PingHistoryEntry> = emptyList(),
+    /** Live statistics updated on every incoming ping line. */
+    val stats: PingStats = PingStats(),
 )
 
 /**
@@ -66,6 +88,11 @@ class PingViewModel(
     // Regex to extract the icmp_seq number from a reply or timeout line
     private val icmpSeqRegex = Regex("""icmp_seq=(\d+)""")
 
+    // Regex to extract the RTT value (ms) from a successful reply line
+    // Matches "time=12.3" or "time=12" in both Linux and BSD ping output
+    private val rttRegex = Regex("""time=(\d+(?:\.\d+)?)"""
+    )
+
     init {
         viewModelScope.launch {
             val saved = historyStore.historyFlow.first()
@@ -97,6 +124,7 @@ class PingViewModel(
         _uiState.value = _uiState.value.copy(
             isRunning = true,
             outputLines = emptyList(),
+            stats = PingStats(),
         )
 
         pingJob = viewModelScope.launch {
@@ -114,8 +142,10 @@ class PingViewModel(
                         while (isActive && reader.readLine().also { line = it } != null) {
                             val trimmed = line!!
                             withContext(Dispatchers.Main) {
+                                val newStats = updateStats(trimmed, _uiState.value.stats)
                                 _uiState.value = _uiState.value.copy(
                                     outputLines = _uiState.value.outputLines + trimmed,
+                                    stats = newStats,
                                 )
                             }
                         }
@@ -191,6 +221,47 @@ class PingViewModel(
             received >= sent     -> PingStatus.ALL_SUCCESS
             else                 -> PingStatus.PARTIAL
         }
+    }
+
+    /**
+     * Incrementally updates [PingStats] given a single new output [line].
+     *
+     * - A reply line contains "bytes from" and optionally "time=X.X".
+     * - A timeout/unreachable line contains "icmp_seq=" but NOT "bytes from".
+     * - `sent` is derived from the max icmp_seq seen so far.
+     * - Running average RTT is computed in O(1) without storing all values.
+     */
+    internal fun updateStats(line: String, current: PingStats): PingStats {
+        // Update sent count from icmp_seq
+        val seq = icmpSeqRegex.find(line)?.groupValues?.get(1)?.toIntOrNull()
+        val newSent = if (seq != null) maxOf(current.sent, seq) else current.sent
+
+        // Check for a successful reply
+        val isReply = line.contains("bytes from")
+        val rtt = if (isReply) rttRegex.find(line)?.groupValues?.get(1)?.toFloatOrNull() else null
+
+        val newReceived = if (isReply) current.received + 1 else current.received
+        val newMin = if (rtt != null) minOf(current.minMs ?: Float.MAX_VALUE, rtt) else current.minMs
+        val newMax = if (rtt != null) maxOf(current.maxMs ?: Float.MIN_VALUE, rtt) else current.maxMs
+        // Welford-style running mean (avoids storing all RTTs)
+        val newAvg = if (rtt != null) {
+            val prevAvg = current.avgMs ?: 0f
+            val prevCount = current.received   // count before increment
+            if (prevCount == 0) rtt else prevAvg + (rtt - prevAvg) / newReceived
+        } else current.avgMs
+
+        val newLoss = if (newSent > 0)
+            (newSent - newReceived).toFloat() / newSent.toFloat() * 100f
+        else 0f
+
+        return PingStats(
+            sent        = newSent,
+            received    = newReceived,
+            lossPercent = newLoss,
+            minMs       = newMin,
+            avgMs       = newAvg,
+            maxMs       = newMax,
+        )
     }
 
     private suspend fun saveHistory(host: String, status: PingStatus) {
