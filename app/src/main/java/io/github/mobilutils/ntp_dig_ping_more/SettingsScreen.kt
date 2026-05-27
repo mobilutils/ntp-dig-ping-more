@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsKeys
 import java.io.File
@@ -92,7 +93,7 @@ fun SettingsScreen() {
      ) {
 
           // ── Network Configuration section ─────────────────────────────────────
-        SettingsSectionCard(title = "Network Configuration") {
+        SettingsSectionCard(title = stringResource(R.string.settings_section_network)) {
 
               // Timeout field
             OutlinedTextField(
@@ -106,20 +107,23 @@ fun SettingsScreen() {
                             viewModel.revert()
                          }
                      },
-                label = { Text("Operation Timeout (seconds)") },
+                label = { Text(stringResource(R.string.settings_label_timeout)) },
                 placeholder = { Text(SettingsKeys.DEFAULT_TIMEOUT_SECONDS.toString()) },
                 singleLine = true,
                 isError = uiState.isError,
                 supportingText = {
                     if (uiState.isError) {
                         Text(
-                            text = "Must be between ${SettingsKeys.MIN_TIMEOUT_SECONDS} " +
-                                    "and ${SettingsKeys.MAX_TIMEOUT_SECONDS}",
+                            text = stringResource(
+                                R.string.settings_timeout_error,
+                                SettingsKeys.MIN_TIMEOUT_SECONDS,
+                                SettingsKeys.MAX_TIMEOUT_SECONDS,
+                            ),
                             color = MaterialTheme.colorScheme.error,
                          )
                      } else {
                         Text(
-                            text = "Applies to total duration of scans/requests.",
+                            text = stringResource(R.string.settings_timeout_hint),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                          )
                      }
@@ -129,7 +133,7 @@ fun SettingsScreen() {
          }
 
           // ── Proxy Configuration section ───────────────────────────────────────
-        SettingsSectionCard(title = "Proxy Configuration") {
+        SettingsSectionCard(title = stringResource(R.string.settings_section_proxy)) {
 
               // Enable/disable toggle
             Row(
@@ -138,12 +142,12 @@ fun SettingsScreen() {
              ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Enable Proxy",
+                        text = stringResource(R.string.settings_proxy_enable_label),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                      )
                     Text(
-                        text = "Route traffic through a PAC-resolved proxy",
+                        text = stringResource(R.string.settings_proxy_enable_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                      )
@@ -164,7 +168,7 @@ fun SettingsScreen() {
                 FilterChip(
                     selected = uiState.pacSourceMode == PacSourceMode.URL,
                     onClick = { viewModel.onPacSourceModeChange(PacSourceMode.URL) },
-                    label = { Text("URL") },
+                    label = { Text(stringResource(R.string.settings_proxy_pac_mode_url)) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                         selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -174,7 +178,7 @@ fun SettingsScreen() {
                 FilterChip(
                     selected = uiState.pacSourceMode == PacSourceMode.FILE,
                     onClick = { viewModel.onPacSourceModeChange(PacSourceMode.FILE) },
-                    label = { Text("File") },
+                    label = { Text(stringResource(R.string.settings_proxy_pac_mode_file)) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                         selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -192,16 +196,16 @@ fun SettingsScreen() {
                 label = {
                     Text(
                         when (uiState.pacSourceMode) {
-                            PacSourceMode.URL -> "PAC URL"
-                            PacSourceMode.FILE -> "PAC File"
+                            PacSourceMode.URL  -> stringResource(R.string.settings_proxy_pac_label_url)
+                            PacSourceMode.FILE -> stringResource(R.string.settings_proxy_pac_label_file)
                           }
                       )
                   },
                 placeholder = {
                     Text(
                         when (uiState.pacSourceMode) {
-                            PacSourceMode.URL -> "http://proxy.corp.com/proxy.pac"
-                            PacSourceMode.FILE -> "/data/user/0/app/files/saved-pac.pac"
+                            PacSourceMode.URL  -> stringResource(R.string.settings_proxy_pac_placeholder_url)
+                            PacSourceMode.FILE -> stringResource(R.string.settings_proxy_pac_placeholder_file)
                           }
                       )
                   },
@@ -211,23 +215,23 @@ fun SettingsScreen() {
                 supportingText = {
                     when {
                         uiState.proxyPacUrlError != null -> Text(
-                            text = uiState.proxyPacUrlError!!,
+                            text = stringResource(uiState.proxyPacUrlError!!),
                             color = MaterialTheme.colorScheme.error,
                          )
                         uiState.proxyEnabled && uiState.pacSourceMode == PacSourceMode.FILE &&
                              uiState.proxyPacUrl.isNotBlank() && !uiState.proxyPacUrl.startsWith("content://") -> {
                             val fileName = File(uiState.proxyPacUrl).name
                             Text(
-                                text = "Local file: $fileName",
+                                text = stringResource(R.string.settings_proxy_pac_hint_local_file, fileName),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                               )
                            }
                         uiState.proxyEnabled && uiState.pacSourceMode == PacSourceMode.FILE -> Text(
-                            text = "Browse to select a local .pac file",
+                            text = stringResource(R.string.settings_proxy_pac_hint_file),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                           )
                         uiState.proxyEnabled -> Text(
-                            text = "URL to an auto-configuration (.pac) script",
+                            text = stringResource(R.string.settings_proxy_pac_hint_url),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                           )
                       }
@@ -244,7 +248,7 @@ fun SettingsScreen() {
                                 TextButton(
                                     onClick = { pacFilePickerLauncher.launch("*/*") },
                                   ) {
-                                    Text("Browse")
+                                    Text(stringResource(R.string.settings_proxy_pac_btn_browse))
                                    }
                               }
                           } else null
@@ -261,12 +265,12 @@ fun SettingsScreen() {
              ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Enable Proxy Logging",
+                        text = stringResource(R.string.settings_proxy_logging_label),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                      )
                     Text(
-                        text = "Logs PAC fetches, resolutions, and errors to memory & file",
+                        text = stringResource(R.string.settings_proxy_logging_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                      )
@@ -289,13 +293,13 @@ fun SettingsScreen() {
                     onClick = viewModel::onViewLogs,
                     enabled = uiState.proxyEnabled,
                   ) {
-                    Text("View Logs")
+                    Text(stringResource(R.string.settings_proxy_btn_view_logs))
                   }
                 TextButton(
                     onClick = viewModel::onClearLogs,
                     enabled = uiState.proxyEnabled,
                   ) {
-                    Text("Clear Logs")
+                    Text(stringResource(R.string.settings_proxy_btn_clear_logs))
                   }
              }
 
@@ -320,9 +324,9 @@ fun SettingsScreen() {
                         color = MaterialTheme.colorScheme.onSecondary,
                      )
                     Spacer(Modifier.width(8.dp))
-                    Text("Testing…")
+                    Text(stringResource(R.string.settings_proxy_btn_testing))
                   } else {
-                    Text("Test Proxy/PAC", fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.settings_proxy_btn_test), fontWeight = FontWeight.Medium)
                   }
              }
 
@@ -342,7 +346,7 @@ fun SettingsScreen() {
                     val formatted = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault())
                          .format(Date(uiState.proxyLastTested))
                     Text(
-                        text = "Last tested: $formatted",
+                        text = stringResource(R.string.settings_proxy_last_tested, formatted),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                       )
@@ -355,11 +359,11 @@ fun SettingsScreen() {
     if (uiState.showLogDialog) {
         AlertDialog(
             onDismissRequest = viewModel::onDismissLogDialog,
-            title = { Text("Proxy PAC Logs") },
+            title = { Text(stringResource(R.string.settings_log_dialog_title)) },
             text = {
                 if (uiState.proxyLogs.isEmpty()) {
                     Text(
-                        text = "No logs recorded yet.",
+                        text = stringResource(R.string.settings_log_dialog_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                      )
@@ -381,7 +385,7 @@ fun SettingsScreen() {
               },
             confirmButton = {
                 TextButton(onClick = viewModel::onDismissLogDialog) {
-                    Text("Close")
+                    Text(stringResource(R.string.common_btn_close))
                   }
               },
           )

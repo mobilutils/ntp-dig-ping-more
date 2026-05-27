@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -34,7 +35,7 @@ fun MoreToolsScreen(
     ) {
         items(extraTools) { tool ->
             ToolCard(
-                title = tool.label,
+                title = stringResource(tool.labelResId),
                 icon = tool.icon,
                 onClick = { onNavigate(tool.route) }
             )
@@ -78,7 +79,7 @@ private fun ToolCard(
             )
             Icon(
                 imageVector = Icons.Filled.ChevronRight,
-                contentDescription = "Navigate",
+                contentDescription = stringResource(R.string.common_cd_navigate),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

@@ -1,20 +1,354 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- App                                                            -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
     <string name="app_name">NTP DIG PING MORE</string>
 
-    <!-- Google Time Sync screen -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Navigation labels (AppScreen.label, bottom-nav, top-bar)      -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="nav_ntp_check">NTP Check</string>
+    <string name="nav_dig_test">DIG Test</string>
+    <string name="nav_ping">Ping</string>
+    <string name="nav_traceroute">Traceroute</string>
+    <string name="nav_port_scanner">Port Scan</string>
+    <string name="nav_lan_scanner">LAN Scan</string>
+    <string name="nav_google_time_sync">Google Time Sync</string>
+    <string name="nav_https_cert">HTTPS Cert</string>
+    <string name="nav_device_info">Device Info</string>
+    <string name="nav_bulk_actions">Bulk Actions</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_more">More</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Common / shared strings                                        -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="common_btn_stop">Stop</string>
+    <string name="common_btn_retry">Retry</string>
+    <string name="common_btn_clear">Clear</string>
+    <string name="common_btn_close">Close</string>
+    <string name="common_label_status">Status</string>
+    <string name="common_label_history">History</string>
+    <string name="common_label_port">Port</string>
+    <string name="common_label_hostname_ip">Hostname / IP</string>
+    <string name="common_placeholder_eg_google">e.g. google.com</string>
+    <string name="common_placeholder_port_123">123</string>
+    <string name="common_placeholder_port_443">443</string>
+    <string name="common_cd_stop">Stop</string>
+    <string name="common_cd_navigate">Navigate</string>
+    <string name="common_cd_refresh">Refresh</string>
+    <string name="common_cd_success">Success</string>
+    <string name="common_cd_failed">Failed</string>
+    <string name="common_cd_error">Error</string>
+    <string name="common_cd_warning">Warning</string>
+    <string name="common_cd_collapse">Collapse</string>
+    <string name="common_cd_expand">Expand</string>
+    <string name="common_cd_copied">Copied</string>
+    <string name="common_cd_copy">Copy</string>
+    <string name="common_label_no_network">No Network</string>
+    <string name="common_msg_no_network">Please check your internet connection and try again.</string>
+    <string name="common_label_error">Error</string>
+    <string name="common_label_unavailable">Unavailable</string>
+    <string name="common_label_none">(none)</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- NTP Check screen                                               -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="ntp_label_server_address">NTP Server Address</string>
+    <string name="ntp_placeholder_server">e.g. pool.ntp.org</string>
+    <string name="ntp_placeholder_port">123</string>
+    <string name="ntp_btn_check">Check Reachability</string>
+    <string name="ntp_btn_querying">Querying…</string>
+    <string name="ntp_result_label_server_time">Server Time</string>
+    <string name="ntp_result_label_clock_offset">Clock Offset</string>
+    <string name="ntp_result_label_rtt">Round-Trip Delay</string>
+    <string name="ntp_status_reachable">Reachable</string>
+    <string name="ntp_status_unreachable_timeout">Unreachable – Timeout</string>
+    <string name="ntp_status_unreachable_dns">Unreachable – DNS Failure</string>
+    <string name="ntp_msg_timeout">The server did not respond within the timeout window (5 s). It may be offline, firewalled, or unreachable from this network.</string>
+    <string name="ntp_error_dns_failure">Cannot resolve \"%1$s\"</string>
+    <string name="ntp_history_title">Recent Queries</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- DIG Test screen                                                -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="dig_hint_usage">dig @DNS_SERVER  FQDN_TO_QUERY</string>
+    <string name="dig_label_dns_server">DNS Server (IP or FQDN)</string>
+    <string name="dig_placeholder_dns_server">e.g. 8.8.8.8  or  resolver.example.com</string>
+    <string name="dig_label_fqdn">FQDN to query</string>
+    <string name="dig_placeholder_fqdn">e.g. pool.ntp.org</string>
+    <string name="dig_btn_run">Run DIG</string>
+    <string name="dig_btn_resolving">Resolving…</string>
+    <string name="dig_status_resolved">Resolved</string>
+    <string name="dig_status_nxdomain">Not Found (NXDOMAIN)</string>
+    <string name="dig_status_resolver_error">Resolver Error</string>
+    <string name="dig_history_title">Recent DIG Queries</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Ping screen                                                    -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="ping_btn_start">Ping</string>
+    <string name="ping_cd_ping">Ping</string>
+    <string name="ping_stats_label_packets">Packets</string>
+    <string name="ping_stats_label_latency">Latency (RTT)</string>
+    <string name="ping_history_title">Recent Pings</string>
+    <!-- Format string for ping timeout marker injected into the terminal stream -->
+    <string name="ping_timeout_marker">--- Timed out after %1$ds ---</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Traceroute screen                                              -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="traceroute_btn_start">Traceroute</string>
+    <string name="traceroute_cd_traceroute">Traceroute</string>
+    <string name="traceroute_history_title">Recent Traceroutes</string>
+    <!-- Header line and timeout marker injected into the terminal stream -->
+    <string name="traceroute_header_line">traceroute to %1$s, 30 hops max</string>
+    <string name="traceroute_timeout_marker">--- Timed out after %1$ds ---</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Port Scanner screen                                            -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="port_scanner_label_start_port">Start Port</string>
+    <string name="port_scanner_placeholder_start_port">1</string>
+    <string name="port_scanner_label_end_port">End Port</string>
+    <string name="port_scanner_placeholder_end_port">1024</string>
+    <string name="port_scanner_btn_scan">Scan Ports</string>
+    <string name="port_scanner_cd_scan">Scan</string>
+    <string name="port_scanner_label_protocol_tcp">TCP</string>
+    <string name="port_scanner_label_protocol_udp">UDP</string>
+    <string name="port_scanner_result_open_ports">Open Ports Found: %1$d</string>
+    <string name="port_scanner_msg_no_open_ports">No open ports found.</string>
+    <string name="port_scanner_history_title">Recent Scans</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- LAN Scanner screen                                             -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="lan_scanner_btn_scan">Scan LAN</string>
+    <string name="lan_scanner_btn_scanning">Scanning…</string>
+    <string name="lan_scanner_result_hosts_found">Hosts Found: %1$d</string>
+    <string name="lan_scanner_msg_no_hosts">No hosts found.</string>
+    <string name="lan_scanner_history_title">Recent LAN Scans</string>
+    <string name="lan_scanner_label_discovered_devices">Discovered Devices (%1$d)</string>
+    <string name="lan_scanner_label_scanned">Scanned: %1$d / %2$d</string>
+    <string name="lan_scanner_label_found">Found: %1$d</string>
+    <string name="lan_scanner_label_stop_scan">Stop Scan</string>
+    <string name="lan_scanner_label_quick_scan">Quick Scan</string>
+    <string name="lan_scanner_label_full_scan">Full Scan</string>
+    <string name="lan_scanner_cd_cancel_scan">Cancel Scan</string>
+    <string name="lan_scanner_label_no_connection">No connection. Manual IP range provided.</string>
+    <string name="lan_scanner_cd_network_state">Network State</string>
+    <string name="lan_scanner_cd_refresh_interface">Refresh interface</string>
+    <string name="lan_scanner_label_start_ip">Start IP</string>
+    <string name="lan_scanner_label_end_ip">End IP</string>
+    <string name="lan_scanner_device_cd_router">Router</string>
+    <string name="lan_scanner_device_cd_device">Device</string>
+    <string name="lan_scanner_history_label_hosts">Hosts</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Google Time Sync screen                                        -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
     <string name="google_time_sync_title">Google Time Sync</string>
     <string name="google_time_sync_subtitle">Query clients2.google.com for UTC time with offset calculation</string>
-    <string name="google_time_sync_button_sync">Sync Now</string>
+    <string name="google_time_sync_label_url">URL</string>
+    <string name="google_time_sync_cd_clear_url">Clear URL</string>
+    <string name="google_time_sync_btn_sync">Sync Now</string>
+    <string name="google_time_sync_btn_syncing">Syncing…</string>
+    <string name="google_time_sync_status_success">Sync Successful</string>
+    <string name="google_time_sync_status_failed">Sync Failed</string>
     <string name="google_time_sync_label_server_time">Server Time</string>
     <string name="google_time_sync_label_rtt">Round-Trip Time</string>
     <string name="google_time_sync_label_offset">Clock Offset</string>
     <string name="google_time_sync_label_corrected">Corrected Time</string>
+    <string name="google_time_sync_offset_behind">Local clock is behind server</string>
+    <string name="google_time_sync_offset_ahead">Local clock is ahead of server</string>
+    <string name="google_time_sync_offset_synced">Clocks are in sync</string>
     <string name="google_time_sync_helper">Offset = corrected server time − your device time</string>
     <string name="google_time_sync_copy_offset">Copy Offset</string>
     <string name="google_time_sync_copied">Copied!</string>
+    <string name="google_time_sync_history_title">Recent Syncs</string>
 
-    <!-- Managed Configuration (App Restrictions) titles — displayed in MDM consoles -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- HTTPS Certificate Inspector screen                             -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="https_cert_subtitle">Enter a hostname and port to inspect its TLS certificate</string>
+    <!-- HTTPS Cert error messages (passed as UiText from ViewModel) -->
+    <string name="https_cert_error_invalid_port_range">Port must be a number between 1 and 65535</string>
+    <string name="https_cert_label_host">HTTPS Host</string>
+    <string name="https_cert_placeholder_host">e.g. google.com</string>
+    <string name="https_cert_cd_clear_host">Clear host</string>
+    <string name="https_cert_btn_fetch">Fetch Certificate</string>
+    <string name="https_cert_btn_connecting">Connecting…</string>
+    <string name="https_cert_btn_recheck">Re-check</string>
+    <string name="https_cert_error_title">Certificate Lookup Failed</string>
+    <string name="https_cert_error_invalid_port">Port must be a number between 1 and 65535</string>
+    <string name="https_cert_error_no_network">No network connection</string>
+    <string name="https_cert_error_hostname_unresolved">Cannot resolve hostname \"%1$s\"</string>
+    <string name="https_cert_error_timeout">Connection timed out (%1$s)</string>
+    <string name="https_cert_warning_expired">⚠️ Certificate expired — %1$s</string>
+    <string name="https_cert_warning_untrusted">⚠️ Untrusted chain — %1$s</string>
+    <string name="https_cert_section_subject">Subject</string>
+    <string name="https_cert_section_issuer">Issuer</string>
+    <string name="https_cert_section_validity">Validity Period</string>
+    <string name="https_cert_section_public_key">Public Key</string>
+    <string name="https_cert_section_cert_info">Certificate Info</string>
+    <string name="https_cert_section_fingerprints">Fingerprints</string>
+    <string name="https_cert_label_not_before">Not Before</string>
+    <string name="https_cert_label_not_after">Not After</string>
+    <string name="https_cert_label_algorithm">Algorithm</string>
+    <string name="https_cert_label_key_size">Key Size</string>
+    <string name="https_cert_label_key_size_bits">%1$d bits</string>
+    <string name="https_cert_label_version">Version</string>
+    <string name="https_cert_label_version_value">X.509 v%1$d</string>
+    <string name="https_cert_label_serial_number">Serial Number</string>
+    <string name="https_cert_label_sig_algorithm">Signature Algorithm</string>
+    <string name="https_cert_label_chain_depth">Chain Depth</string>
+    <string name="https_cert_label_chain_depth_value">%1$d cert(s)</string>
+    <string name="https_cert_label_sha256">SHA-256</string>
+    <string name="https_cert_label_sha1">SHA-1</string>
+    <string name="https_cert_chain_depth_banner">Certificate chain: %1$d cert(s)</string>
+    <string name="https_cert_chain_section_title">Certificate Chain (%1$d additional)</string>
+    <string name="https_cert_chain_label_root">[Root]</string>
+    <string name="https_cert_chain_label_intermediate">[Intermediate %1$d]</string>
+    <string name="https_cert_chain_label_subject">Subject</string>
+    <string name="https_cert_chain_label_issuer">Issuer</string>
+    <string name="https_cert_chain_label_valid">Valid</string>
+    <string name="https_cert_validity_valid">Valid</string>
+    <string name="https_cert_validity_valid_expiring">Valid · expires in %1$dd</string>
+    <string name="https_cert_validity_expiring_soon">Expiring Soon · %1$dd left</string>
+    <string name="https_cert_validity_expired">Expired · %1$dd ago</string>
+    <string name="https_cert_validity_invalid">Invalid</string>
+    <string name="https_cert_san_section_title">Subject Alternative Names (%1$d)</string>
+    <string name="https_cert_history_title">Recent Lookups</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Settings screen                                                -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="settings_section_network">Network Configuration</string>
+    <string name="settings_section_proxy">Proxy Configuration</string>
+    <string name="settings_label_timeout">Operation Timeout (seconds)</string>
+    <string name="settings_timeout_hint">Applies to total duration of scans/requests.</string>
+    <string name="settings_timeout_error">Must be between %1$d and %2$d</string>
+    <string name="settings_proxy_enable_label">Enable Proxy</string>
+    <string name="settings_proxy_enable_desc">Route traffic through a PAC-resolved proxy</string>
+    <string name="settings_proxy_pac_mode_url">URL</string>
+    <string name="settings_proxy_pac_mode_file">File</string>
+    <string name="settings_proxy_pac_label_url">PAC URL</string>
+    <string name="settings_proxy_pac_label_file">PAC File</string>
+    <string name="settings_proxy_pac_placeholder_url">http://proxy.corp.com/proxy.pac</string>
+    <string name="settings_proxy_pac_placeholder_file">/data/user/0/app/files/saved-pac.pac</string>
+    <string name="settings_proxy_pac_hint_url">URL to an auto-configuration (.pac) script</string>
+    <string name="settings_proxy_pac_hint_file">Browse to select a local .pac file</string>
+    <string name="settings_proxy_pac_hint_local_file">Local file: %1$s</string>
+    <!-- PAC URL validation errors (passed as @StringRes from ViewModel) -->
+    <string name="settings_pac_error_protocol">Only http:// and https:// URLs are supported</string>
+    <string name="settings_pac_error_no_hostname">URL must contain a hostname</string>
+    <string name="settings_pac_error_invalid_url">Invalid URL format</string>
+    <string name="settings_pac_error_invalid_path">Invalid file path</string>
+    <string name="settings_pac_error_copy_failed">Failed to copy file</string>
+    <string name="settings_proxy_pac_btn_browse">Browse</string>
+    <string name="settings_proxy_logging_label">Enable Proxy Logging</string>
+    <string name="settings_proxy_logging_desc">Logs PAC fetches, resolutions, and errors to memory &amp; file</string>
+    <string name="settings_proxy_btn_view_logs">View Logs</string>
+    <string name="settings_proxy_btn_clear_logs">Clear Logs</string>
+    <string name="settings_proxy_btn_test">Test Proxy/PAC</string>
+    <string name="settings_proxy_btn_testing">Testing…</string>
+    <string name="settings_proxy_last_tested">Last tested: %1$s</string>
+    <string name="settings_log_dialog_title">Proxy PAC Logs</string>
+    <string name="settings_log_dialog_empty">No logs recorded yet.</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Bulk Actions screen                                            -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="bulk_title">Bulk Actions</string>
+    <string name="bulk_btn_load_config">Load JSON Config</string>
+    <string name="bulk_label_csv_output">CSV output</string>
+    <string name="bulk_config_loaded_title">Config loaded</string>
+    <string name="bulk_config_commands_count">%1$d command(s)</string>
+    <string name="bulk_config_output_file_valid">output-file: %1$s</string>
+    <string name="bulk_config_output_file_invalid">output-file: invalid (select one after run)</string>
+    <string name="bulk_config_timeout">timeout: %1$ds</string>
+    <string name="bulk_btn_run">Run All Commands</string>
+    <string name="bulk_btn_stop">Stop</string>
+    <string name="bulk_cd_run">Run</string>
+    <string name="bulk_btn_write_to_file">Write to File</string>
+    <string name="bulk_btn_writing">Writing…</string>
+    <string name="bulk_file_saved">File saved to: %1$s</string>
+    <string name="bulk_config_error_title">Config error</string>
+    <string name="bulk_error_write_failed">Failed to write output file. Check permissions or try saving to a different location.</string>
+    <string name="bulk_status_success">SUCCESS</string>
+    <string name="bulk_status_error">ERROR</string>
+    <string name="bulk_status_timeout">TIMEOUT</string>
+    <string name="bulk_status_closed">CLOSED</string>
+    <string name="bulk_status_warning">WARNING</string>
+    <string name="bulk_btn_clear">Clear</string>
+    <string name="bulk_results_header">Results (%1$d/%2$d)</string>
+    <string name="bulk_cmd_timed_out">Command timed out after %1$s</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Device Info screen                                             -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="device_info_title">Device Info</string>
+    <string name="device_info_loading">Gathering device information…</string>
+    <string name="device_info_permissions_title">Permissions Required</string>
+    <string name="device_info_btn_grant_permissions">Grant Permissions</string>
+    <string name="device_info_snackbar_permissions_denied">Some permissions were denied. Certain information may be unavailable. You can grant them in Settings.</string>
+    <string name="device_info_snackbar_dismiss">Dismiss</string>
+    <!-- Device Info card sections -->
+    <string name="device_info_section_device">Device</string>
+    <string name="device_info_section_time_uptime">Time &amp; Uptime</string>
+    <string name="device_info_section_network">Network</string>
+    <string name="device_info_section_wifi">Wi-Fi</string>
+    <string name="device_info_section_mobile_carrier">Mobile Carrier</string>
+    <string name="device_info_section_battery">Battery</string>
+    <string name="device_info_section_memory_storage">Memory &amp; Storage</string>
+    <string name="device_info_section_security_mdm">Security &amp; MDM</string>
+    <string name="device_info_section_installed_certs">Installed Certificates (%1$d shown)</string>
+    <string name="device_info_section_certs_more">… and %1$d more (not shown)</string>
+    <!-- Device info field labels -->
+    <string name="device_info_field_device">Device</string>
+    <string name="device_info_field_imei">IMEI</string>
+    <string name="device_info_field_serial">Serial Number</string>
+    <string name="device_info_field_iccid">ICCID</string>
+    <string name="device_info_field_android_version">Android Version</string>
+    <string name="device_info_field_api_level">API Level</string>
+    <string name="device_info_field_cpu_arch">CPU Architecture</string>
+    <string name="device_info_field_current_time">Current Time</string>
+    <string name="device_info_field_time_since_boot">Time Since Boot</string>
+    <string name="device_info_field_since_screen_off">Since Screen-Off</string>
+    <string name="device_info_field_active_network">Active Network</string>
+    <string name="device_info_field_ipv4">IPv4 Address</string>
+    <string name="device_info_field_ipv6">IPv6 Address</string>
+    <string name="device_info_field_subnet_mask">Subnet Mask</string>
+    <string name="device_info_field_gateway">Default Gateway</string>
+    <string name="device_info_field_dns_servers">DNS Servers</string>
+    <string name="device_info_field_ntp_server">NTP Server</string>
+    <string name="device_info_field_wifi_ssid">Connected SSID</string>
+    <string name="device_info_field_carrier">Operator</string>
+    <string name="device_info_field_battery_level">Level</string>
+    <string name="device_info_field_charging">Charging</string>
+    <string name="device_info_field_battery_health">Health</string>
+    <string name="device_info_field_battery_yes">Yes</string>
+    <string name="device_info_field_battery_no">No</string>
+    <string name="device_info_field_total_ram">Total RAM</string>
+    <string name="device_info_field_available_ram">Available RAM</string>
+    <string name="device_info_field_total_storage">Total Storage</string>
+    <string name="device_info_field_available_storage">Available Storage</string>
+    <string name="device_info_mdm_status_label">MDM Status</string>
+    <string name="device_info_mdm_managed_badge">App is managed</string>
+    <string name="device_info_mdm_managed_default">Managed (restrictions active)</string>
+    <string name="device_info_mdm_not_managed">Not managed</string>
+    <string name="device_info_cert_valid_range">Valid: %1$s → %2$s</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- More Tools screen                                              -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- (labels come from nav_* strings above — no extra strings needed) -->
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Managed Configuration (App Restrictions) — MDM console titles  -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
     <string name="mdm_ntp_server_title">NTP Default Server</string>
     <string name="mdm_ntp_port_title">NTP Default Port</string>
     <string name="mdm_dig_server_title">DIG Default DNS Server</string>
@@ -29,4 +363,5 @@
     <string name="mdm_bulk_json_title">Bulk Actions JSON Config</string>
     <string name="mdm_bulk_url_title">Bulk Actions Config URL</string>
     <string name="mdm_bulk_auto_run_title">Bulk Actions Auto-Run</string>
+
 </resources>

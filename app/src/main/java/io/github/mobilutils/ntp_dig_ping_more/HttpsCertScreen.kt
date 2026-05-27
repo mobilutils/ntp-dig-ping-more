@@ -75,6 +75,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 
@@ -102,7 +103,7 @@ fun HttpsCertScreen(
         // ── Description ────────────────────────────────────────────────
         item {
             Text(
-                text  = "Enter a hostname and port to inspect its TLS certificate",
+                text  = stringResource(R.string.https_cert_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -118,15 +119,15 @@ fun HttpsCertScreen(
                 OutlinedTextField(
                     value         = host,
                     onValueChange = vm::onHostChange,
-                    label         = { Text("HTTPS Host") },
-                    placeholder   = { Text("e.g. google.com") },
+                    label         = { Text(stringResource(R.string.https_cert_label_host)) },
+                    placeholder   = { Text(stringResource(R.string.https_cert_placeholder_host)) },
                     singleLine    = true,
                     modifier      = Modifier.weight(1f),
                     leadingIcon   = { Icon(Icons.Filled.Lock, contentDescription = null) },
                     trailingIcon  = {
                         if (host.isNotEmpty()) {
                             IconButton(onClick = { vm.onHostChange("") }) {
-                                Icon(Icons.Filled.Clear, contentDescription = "Clear host")
+                                Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.https_cert_cd_clear_host))
                             }
                         }
                     },
@@ -139,8 +140,8 @@ fun HttpsCertScreen(
                 OutlinedTextField(
                     value         = port,
                     onValueChange = vm::onPortChange,
-                    label         = { Text("Port") },
-                    placeholder   = { Text("443") },
+                    label         = { Text(stringResource(R.string.common_label_port)) },
+                    placeholder   = { Text(stringResource(R.string.common_placeholder_port_443)) },
                     singleLine    = true,
                     modifier      = Modifier.width(90.dp),
                     keyboardOptions = KeyboardOptions(
@@ -180,7 +181,7 @@ fun HttpsCertScreen(
                         color       = MaterialTheme.colorScheme.onPrimary,
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Connecting…")
+                    Text(stringResource(R.string.https_cert_btn_connecting))
                 } else {
                     Icon(
                         Icons.Filled.Lock,
@@ -188,7 +189,7 @@ fun HttpsCertScreen(
                         modifier           = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Fetch Certificate", fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.https_cert_btn_fetch), fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -204,8 +205,8 @@ fun HttpsCertScreen(
             ) {
                 when (val state = uiState) {
                     is HttpsCertUiState.Success        -> CertResultContent(info = state.info, chain = listOf(state.info), warning = null, onRetry = { vm.fetchCert() })
-                    is HttpsCertUiState.PartialSuccess -> CertResultContent(info = state.chain.first(), chain = state.chain, warning = state.warningMessage, onRetry = { vm.fetchCert() })
-                    is HttpsCertUiState.Error          -> CertErrorCard(message = state.message, onRetry = { vm.fetchCert() })
+                    is HttpsCertUiState.PartialSuccess -> CertResultContent(info = state.chain.first(), chain = state.chain, warning = state.warningMessage.resolve(), onRetry = { vm.fetchCert() })
+                    is HttpsCertUiState.Error          -> CertErrorCard(message = state.message.resolve(), onRetry = { vm.fetchCert() })
                     else                               -> {}
                 }
             }
@@ -273,45 +274,45 @@ private fun CertResultContent(
 
          // ── Leaf cert (index 0) ────────────────────────────────────────
          // ── Subject ───────────────────────────────────────────────────
-        CertSection(title = "Subject", icon = Icons.Filled.Badge) {
+        CertSection(title = stringResource(R.string.https_cert_section_subject), icon = Icons.Filled.Badge) {
             DnRows(info.subject)
          }
 
          // ── Issuer ────────────────────────────────────────────────────
-        CertSection(title = "Issuer", icon = Icons.Filled.AccountBalance) {
+        CertSection(title = stringResource(R.string.https_cert_section_issuer), icon = Icons.Filled.AccountBalance) {
             DnRows(info.issuer)
          }
 
          // ── Validity period ───────────────────────────────────────────
-        CertSection(title = "Validity Period", icon = Icons.Filled.DateRange) {
-            CertRow(label = "Not Before", value = info.notBefore)
+        CertSection(title = stringResource(R.string.https_cert_section_validity), icon = Icons.Filled.DateRange) {
+            CertRow(label = stringResource(R.string.https_cert_label_not_before), value = info.notBefore)
             Spacer(Modifier.height(6.dp))
-            CertRow(label = "Not After",  value = info.notAfter)
+            CertRow(label = stringResource(R.string.https_cert_label_not_after),  value = info.notAfter)
          }
 
          // ── Public key ────────────────────────────────────────────────
-        CertSection(title = "Public Key", icon = Icons.Filled.Key) {
-            CertRow(label = "Algorithm", value = info.keyAlgorithm)
+        CertSection(title = stringResource(R.string.https_cert_section_public_key), icon = Icons.Filled.Key) {
+            CertRow(label = stringResource(R.string.https_cert_label_algorithm), value = info.keyAlgorithm)
             if (info.keySize > 0) {
                 Spacer(Modifier.height(6.dp))
-                CertRow(label = "Key Size", value = "${info.keySize} bits")
+                CertRow(label = stringResource(R.string.https_cert_label_key_size), value = "${info.keySize} bits")
              }
          }
 
          // ── Certificate metadata ───────────────────────────────────────
-        CertSection(title = "Certificate Info", icon = Icons.Filled.Info) {
-            CertRow(label = "Version",             value = "X.509 v${info.version}")
+        CertSection(title = stringResource(R.string.https_cert_section_cert_info), icon = Icons.Filled.Info) {
+            CertRow(label = stringResource(R.string.https_cert_label_version),             value = "X.509 v${info.version}")
             Spacer(Modifier.height(6.dp))
-            CertRow(label = "Serial Number",       value = info.serialNumber)
+            CertRow(label = stringResource(R.string.https_cert_label_serial_number),       value = info.serialNumber)
             Spacer(Modifier.height(6.dp))
-            CertRow(label = "Signature Algorithm", value = info.signatureAlgorithm)
+            CertRow(label = stringResource(R.string.https_cert_label_sig_algorithm),       value = info.signatureAlgorithm)
             Spacer(Modifier.height(6.dp))
-            CertRow(label = "Chain Depth",         value = "${info.chainDepth} cert(s)")
+            CertRow(label = stringResource(R.string.https_cert_label_chain_depth),         value = "${info.chainDepth} cert(s)")
          }
 
          // ── Subject Alternative Names ──────────────────────────────────
         if (info.subjectAltNames.isNotEmpty()) {
-            CertSection(title = "Subject Alternative Names (${info.subjectAltNames.size})", icon = Icons.Filled.Public) {
+            CertSection(title = stringResource(R.string.https_cert_san_section_title, info.subjectAltNames.size), icon = Icons.Filled.Public) {
                 info.subjectAltNames.forEachIndexed { index, san ->
                     if (index > 0) Spacer(Modifier.height(4.dp))
                     CopyableRow(
@@ -354,7 +355,7 @@ private fun CertResultContent(
          ) {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
-            Text("Re-check")
+            Text(stringResource(R.string.https_cert_btn_recheck))
          }
      }
 }
@@ -495,7 +496,7 @@ private fun CollapsibleCertEntry(
             )
             Icon(
                 imageVector         = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                contentDescription = if (isExpanded) stringResource(R.string.common_cd_collapse) else stringResource(R.string.common_cd_expand),
                 tint                = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier            = Modifier.size(20.dp),
             )
@@ -757,7 +758,7 @@ private fun CopyableRow(
         ) {
             Icon(
                 imageVector        = if (copied) Icons.Filled.CheckCircle else Icons.Filled.ContentCopy,
-                contentDescription = if (copied) "Copied" else "Copy",
+                contentDescription = if (copied) stringResource(R.string.common_cd_copied) else stringResource(R.string.common_cd_copy),
                 tint               = if (copied) MaterialTheme.colorScheme.secondary
                                      else        MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier           = Modifier.size(18.dp),
@@ -789,7 +790,7 @@ private fun CertErrorCard(message: String, onRetry: () -> Unit) {
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        text       = "Certificate Lookup Failed",
+                        text       = stringResource(R.string.https_cert_error_title),
                         style      = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color      = MaterialTheme.colorScheme.onErrorContainer,
@@ -812,7 +813,7 @@ private fun CertErrorCard(message: String, onRetry: () -> Unit) {
             ) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Retry")
+                Text(stringResource(R.string.common_btn_retry))
             }
         }
     }
@@ -847,7 +848,7 @@ private fun HttpsCertHistorySection(
                     modifier           = Modifier.size(18.dp),
                 )
                 Text(
-                    text       = "Recent Lookups",
+                    text       = stringResource(R.string.https_cert_history_title),
                     style      = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color      = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -57,6 +57,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,8 +112,8 @@ fun TracerouteScreen() {
         OutlinedTextField(
             value = uiState.host,
             onValueChange = vm::onHostChange,
-            label = { Text("Hostname / IP") },
-            placeholder = { Text("e.g. google.com") },
+            label = { Text(stringResource(R.string.common_label_hostname_ip)) },
+            placeholder = { Text(stringResource(R.string.common_placeholder_eg_google)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(
@@ -153,19 +154,19 @@ fun TracerouteScreen() {
                 Spacer(Modifier.width(8.dp))
                 Icon(
                     imageVector = Icons.Filled.Stop,
-                    contentDescription = "Stop",
+                    contentDescription = stringResource(R.string.common_cd_stop),
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(4.dp))
-                Text("Stop", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.common_btn_stop), fontWeight = FontWeight.Medium)
             } else {
                 Icon(
                     imageVector = Icons.Filled.Route,
-                    contentDescription = "Traceroute",
+                    contentDescription = stringResource(R.string.traceroute_cd_traceroute),
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Traceroute", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.traceroute_btn_start), fontWeight = FontWeight.Medium)
             }
         }
 
@@ -200,6 +201,18 @@ fun TracerouteScreen() {
                             .verticalScroll(outputScrollState)
                             .verticalScrollbar(outputScrollState),
                     ) {
+                        // Render the localised header line first
+                        uiState.headerLine?.let { header ->
+                            Text(
+                                text = header.resolve(),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         uiState.outputLines.forEach { line ->
                             Text(
                                 text = line,
@@ -209,6 +222,18 @@ fun TracerouteScreen() {
                                     lineHeight = 18.sp,
                                 ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        // Render the localised timeout marker (if a timeout occurred)
+                        uiState.timeoutMessage?.let { uiText ->
+                            Text(
+                                text = uiText.resolve(),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                                color = MaterialTheme.colorScheme.tertiary,
                             )
                         }
                     }
@@ -262,7 +287,7 @@ private fun TracerouteHistorySection(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Recent Traceroutes",
+                    text = stringResource(R.string.traceroute_history_title),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -3,6 +3,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.github.mobilutils.ntp_dig_ping_more.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -166,7 +167,8 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.Error)
 
         val errorState = state as HttpsCertUiState.Error
-        assertTrue(errorState.message.contains("Port must be a number"))
+        // message is UiText.Res pointing to the invalid-port string resource
+        assertTrue(errorState.message is UiText.Res)
     }
 
     @Test
@@ -178,7 +180,8 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.Error)
 
         val errorState = state as HttpsCertUiState.Error
-        assertTrue(errorState.message.contains("Port must be a number"))
+        // message is UiText.Res pointing to the invalid-port string resource
+        assertTrue(errorState.message is UiText.Res)
     }
 
     @Test
@@ -239,7 +242,8 @@ class HttpsCertViewModelTest {
         assertEquals(expiredCert.port, leaf.port)
         assertEquals(expiredCert.validityStatus, leaf.validityStatus)
         assertEquals(expiredCert.daysUntilExpiry, leaf.daysUntilExpiry)
-        assertTrue(partialState.warningMessage.contains("expired"))
+        assertTrue(partialState.warningMessage is UiText.Res)
+        assertEquals(R.string.https_cert_warning_expired, (partialState.warningMessage as UiText.Res).resId)
     }
 
     @Test
@@ -264,7 +268,8 @@ class HttpsCertViewModelTest {
         assertEquals(sampleCertificateInfo.port, leaf.port)
         assertEquals(sampleCertificateInfo.validityStatus, leaf.validityStatus)
         assertEquals(sampleCertificateInfo.daysUntilExpiry, leaf.daysUntilExpiry)
-        assertTrue(partialState.warningMessage.contains("Untrusted"))
+        assertTrue(partialState.warningMessage is UiText.Res)
+        assertEquals(R.string.https_cert_warning_untrusted, (partialState.warningMessage as UiText.Res).resId)
     }
 
     @Test
@@ -303,7 +308,8 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.PartialSuccess)
 
         val partialState = state as HttpsCertUiState.PartialSuccess
-        assertTrue(partialState.warningMessage.contains("Untrusted"))
+        assertTrue(partialState.warningMessage is UiText.Res)
+        assertEquals(R.string.https_cert_warning_untrusted, (partialState.warningMessage as UiText.Res).resId)
         assertEquals(info, partialState.chain.first())
     }
 
@@ -359,7 +365,8 @@ class HttpsCertViewModelTest {
         assertEquals(0, partialState.chain[0].chainPosition)
         assertEquals(1, partialState.chain[1].chainPosition)
         assertEquals(2, partialState.chain[2].chainPosition)
-        assertTrue(partialState.warningMessage.contains("Untrusted"))
+        assertTrue(partialState.warningMessage is UiText.Res)
+        assertEquals(R.string.https_cert_warning_untrusted, (partialState.warningMessage as UiText.Res).resId)
     }
 
 
@@ -376,7 +383,9 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.Error)
 
         val errorState = state as HttpsCertUiState.Error
-        assertEquals("No network connection", errorState.message)
+        // No-network error is UiText.Res(R.string.https_cert_error_no_network)
+        assertTrue(errorState.message is UiText.Res)
+        assertEquals(R.string.https_cert_error_no_network, (errorState.message as UiText.Res).resId)
     }
 
     @Test
@@ -392,7 +401,9 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.Error)
 
         val errorState = state as HttpsCertUiState.Error
-        assertTrue(errorState.message.contains("Cannot resolve hostname"))
+        // HostnameUnresolved maps to https_cert_error_hostname_unresolved resource
+        assertTrue(errorState.message is UiText.Res)
+        assertEquals(R.string.https_cert_error_hostname_unresolved, (errorState.message as UiText.Res).resId)
     }
 
     @Test
@@ -408,7 +419,9 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.Error)
 
         val errorState = state as HttpsCertUiState.Error
-        assertTrue(errorState.message.contains("timed out"))
+        // Timeout maps to https_cert_error_timeout resource
+        assertTrue(errorState.message is UiText.Res)
+        assertEquals(R.string.https_cert_error_timeout, (errorState.message as UiText.Res).resId)
     }
 
     @Test
@@ -424,7 +437,9 @@ class HttpsCertViewModelTest {
         assertTrue(state is HttpsCertUiState.Error)
 
         val errorState = state as HttpsCertUiState.Error
-        assertEquals("Connection refused", errorState.message)
+        // Generic HttpsCertResult.Error maps to UiText.Res(R.string.common_label_error)
+        assertTrue(errorState.message is UiText.Res)
+        assertEquals(R.string.common_label_error, (errorState.message as UiText.Res).resId)
     }
 
     @Test

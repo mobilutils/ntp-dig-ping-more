@@ -56,6 +56,8 @@ data class PingUiState(
     val history: List<PingHistoryEntry> = emptyList(),
     /** Live statistics updated on every incoming ping line. */
     val stats: PingStats = PingStats(),
+    /** Set when the run timed out; resolved to a string by the UI layer. */
+    val timeoutMessage: UiText? = null,
 )
 
 /**
@@ -87,11 +89,9 @@ class PingViewModel(
 
     // Regex to extract the icmp_seq number from a reply or timeout line
     private val icmpSeqRegex = Regex("""icmp_seq=(\d+)""")
+    // Regex to extract the RTT (time=X.X) from a reply line
+    private val rttRegex = Regex("""time=(\d+\.?\d*)""")
 
-    // Regex to extract the RTT value (ms) from a successful reply line
-    // Matches "time=12.3" or "time=12" in both Linux and BSD ping output
-    private val rttRegex = Regex("""time=(\d+(?:\.\d+)?)"""
-    )
 
     init {
         viewModelScope.launch {
@@ -125,6 +125,7 @@ class PingViewModel(
             isRunning = true,
             outputLines = emptyList(),
             stats = PingStats(),
+            timeoutMessage = null,
         )
 
         pingJob = viewModelScope.launch {
@@ -153,10 +154,12 @@ class PingViewModel(
                     process.waitFor()
                 }
             } catch (_: TimeoutCancellationException) {
-                // Append a visible timeout marker before the finally block cleans up.
+                // Signal timeout via UiText so the UI layer can localise the marker.
                 _uiState.value = _uiState.value.copy(
-                    outputLines = _uiState.value.outputLines +
-                        "--- Timed out after ${timeoutMs / 1000}s ---",
+                    timeoutMessage = UiText.Res(
+                        R.string.ping_timeout_marker,
+                        listOf(timeoutMs / 1000),
+                    ),
                 )
             } catch (_: Exception) {
                 // Interrupted or cancelled – treat as stopped

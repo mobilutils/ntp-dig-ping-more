@@ -193,13 +193,15 @@ class SettingsViewModelTest {
     @Test
     fun `validatePacUrl rejects FTP URL`() {
         val error = viewModel.validatePacUrl("ftp://proxy.corp.com/proxy.pac")
-        assertTrue(error != null && error.contains("http"))
+        // Returns a @StringRes Int, not null = error
+        assertTrue(error != null)
     }
 
     @Test
     fun `validatePacUrl rejects malformed URL`() {
         val error = viewModel.validatePacUrl("not a url at all")
-        assertTrue(error != null && error.contains("Invalid"))
+        // Returns a @StringRes Int, not null = error
+        assertTrue(error != null)
     }
 
     @Test
@@ -420,7 +422,7 @@ class SettingsViewModelTest {
     fun `validatePacUrl in FILE mode rejects empty path`() {
         val vm = SettingsViewModel(settingsRepository, proxyResolver, proxyPacLogger, appContext = null)
         val error = vm.validatePacUrl("/", PacSourceMode.FILE)
-        assertTrue(error != null && error.contains("Invalid"))
+        assertTrue(error != null)
          }
 
      @Test
@@ -441,6 +443,6 @@ class SettingsViewModelTest {
     @Test
     fun `validatePacUrl in URL mode rejects FTP URL`() {
         val error = viewModel.validatePacUrl("ftp://proxy.corp.com/proxy.pac", PacSourceMode.URL)
-        assertTrue(error != null && error.contains("http"))
+        assertTrue(error != null)
     }
 }

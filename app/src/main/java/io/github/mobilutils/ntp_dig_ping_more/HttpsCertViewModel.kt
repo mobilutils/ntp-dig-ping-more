@@ -1,6 +1,7 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
 import android.content.Context
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -34,11 +35,11 @@ sealed class HttpsCertUiState {
      */
     data class PartialSuccess(
         val chain: List<CertificateInfo>,
-        val warningMessage: String,
+        val warningMessage: UiText,
     ) : HttpsCertUiState()
 
     /** A hard failure — no certificate data to display. */
-    data class Error(val message: String) : HttpsCertUiState()
+    data class Error(val message: UiText) : HttpsCertUiState()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,7 +114,9 @@ class HttpsCertViewModel(
 
         if (h.isBlank()) return
         if (p == null || p !in 1..65535) {
-            _uiState.value = HttpsCertUiState.Error("Port must be a number between 1 and 65535")
+            _uiState.value = HttpsCertUiState.Error(
+                UiText.Res(R.string.https_cert_error_invalid_port_range)
+            )
             return
         }
 
@@ -128,26 +131,36 @@ class HttpsCertViewModel(
                 is HttpsCertResult.CertExpired ->
                     HttpsCertUiState.PartialSuccess(
                         chain = result.chain,
-                        warningMessage = "⚠️ Certificate expired — ${result.reason}",
+                        warningMessage = UiText.Res(
+                            R.string.https_cert_warning_expired,
+                            listOf(result.reason),
+                        ),
                     )
 
                 is HttpsCertResult.UntrustedChain ->
                     HttpsCertUiState.PartialSuccess(
                         chain = result.chain,
-                        warningMessage = "⚠️ Untrusted chain — ${result.reason}",
+                        warningMessage = UiText.Res(
+                            R.string.https_cert_warning_untrusted,
+                            listOf(result.reason),
+                        ),
                     )
 
                 is HttpsCertResult.NoNetwork ->
-                    HttpsCertUiState.Error("No network connection")
+                    HttpsCertUiState.Error(UiText.Res(R.string.https_cert_error_no_network))
 
                 is HttpsCertResult.HostnameUnresolved ->
-                    HttpsCertUiState.Error("Cannot resolve hostname \"${result.host}\"")
+                    HttpsCertUiState.Error(
+                        UiText.Res(R.string.https_cert_error_hostname_unresolved, listOf(result.host))
+                    )
 
                 is HttpsCertResult.Timeout ->
-                    HttpsCertUiState.Error("Connection timed out (${result.host})")
+                    HttpsCertUiState.Error(
+                        UiText.Res(R.string.https_cert_error_timeout, listOf(result.host))
+                    )
 
                 is HttpsCertResult.Error ->
-                    HttpsCertUiState.Error(result.message)
+                    HttpsCertUiState.Error(UiText.Res(R.string.common_label_error))
             }
 
             _uiState.value = newState
@@ -194,7 +207,7 @@ class HttpsCertViewModel(
                 }
             }
             is HttpsCertUiState.Error ->
-                CertHistoryStatus.ERROR to state.message.take(40)
+                CertHistoryStatus.ERROR to "error"
             else -> return   // Idle / Loading — nothing to save
         }
 
