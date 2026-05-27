@@ -66,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -89,21 +90,21 @@ import java.io.File
 
 sealed class AppScreen(
     val route: String,
-    val label: String,
+    @androidx.annotation.StringRes val labelResId: Int,
     val icon: ImageVector,
 ) {
-    object NtpCheck    : AppScreen("ntp_check",   "NTP Check",  Icons.Filled.NetworkCheck)
-    object DigTest     : AppScreen("dig_test",    "DIG Test",   Icons.Filled.Dns)
-    object Ping        : AppScreen("ping",        "Ping",       Icons.Filled.Terminal)
-    object Traceroute  : AppScreen("traceroute",  "Traceroute", Icons.Filled.Route)
-    object PortScanner : AppScreen("port_scanner", "Port Scan", Icons.Filled.Search)
-    object LanScanner     : AppScreen("lan_scanner",      "LAN Scan",         Icons.Filled.WifiFind)
-    object GoogleTimeSync : AppScreen("google_time_sync", "Google Time Sync", Icons.Filled.AccessTime)
-    object HttpsCert      : AppScreen("https_cert",       "HTTPS Cert",       Icons.Filled.Lock)
-    object DeviceInfo     : AppScreen("device_info",      "Device Info",      Icons.Filled.Info)
-    object BulkActions    : AppScreen("bulk_actions",     "Bulk Actions",     Icons.Filled.Dns)
-    object Settings       : AppScreen("settings",         "Settings",         Icons.Filled.Settings)
-    object MoreTools      : AppScreen("more_tools",       "More",             Icons.Filled.MoreHoriz)
+    object NtpCheck    : AppScreen("ntp_check",    R.string.nav_ntp_check,        Icons.Filled.NetworkCheck)
+    object DigTest     : AppScreen("dig_test",     R.string.nav_dig_test,         Icons.Filled.Dns)
+    object Ping        : AppScreen("ping",         R.string.nav_ping,             Icons.Filled.Terminal)
+    object Traceroute  : AppScreen("traceroute",   R.string.nav_traceroute,       Icons.Filled.Route)
+    object PortScanner : AppScreen("port_scanner", R.string.nav_port_scanner,     Icons.Filled.Search)
+    object LanScanner     : AppScreen("lan_scanner",      R.string.nav_lan_scanner,      Icons.Filled.WifiFind)
+    object GoogleTimeSync : AppScreen("google_time_sync", R.string.nav_google_time_sync, Icons.Filled.AccessTime)
+    object HttpsCert      : AppScreen("https_cert",       R.string.nav_https_cert,       Icons.Filled.Lock)
+    object DeviceInfo     : AppScreen("device_info",      R.string.nav_device_info,      Icons.Filled.Info)
+    object BulkActions    : AppScreen("bulk_actions",     R.string.nav_bulk_actions,     Icons.Filled.Dns)
+    object Settings       : AppScreen("settings",         R.string.nav_settings,         Icons.Filled.Settings)
+    object MoreTools      : AppScreen("more_tools",       R.string.nav_more,             Icons.Filled.MoreHoriz)
 }
 
 private val allAppScreens = listOf(
@@ -196,7 +197,7 @@ fun AppRoot(
                             modifier = Modifier.size(24.dp),
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text(currentScreen.label, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(currentScreen.labelResId), fontWeight = FontWeight.SemiBold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -224,10 +225,10 @@ fun AppRoot(
                         icon = {
                             Icon(
                                 imageVector = screen.icon,
-                                contentDescription = screen.label,
+                                contentDescription = stringResource(screen.labelResId),
                             )
                         },
-                        label = { Text(screen.label) },
+                        label = { Text(stringResource(screen.labelResId)) },
                         selected = selected,
                         onClick = {
                             if (selected) {
@@ -327,8 +328,8 @@ fun NtpCheckScreen() {
             OutlinedTextField(
                 value = uiState.serverAddress,
                 onValueChange = viewModel::onServerAddressChange,
-                label = { Text("NTP Server Address") },
-                placeholder = { Text("e.g. pool.ntp.org") },
+                label = { Text(stringResource(R.string.ntp_label_server_address)) },
+                placeholder = { Text(stringResource(R.string.ntp_placeholder_server)) },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(
@@ -340,7 +341,7 @@ fun NtpCheckScreen() {
                 supportingText = {
                     when (val r = uiState.result) {
                         is NtpResult.DnsFailure ->
-                            Text("Cannot resolve \"${r.host}\"", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.ntp_error_dns_failure, r.host), color = MaterialTheme.colorScheme.error)
                         is NtpResult.Error ->
                             Text(r.message, color = MaterialTheme.colorScheme.error)
                         else -> {}
@@ -350,8 +351,8 @@ fun NtpCheckScreen() {
             OutlinedTextField(
                 value = uiState.port,
                 onValueChange = viewModel::onPortChange,
-                label = { Text("Port") },
-                placeholder = { Text("123") },
+                label = { Text(stringResource(R.string.common_label_port)) },
+                placeholder = { Text(stringResource(R.string.common_placeholder_port_123)) },
                 singleLine = true,
                 modifier = Modifier.width(90.dp),
                 keyboardOptions = KeyboardOptions(
@@ -389,9 +390,9 @@ fun NtpCheckScreen() {
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Querying…")
+                Text(stringResource(R.string.ntp_btn_querying))
             } else {
-                Text("Check Reachability", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.ntp_btn_check), fontWeight = FontWeight.Medium)
             }
         }
 
@@ -449,17 +450,17 @@ private fun ResultCard(result: NtpResult) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.2f))
                 Spacer(Modifier.height(16.dp))
 
-                MetricRow(label = "Server Time",       value = result.serverTime)
+                MetricRow(label = stringResource(R.string.ntp_result_label_server_time), value = result.serverTime)
                 Spacer(Modifier.height(10.dp))
-                MetricRow(label = "Clock Offset",      value = "${result.offsetMs} ms")
+                MetricRow(label = stringResource(R.string.ntp_result_label_clock_offset), value = "${result.offsetMs} ms")
                 Spacer(Modifier.height(10.dp))
-                MetricRow(label = "Round-Trip Delay",  value = "${result.delayMs} ms")
+                MetricRow(label = stringResource(R.string.ntp_result_label_rtt),          value = "${result.delayMs} ms")
             }
 
             if (result is NtpResult.NoNetwork) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Please check your internet connection and try again.",
+                    text = stringResource(R.string.common_msg_no_network),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
@@ -468,8 +469,7 @@ private fun ResultCard(result: NtpResult) {
             if (result is NtpResult.Timeout) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "The server did not respond within the timeout window (5 s). " +
-                           "It may be offline, firewalled, or unreachable from this network.",
+                    text = stringResource(R.string.ntp_msg_timeout),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
@@ -480,18 +480,19 @@ private fun ResultCard(result: NtpResult) {
 
 @Composable
 private fun StatusHeader(result: NtpResult) {
-    val (icon, label, tint) = when (result) {
+    val (icon, labelResId, tint) = when (result) {
         is NtpResult.Success    ->
-            Triple(Icons.Filled.CheckCircle, "Reachable",   MaterialTheme.colorScheme.secondary)
+            Triple(Icons.Filled.CheckCircle, R.string.ntp_status_reachable,           MaterialTheme.colorScheme.secondary)
         is NtpResult.NoNetwork  ->
-            Triple(Icons.Filled.WifiOff,     "No Network",  MaterialTheme.colorScheme.error)
+            Triple(Icons.Filled.WifiOff,     R.string.common_label_no_network,        MaterialTheme.colorScheme.error)
         is NtpResult.Timeout    ->
-            Triple(Icons.Filled.Error,       "Unreachable – Timeout", MaterialTheme.colorScheme.error)
+            Triple(Icons.Filled.Error,       R.string.ntp_status_unreachable_timeout, MaterialTheme.colorScheme.error)
         is NtpResult.DnsFailure ->
-            Triple(Icons.Filled.Error,       "Unreachable – DNS Failure", MaterialTheme.colorScheme.error)
+            Triple(Icons.Filled.Error,       R.string.ntp_status_unreachable_dns,     MaterialTheme.colorScheme.error)
         is NtpResult.Error      ->
-            Triple(Icons.Filled.Error,       "Error",        MaterialTheme.colorScheme.error)
+            Triple(Icons.Filled.Error,       R.string.common_label_error,             MaterialTheme.colorScheme.error)
     }
+    val label = stringResource(labelResId)
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
@@ -503,7 +504,7 @@ private fun StatusHeader(result: NtpResult) {
         Spacer(Modifier.width(12.dp))
         Column {
             Text(
-                text = "Status",
+                text = stringResource(R.string.common_label_status),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -567,7 +568,7 @@ private fun HistorySection(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Recent Queries",
+                    text = stringResource(R.string.ntp_history_title),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -614,7 +615,7 @@ private fun HistoryRow(entry: NtpHistoryEntry, onClick: () -> Unit) {
         Spacer(Modifier.width(8.dp))
         Icon(
             imageVector = if (entry.success) Icons.Filled.CheckCircle else Icons.Filled.Error,
-            contentDescription = if (entry.success) "Success" else "Failed",
+            contentDescription = if (entry.success) stringResource(R.string.common_cd_success) else stringResource(R.string.common_cd_failed),
             tint = if (entry.success)
                 MaterialTheme.colorScheme.secondary
             else

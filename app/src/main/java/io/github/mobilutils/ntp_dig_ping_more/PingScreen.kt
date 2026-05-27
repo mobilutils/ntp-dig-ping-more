@@ -58,6 +58,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.util.Locale
 
@@ -137,7 +138,7 @@ private fun PingStatsBar(stats: PingStats, modifier: Modifier = Modifier) {
             // Left half – packet counts + loss
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = "Packets",
+                    text = stringResource(R.string.ping_stats_label_packets),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
@@ -183,7 +184,7 @@ private fun PingStatsBar(stats: PingStats, modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = "Latency (RTT)",
+                    text = stringResource(R.string.ping_stats_label_latency),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
@@ -238,8 +239,8 @@ fun PingScreen() {
         OutlinedTextField(
             value = uiState.host,
             onValueChange = vm::onHostChange,
-            label = { Text("Hostname / IP") },
-            placeholder = { Text("e.g. google.com") },
+            label = { Text(stringResource(R.string.common_label_hostname_ip)) },
+            placeholder = { Text(stringResource(R.string.common_placeholder_eg_google)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(
@@ -280,19 +281,19 @@ fun PingScreen() {
                 Spacer(Modifier.width(8.dp))
                 Icon(
                     imageVector = Icons.Filled.Stop,
-                    contentDescription = "Stop",
+                    contentDescription = stringResource(R.string.common_cd_stop),
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(4.dp))
-                Text("Stop", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.common_btn_stop), fontWeight = FontWeight.Medium)
             } else {
                 Icon(
                     imageVector = Icons.Filled.Terminal,
-                    contentDescription = "Ping",
+                    contentDescription = stringResource(R.string.ping_cd_ping),
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Ping", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.ping_btn_start), fontWeight = FontWeight.Medium)
             }
         }
 
@@ -348,6 +349,18 @@ fun PingScreen() {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        // Render the localised timeout marker (if a timeout occurred)
+                        uiState.timeoutMessage?.let { uiText ->
+                            Text(
+                                text = uiText.resolve(),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
                     }
                 }
             }
@@ -399,7 +412,7 @@ private fun PingHistorySection(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Recent Pings",
+                    text = stringResource(R.string.ping_history_title),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

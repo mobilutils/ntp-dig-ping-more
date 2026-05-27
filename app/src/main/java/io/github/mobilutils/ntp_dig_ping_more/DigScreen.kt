@@ -52,6 +52,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,7 +75,7 @@ fun DigScreen() {
     ) {
         // ── Usage hint ────────────────────────────────────────────────────────
         Text(
-            text = "dig @DNS_SERVER  FQDN_TO_QUERY",
+            text = stringResource(R.string.dig_hint_usage),
             style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -83,8 +84,8 @@ fun DigScreen() {
         OutlinedTextField(
             value = uiState.dnsServer,
             onValueChange = viewModel::onDnsServerChange,
-            label = { Text("DNS Server (IP or FQDN)") },
-            placeholder = { Text("e.g. 8.8.8.8  or  resolver.example.com") },
+            label = { Text(stringResource(R.string.dig_label_dns_server)) },
+            placeholder = { Text(stringResource(R.string.dig_placeholder_dns_server)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             leadingIcon = {
@@ -104,8 +105,8 @@ fun DigScreen() {
         OutlinedTextField(
             value = uiState.fqdn,
             onValueChange = viewModel::onFqdnChange,
-            label = { Text("FQDN to query") },
-            placeholder = { Text("e.g. pool.ntp.org") },
+            label = { Text(stringResource(R.string.dig_label_fqdn)) },
+            placeholder = { Text(stringResource(R.string.dig_placeholder_fqdn)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(
@@ -142,9 +143,9 @@ fun DigScreen() {
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Resolving…")
+                Text(stringResource(R.string.dig_btn_resolving))
             } else {
-                Text("Run DIG", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.dig_btn_run), fontWeight = FontWeight.Medium)
             }
         }
 
@@ -203,7 +204,7 @@ private fun DigHistorySection(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Recent DIG Queries",
+                    text = stringResource(R.string.dig_history_title),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -346,7 +347,7 @@ private fun DigResultCard(result: DigResult) {
                 is DigResult.NoNetwork -> {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Please check your internet connection and try again.",
+                        text = stringResource(R.string.common_msg_no_network),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
@@ -412,13 +413,14 @@ private fun DnsSection(header: String, lines: List<String>) {
 
 @Composable
 private fun DigStatusHeader(result: DigResult) {
-    val (icon, label) = when (result) {
-        is DigResult.Success        -> Icons.Filled.CheckCircle to "Resolved"
-        is DigResult.NxDomain       -> Icons.Filled.Error       to "Not Found (NXDOMAIN)"
-        is DigResult.DnsServerError -> Icons.Filled.Error       to "Resolver Error"
-        is DigResult.NoNetwork      -> Icons.Filled.WifiOff     to "No Network"
-        is DigResult.Error          -> Icons.Filled.Error       to "Error"
+    val (icon, labelResId) = when (result) {
+        is DigResult.Success        -> Icons.Filled.CheckCircle to R.string.dig_status_resolved
+        is DigResult.NxDomain       -> Icons.Filled.Error       to R.string.dig_status_nxdomain
+        is DigResult.DnsServerError -> Icons.Filled.Error       to R.string.dig_status_resolver_error
+        is DigResult.NoNetwork      -> Icons.Filled.WifiOff     to R.string.common_label_no_network
+        is DigResult.Error          -> Icons.Filled.Error       to R.string.common_label_error
     }
+    val label = stringResource(labelResId)
     val tint = if (result is DigResult.Success)
         MaterialTheme.colorScheme.secondary
     else
@@ -434,7 +436,7 @@ private fun DigStatusHeader(result: DigResult) {
         Spacer(Modifier.width(12.dp))
         Column {
             Text(
-                text = "Status",
+                text = stringResource(R.string.common_label_status),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

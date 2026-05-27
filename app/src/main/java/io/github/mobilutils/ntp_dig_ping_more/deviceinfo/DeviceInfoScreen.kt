@@ -72,8 +72,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.mobilutils.ntp_dig_ping_more.R
 import io.github.mobilutils.ntp_dig_ping_more.ui.theme.NtpDigPingMoreTheme
 
 /**
@@ -159,14 +161,14 @@ fun DeviceInfoScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Device Info") },
+                title = { Text(stringResource(R.string.device_info_title)) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
                 actions = {
                     IconButton(onClick = { viewModel.onPermissionsResult(true) }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.common_cd_refresh))
                     }
                 }
             )
@@ -232,7 +234,7 @@ private fun LoadingContent(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "Gathering device information…",
+            text = stringResource(R.string.device_info_loading),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -264,7 +266,7 @@ private fun PermissionDeniedContent(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "Permissions Required",
+            text = stringResource(R.string.device_info_permissions_title),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
@@ -280,7 +282,7 @@ private fun PermissionDeniedContent(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
         ) {
-            Text("Grant Permissions")
+            Text(stringResource(R.string.device_info_btn_grant_permissions))
         }
     }
 }

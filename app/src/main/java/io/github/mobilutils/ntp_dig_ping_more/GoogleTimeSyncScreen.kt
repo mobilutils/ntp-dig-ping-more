@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -110,7 +111,7 @@ fun GoogleTimeSyncScreen() {
     ) {
         // ── Description ───────────────────────────────────────────────
         Text(
-            text  = "Query clients2.google.com for UTC time with offset calculation",
+            text  = stringResource(R.string.google_time_sync_subtitle),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -122,7 +123,7 @@ fun GoogleTimeSyncScreen() {
                 url = newValue
                 if (syncState !is GoogleTimeSyncUiState.Idle) vm.reset()
             },
-            label       = { Text("URL") },
+            label       = { Text(stringResource(R.string.google_time_sync_label_url)) },
             placeholder = { Text(GoogleTimeSyncRepository.DEFAULT_URL) },
             singleLine  = true,
             modifier    = Modifier.fillMaxWidth(),
@@ -133,7 +134,7 @@ fun GoogleTimeSyncScreen() {
                         url = ""
                         vm.reset()
                     }) {
-                        Icon(Icons.Filled.Clear, contentDescription = "Clear URL")
+                        Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.google_time_sync_cd_clear_url))
                     }
                 }
             },
@@ -173,7 +174,7 @@ fun GoogleTimeSyncScreen() {
                     color       = MaterialTheme.colorScheme.onPrimary,
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Syncing…")
+                Text(stringResource(R.string.google_time_sync_btn_syncing))
             } else {
                 Icon(
                     Icons.Filled.Sync,
@@ -181,7 +182,7 @@ fun GoogleTimeSyncScreen() {
                     modifier           = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Sync Now", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.google_time_sync_btn_sync), fontWeight = FontWeight.Medium)
             }
         }
 
@@ -236,7 +237,7 @@ fun GoogleTimeSyncScreen() {
 
         // ── Footer helper text ────────────────────────────────────────
         Text(
-            text  = "Offset = corrected server time − your device time",
+            text  = stringResource(R.string.google_time_sync_helper),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
         )
@@ -261,9 +262,9 @@ private fun TimeSyncResultCard(
     }
     val offsetSign  = if (result.offsetMillis >= 0) "+" else ""
     val offsetLabel = when {
-        result.offsetMillis > 0L -> "Local clock is behind server"
-        result.offsetMillis < 0L -> "Local clock is ahead of server"
-        else                     -> "Clocks are in sync"
+        result.offsetMillis > 0L -> stringResource(R.string.google_time_sync_offset_behind)
+        result.offsetMillis < 0L -> stringResource(R.string.google_time_sync_offset_ahead)
+        else                     -> stringResource(R.string.google_time_sync_offset_synced)
     }
 
     val utcFmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).apply {
@@ -292,7 +293,7 @@ private fun TimeSyncResultCard(
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        text       = "Sync Successful",
+                        text       = stringResource(R.string.google_time_sync_status_success),
                         style      = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -308,9 +309,9 @@ private fun TimeSyncResultCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.2f))
             Spacer(Modifier.height(16.dp))
 
-            SyncMetricRow(icon = Icons.Filled.Schedule,  label = "Server Time",     value = serverTimeStr)
+            SyncMetricRow(icon = Icons.Filled.Schedule,  label = stringResource(R.string.google_time_sync_label_server_time),  value = serverTimeStr)
             Spacer(Modifier.height(10.dp))
-            SyncMetricRow(icon = Icons.Filled.SwapHoriz, label = "Round-Trip Time", value = "${result.rttMillis} ms")
+            SyncMetricRow(icon = Icons.Filled.SwapHoriz, label = stringResource(R.string.google_time_sync_label_rtt),           value = "${result.rttMillis} ms")
             Spacer(Modifier.height(10.dp))
 
             // Clock offset (colour-coded)
@@ -328,7 +329,7 @@ private fun TimeSyncResultCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text  = "Clock Offset",
+                        text  = stringResource(R.string.google_time_sync_label_offset),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -349,7 +350,7 @@ private fun TimeSyncResultCard(
             }
 
             Spacer(Modifier.height(10.dp))
-            SyncMetricRow(icon = Icons.Filled.Adjust, label = "Corrected Time", value = correctedTimeStr)
+            SyncMetricRow(icon = Icons.Filled.Adjust, label = stringResource(R.string.google_time_sync_label_corrected), value = correctedTimeStr)
             Spacer(Modifier.height(16.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.2f))
             Spacer(Modifier.height(12.dp))
@@ -365,7 +366,7 @@ private fun TimeSyncResultCard(
                     modifier           = Modifier.size(16.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(if (copied) "Copied!" else "Copy Offset ($offsetSign${result.offsetMillis} ms)")
+                Text(if (copied) stringResource(R.string.google_time_sync_copied) else stringResource(R.string.google_time_sync_copy_offset) + " ($offsetSign${result.offsetMillis} ms)")
             }
         }
     }
@@ -396,7 +397,7 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        text       = "Sync Failed",
+                        text       = stringResource(R.string.google_time_sync_status_failed),
                         style      = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color      = MaterialTheme.colorScheme.onErrorContainer,
@@ -419,7 +420,7 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
             ) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Retry")
+                Text(stringResource(R.string.common_btn_retry))
             }
         }
     }
@@ -454,7 +455,7 @@ private fun HistorySection(
                     modifier           = Modifier.size(18.dp),
                 )
                 Text(
-                    text       = "Recent Syncs",
+                    text       = stringResource(R.string.google_time_sync_history_title),
                     style      = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color      = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -514,7 +515,7 @@ private fun HistoryRow(
         Spacer(Modifier.width(8.dp))
         Icon(
             imageVector        = if (entry.success) Icons.Filled.CheckCircle else Icons.Filled.Error,
-            contentDescription = if (entry.success) "Success" else "Failed",
+            contentDescription = if (entry.success) stringResource(R.string.common_cd_success) else stringResource(R.string.common_cd_failed),
             tint               = if (entry.success) MaterialTheme.colorScheme.secondary
                                  else               MaterialTheme.colorScheme.error,
             modifier           = Modifier.size(20.dp),

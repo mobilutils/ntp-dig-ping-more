@@ -1,0 +1,10 @@
+{
+  "timeout-ms": 10000,
+  "commands": [
+    { "ntp": { "server": "pool.ntp.org" } },
+    { "ntpaliyun": { "server": "ntp.aliyun.com" } },
+    { "dig": { "server": "8.8.8.8", "fqdn": "example.com" } },
+    { "ping": { "host": "8.8.8.8" } }
+  ]
+}
+
