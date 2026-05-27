@@ -19,5 +19,5 @@ interface JsEngine {
      *         `"DIRECT"`, or a semicolon-separated fallback chain.
      * @throws Exception if the script is malformed or evaluation fails.
      */
-    fun evaluatePac(pacScript: String, targetUrl: String, targetHost: String): String
+    suspend fun evaluatePac(pacScript: String, targetUrl: String, targetHost: String): String
 }

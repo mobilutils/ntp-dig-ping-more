@@ -27,6 +27,10 @@ data class TracerouteUiState(
     val isRunning: Boolean = false,
     val outputLines: List<String> = emptyList(),
     val history: List<TracerouteHistoryEntry> = emptyList(),
+    /** Header line resolved by the UI so it can be localised. */
+    val headerLine: UiText? = null,
+    /** Set when the run timed out; resolved to a string by the UI layer. */
+    val timeoutMessage: UiText? = null,
 )
 
 /**
@@ -82,10 +86,15 @@ class TracerouteViewModel(
         _uiState.value = _uiState.value.copy(
             isRunning   = true,
             outputLines = emptyList(),
+            headerLine  = null,
+            timeoutMessage = null,
         )
 
         traceJob = viewModelScope.launch {
-            appendLine("traceroute to $host, 30 hops max")
+            // Signal the header line via UiText so the UI can localise it.
+            _uiState.value = _uiState.value.copy(
+                headerLine = UiText.Res(R.string.traceroute_header_line, listOf(host)),
+            )
 
             val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
             var reachableHops = 0
@@ -107,7 +116,12 @@ class TracerouteViewModel(
                     }
                 }
             } catch (_: TimeoutCancellationException) {
-                appendLine("--- Timed out after ${timeoutMs / 1000}s ---")
+                _uiState.value = _uiState.value.copy(
+                    timeoutMessage = UiText.Res(
+                        R.string.traceroute_timeout_marker,
+                        listOf(timeoutMs / 1000),
+                    ),
+                )
             }
 
             val status = when {

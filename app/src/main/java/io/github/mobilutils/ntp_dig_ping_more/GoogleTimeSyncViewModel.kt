@@ -184,7 +184,7 @@ class GoogleTimeSyncViewModel(
                     val logger = ProxyPacLogger.getInstance(
                         logFile = java.io.File(appContext.filesDir, "proxypac-logs.txt"),
                     )
-                    val proxyResolver = ProxyResolver(settingsRepo, QuickJsEngine(), logger = logger)
+                    val proxyResolver = ProxyResolver(settingsRepo, QuickJsEngine(appContext), logger = logger)
                     return GoogleTimeSyncViewModel(
                         repository   = GoogleTimeSyncRepository(proxyResolver),
                         historyStore = GoogleTimeSyncHistoryStore(appContext),

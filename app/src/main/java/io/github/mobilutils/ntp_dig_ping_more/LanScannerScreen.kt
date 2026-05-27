@@ -54,6 +54,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
@@ -105,7 +106,7 @@ fun LanScannerScreen() {
             if (uiState.activeDevices.isNotEmpty() || uiState.isScanning) {
                 item {
                     Text(
-                        text = "Discovered Devices (${uiState.activeDevices.size})",
+                        text = stringResource(R.string.lan_scanner_label_discovered_devices, uiState.activeDevices.size),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -165,7 +166,7 @@ private fun SubnetInfoCard(
     
                 Icon(
                     imageVector = icon,
-                    contentDescription = "Network State",
+                    contentDescription = stringResource(R.string.lan_scanner_cd_network_state),
                     tint = tint,
                     modifier = Modifier.size(28.dp)
                 )
@@ -180,7 +181,7 @@ private fun SubnetInfoCard(
                         )
                     } else {
                         Text(
-                            text = "No connection. Manual IP range provided.",
+                            text = stringResource(R.string.lan_scanner_label_no_connection),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -190,7 +191,7 @@ private fun SubnetInfoCard(
                 IconButton(onClick = onRefresh, enabled = !isScanning) {
                     Icon(
                         imageVector = Icons.Filled.Refresh,
-                        contentDescription = "Refresh interface",
+                        contentDescription = stringResource(R.string.lan_scanner_cd_refresh_interface),
                         tint = if (isScanning) MaterialTheme.colorScheme.onSurface.copy(alpha=0.3f) else tint
                     )
                 }
@@ -207,7 +208,7 @@ private fun SubnetInfoCard(
                 OutlinedTextField(
                     value = startIp,
                     onValueChange = onStartIpChange,
-                    label = { Text("Start IP") },
+                    label = { Text(stringResource(R.string.lan_scanner_label_start_ip)) },
                     singleLine = true,
                     enabled = !isScanning,
                     modifier = Modifier.weight(1f),
@@ -216,7 +217,7 @@ private fun SubnetInfoCard(
                 OutlinedTextField(
                     value = endIp,
                     onValueChange = onEndIpChange,
-                    label = { Text("End IP") },
+                    label = { Text(stringResource(R.string.lan_scanner_label_end_ip)) },
                     singleLine = true,
                     enabled = !isScanning,
                     modifier = Modifier.weight(1f),
@@ -271,9 +272,9 @@ private fun ScanControlsBar(
                         color = MaterialTheme.colorScheme.onError,
                     )
                     Spacer(Modifier.width(8.dp))
-                    Icon(Icons.Filled.Stop, contentDescription = "Cancel Scan", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.lan_scanner_cd_cancel_scan), modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Stop Scan", fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.lan_scanner_label_stop_scan), fontWeight = FontWeight.Medium)
                 }
             } else {
                 OutlinedButton(
@@ -284,7 +285,7 @@ private fun ScanControlsBar(
                         .height(52.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Quick Scan", fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.lan_scanner_label_quick_scan), fontWeight = FontWeight.Medium)
                 }
                 
                 Button(
@@ -296,7 +297,7 @@ private fun ScanControlsBar(
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text("Full Scan", fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.lan_scanner_label_full_scan), fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -308,12 +309,12 @@ private fun ScanControlsBar(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Scanned: $ipsChecked / $totalIps",
+                        text = stringResource(R.string.lan_scanner_label_scanned, ipsChecked, totalIps),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "Found: $foundCount",
+                        text = stringResource(R.string.lan_scanner_label_found, foundCount),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
@@ -349,7 +350,7 @@ private fun DeviceRow(device: LanDevice) {
         ) {
             Icon(
                 imageVector = if (device.isRouter) Icons.Filled.Router else Icons.Filled.Computer,
-                contentDescription = if (device.isRouter) "Router" else "Device",
+                contentDescription = if (device.isRouter) stringResource(R.string.lan_scanner_device_cd_router) else stringResource(R.string.lan_scanner_device_cd_device),
                 tint = if (device.isRouter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(28.dp)
             )
@@ -409,7 +410,7 @@ private fun HistorySection(entries: List<LanScannerHistoryEntry>) {
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Recent Scans",
+                    text = stringResource(R.string.lan_scanner_history_title),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -461,7 +462,7 @@ private fun HistoryRow(entry: LanScannerHistoryEntry) {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Hosts",
+                text = stringResource(R.string.lan_scanner_history_label_hosts),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

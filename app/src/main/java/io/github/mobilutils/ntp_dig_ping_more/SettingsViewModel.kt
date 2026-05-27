@@ -2,6 +2,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -69,7 +70,7 @@ data class SettingsUiState(
     val proxyEnabled: Boolean = false,
     val pacSourceMode: PacSourceMode = PacSourceMode.Default,
     val proxyPacUrl: String = "",
-    val proxyPacUrlError: String? = null,
+    @StringRes val proxyPacUrlError: Int? = null,
     val isTestingProxy: Boolean = false,
     val proxyTestResult: String? = null,
     val proxyLastTested: Long = 0L,
@@ -273,7 +274,7 @@ class SettingsViewModel(
 
          _uiState.value = _uiState.value.copy(
             proxyPacUrl = internalPath ?: "",       // Store internal path, or empty on failure
-            proxyPacUrlError = if (internalPath == null) "Failed to copy file" else null,
+            proxyPacUrlError = if (internalPath == null) R.string.settings_pac_error_copy_failed else null,
          )
 
         if (internalPath != null) {
@@ -385,10 +386,11 @@ class SettingsViewModel(
      /**
       * Validates a PAC URL or file path string.
       *
-      * @return An error message, or `null` if the input is valid (or empty, since
-      *         an empty value simply means "no proxy configured").
+      * @return A [@StringRes] error string resource ID, or `null` if the input is valid
+      *         (or empty, since an empty value simply means "no proxy configured").
       */
-    internal fun validatePacUrl(url: String, mode: PacSourceMode = _uiState.value.pacSourceMode): String? {
+    @StringRes
+    internal fun validatePacUrl(url: String, mode: PacSourceMode = _uiState.value.pacSourceMode): Int? {
         if (url.isBlank()) return null
 
         when (mode) {
@@ -398,13 +400,13 @@ class SettingsViewModel(
                     val parsed = java.net.URL(url)
                     when {
                         parsed.protocol !in listOf("http", "https") ->
-                             "Only http:// and https:// URLs are supported"
+                             R.string.settings_pac_error_protocol
                         parsed.host.isNullOrBlank() ->
-                             "URL must contain a hostname"
+                             R.string.settings_pac_error_no_hostname
                         else -> null
                      }
                  } catch (_: Exception) {
-                     "Invalid URL format"
+                     R.string.settings_pac_error_invalid_url
                  }
              }
             PacSourceMode.FILE -> {
@@ -420,12 +422,12 @@ class SettingsViewModel(
 
                      // Basic validation: must be a non-empty path
                     if (resolvedPath.isBlank() || resolvedPath == "/") {
-                         "Invalid file path"
+                         R.string.settings_pac_error_invalid_path
                      } else {
                         null      // File existence checked at fetch time, not here
                      }
                  } catch (_: Exception) {
-                     "Invalid file path"
+                     R.string.settings_pac_error_invalid_path
                  }
              }
         }
@@ -465,7 +467,7 @@ class SettingsViewModel(
                      )
                     val proxyResolver = ProxyResolver(
                         settingsRepository = settingsRepo,
-                        jsEngine = QuickJsEngine(),
+                        jsEngine = QuickJsEngine(appContext),
                         logger = logger,
                         appContext = appContext,
                      )

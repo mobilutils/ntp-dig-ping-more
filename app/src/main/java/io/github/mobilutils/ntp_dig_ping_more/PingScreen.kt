@@ -58,7 +58,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
+import java.util.Locale
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Scrollbar helper
@@ -93,6 +95,127 @@ private fun Modifier.verticalScrollbar(
 // Ping screen
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Stats bar
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A compact card showing real-time packet-loss and RTT stats during (and after) a ping run.
+ *
+ * Visible whenever there is at least one processed output line.
+ * Loss percentage is colour-coded:
+ *   - 0 %          → primary (healthy green-ish)
+ *   - 1 – 99 %     → tertiary (amber warning)
+ *   - 100 %        → error   (red)
+ */
+@Composable
+private fun PingStatsBar(stats: PingStats, modifier: Modifier = Modifier) {
+    val lossColor = when {
+        stats.sent == 0          -> MaterialTheme.colorScheme.onSurfaceVariant
+        stats.lossPercent == 0f  -> MaterialTheme.colorScheme.primary
+        stats.lossPercent >= 100f -> MaterialTheme.colorScheme.error
+        else                     -> MaterialTheme.colorScheme.tertiary
+    }
+
+    fun Float?.fmtMs(): String = if (this == null) "—" else
+        String.format(Locale.US, "%.1f ms", this)
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Left half – packet counts + loss
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = stringResource(R.string.ping_stats_label_packets),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Sent: ${stats.sent}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    )
+                    Text(
+                        text = "Lost: ${stats.sent - stats.received}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = if (stats.sent == 0) "Loss: —"
+                           else String.format(Locale.US, "Loss: %.1f %%", stats.lossPercent),
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    fontFamily = FontFamily.Monospace,
+                    color = lossColor,
+                )
+            }
+
+            // Thin vertical divider
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(52.dp)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)),
+            )
+
+            // Right half – RTT
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.ping_stats_label_latency),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+                Text(
+                    text = "Min  ${stats.minMs.fmtMs()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "Avg  ${stats.avgMs.fmtMs()}",
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "Max  ${stats.maxMs.fmtMs()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ping screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 @Composable
 fun PingScreen() {
     val context = LocalContext.current
@@ -117,8 +240,8 @@ fun PingScreen() {
         OutlinedTextField(
             value = uiState.host,
             onValueChange = vm::onHostChange,
-            label = { Text("Hostname / IP") },
-            placeholder = { Text("e.g. google.com") },
+            label = { Text(stringResource(R.string.common_label_hostname_ip)) },
+            placeholder = { Text(stringResource(R.string.common_placeholder_eg_google)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(
@@ -159,19 +282,19 @@ fun PingScreen() {
                 Spacer(Modifier.width(8.dp))
                 Icon(
                     imageVector = Icons.Filled.Stop,
-                    contentDescription = "Stop",
+                    contentDescription = stringResource(R.string.common_cd_stop),
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(4.dp))
-                Text("Stop", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.common_btn_stop), fontWeight = FontWeight.Medium)
             } else {
                 Icon(
                     imageVector = Icons.Filled.Terminal,
-                    contentDescription = "Ping",
+                    contentDescription = stringResource(R.string.ping_cd_ping),
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Ping", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.ping_btn_start), fontWeight = FontWeight.Medium)
             }
         }
 
@@ -216,6 +339,18 @@ fun PingScreen() {
                                     lineHeight = 18.sp,
                                 ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        // Render the localised timeout marker (if a timeout occurred)
+                        uiState.timeoutMessage?.let { uiText ->
+                            Text(
+                                text = uiText.resolve(),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                                color = MaterialTheme.colorScheme.tertiary,
                             )
                         }
                     }
@@ -269,7 +404,7 @@ private fun PingHistorySection(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Recent Pings",
+                    text = stringResource(R.string.ping_history_title),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

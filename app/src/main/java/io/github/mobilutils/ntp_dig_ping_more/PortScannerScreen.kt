@@ -53,6 +53,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
@@ -81,8 +82,8 @@ fun PortScannerScreen() {
         OutlinedTextField(
             value = uiState.host,
             onValueChange = vm::onHostChange,
-            label = { Text("Hostname / IP") },
-            placeholder = { Text("e.g. google.com") },
+            label = { Text(stringResource(R.string.common_label_hostname_ip)) },
+            placeholder = { Text(stringResource(R.string.common_placeholder_eg_google)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(
@@ -103,7 +104,7 @@ fun PortScannerScreen() {
                     onClick = { vm.onProtocolChange(PortScannerProtocol.TCP) },
                     enabled = !uiState.isRunning
                 )
-                Text("TCP")
+                Text(stringResource(R.string.port_scanner_label_protocol_tcp))
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { if (!uiState.isRunning) vm.onProtocolChange(PortScannerProtocol.UDP) }) {
                 RadioButton(
@@ -111,7 +112,7 @@ fun PortScannerScreen() {
                     onClick = { vm.onProtocolChange(PortScannerProtocol.UDP) },
                     enabled = !uiState.isRunning
                 )
-                Text("UDP")
+                Text(stringResource(R.string.port_scanner_label_protocol_udp))
             }
         }
 
@@ -122,8 +123,8 @@ fun PortScannerScreen() {
             OutlinedTextField(
                 value = uiState.startPort,
                 onValueChange = vm::onStartPortChange,
-                label = { Text("Start Port") },
-                placeholder = { Text("1") },
+                label = { Text(stringResource(R.string.port_scanner_label_start_port)) },
+                placeholder = { Text(stringResource(R.string.port_scanner_placeholder_start_port)) },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(
@@ -135,8 +136,8 @@ fun PortScannerScreen() {
             OutlinedTextField(
                 value = uiState.endPort,
                 onValueChange = vm::onEndPortChange,
-                label = { Text("End Port") },
-                placeholder = { Text("1024") },
+                label = { Text(stringResource(R.string.port_scanner_label_end_port)) },
+                placeholder = { Text(stringResource(R.string.port_scanner_placeholder_end_port)) },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(
@@ -177,19 +178,19 @@ fun PortScannerScreen() {
                 Spacer(Modifier.width(8.dp))
                 Icon(
                     imageVector = Icons.Filled.Stop,
-                    contentDescription = "Stop",
+                    contentDescription = stringResource(R.string.common_cd_stop),
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(4.dp))
-                Text("Stop", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.common_btn_stop), fontWeight = FontWeight.Medium)
             } else {
                 Icon(
                     imageVector = Icons.Filled.Search,
-                    contentDescription = "Scan",
+                    contentDescription = stringResource(R.string.port_scanner_cd_scan),
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Scan Ports", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.port_scanner_btn_scan), fontWeight = FontWeight.Medium)
             }
         }
 
@@ -213,7 +214,7 @@ fun PortScannerScreen() {
                         .padding(14.dp)
                 ) {
                     Text(
-                        text = "Open Ports Found: ${uiState.discoveredPorts.size}",
+                        text = stringResource(R.string.port_scanner_result_open_ports, uiState.discoveredPorts.size),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -234,7 +235,7 @@ fun PortScannerScreen() {
                         ) {
                             if (uiState.discoveredPorts.isEmpty() && !uiState.isRunning) {
                                 Text(
-                                    text = "No open ports found.",
+                                    text = stringResource(R.string.port_scanner_msg_no_open_ports),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(4.dp)
@@ -298,7 +299,7 @@ private fun PortScannerHistorySection(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Recent Scans",
+                    text = stringResource(R.string.port_scanner_history_title),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

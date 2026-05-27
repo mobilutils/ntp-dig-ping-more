@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 
@@ -263,7 +264,7 @@ fun BulkActionsScreen(
                 modifier = Modifier.size(20.dp),
             )
             Spacer(Modifier.width(8.dp))
-            Text("Load JSON Config", fontWeight = FontWeight.Medium)
+            Text(stringResource(R.string.bulk_btn_load_config), fontWeight = FontWeight.Medium)
         }
 
         // ── CSV Output Checkbox ──
@@ -376,19 +377,19 @@ fun BulkActionsScreen(
                 Spacer(Modifier.width(8.dp))
                 Icon(
                     imageVector = Icons.Filled.Stop,
-                    contentDescription = "Stop",
+                    contentDescription = stringResource(R.string.common_cd_stop),
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(4.dp))
-                Text("Stop", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.bulk_btn_stop), fontWeight = FontWeight.Medium)
             } else {
                 Icon(
                     imageVector = Icons.Filled.PlayArrow,
-                    contentDescription = "Run",
+                    contentDescription = stringResource(R.string.bulk_cd_run),
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Run All Commands", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.bulk_btn_run), fontWeight = FontWeight.Medium)
             }
         }
 
@@ -454,7 +455,7 @@ fun BulkActionsScreen(
                             modifier = Modifier.size(16.dp),
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Clear")
+                        Text(stringResource(R.string.bulk_btn_clear))
                     }
                 }
 
@@ -516,7 +517,7 @@ fun BulkActionsScreen(
                                     color = MaterialTheme.colorScheme.onTertiary,
                                 )
                                 Spacer(Modifier.width(6.dp))
-                                Text("Writing…")
+                                Text(stringResource(R.string.bulk_btn_writing))
                             } else {
                                 Icon(
                                     imageVector = Icons.Filled.UploadFile,
@@ -524,7 +525,7 @@ fun BulkActionsScreen(
                                     modifier = Modifier.size(18.dp),
                                 )
                                 Spacer(Modifier.width(6.dp))
-                                Text("Write to File", fontWeight = FontWeight.Medium)
+                                Text(stringResource(R.string.bulk_btn_write_to_file), fontWeight = FontWeight.Medium)
                             }
                         }
                     }
