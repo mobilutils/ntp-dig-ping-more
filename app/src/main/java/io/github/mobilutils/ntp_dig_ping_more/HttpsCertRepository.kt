@@ -43,7 +43,7 @@ data class DistinguishedName(
 /**
  * A single Subject Alternative Name entry.
  *
- * @param type  "DNS" or "IP"
+ * @param type  SAN_TYPE_DNS or SAN_TYPE_IP
  * @param value The hostname or IP address string.
  */
 data class SanEntry(val type: String, val value: String)
@@ -177,6 +177,15 @@ class HttpsCertRepository(
         }
 
         private val EXPIRY_WARN_DAYS = 30L
+
+        const val ERROR_NO_CERT_IN_CHAIN = "No certificate in chain"
+        const val ERROR_TLS_HANDSHAKE_FAILED = "TLS handshake failed"
+        const val ERROR_NETWORK_UNREACHABLE = "Network is unreachable"
+        const val ERROR_UNKNOWN = "Unknown error"
+        const val ERROR_PROXY_CLOSED = "Proxy closed connection before sending CONNECT response"
+        const val ERROR_UNKNOWN_HOST = "Unknown host"
+        const val SAN_TYPE_DNS = "DNS"
+        const val SAN_TYPE_IP = "IP"
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -233,7 +242,7 @@ class HttpsCertRepository(
             // ── Parse the trusted chain ───────────────────────────────────
             val chain = recorder.chain
                 ?: socket.session.peerCertificates.filterIsInstance<X509Certificate>().toTypedArray()
-            if (chain.isEmpty()) return@withContext HttpsCertResult.Error("No certificate in chain")
+            if (chain.isEmpty()) return@withContext HttpsCertResult.Error(ERROR_NO_CERT_IN_CHAIN)
 
             val chainInfo = parseChain(host, port, chain)
             HttpsCertResult.Success(chainInfo.first())
@@ -247,7 +256,7 @@ class HttpsCertRepository(
             // Could be self-signed, wrong host, or other trust failure.
             // Chain was recorded before PKIX validation — always available.
             val chainInfo = parseChain(host, port, recorder.chain!!)
-            val reason = e.localizedMessage ?: "TLS handshake failed"
+            val reason = e.localizedMessage ?: ERROR_TLS_HANDSHAKE_FAILED
 
             // Distinguish expired specifically (PKIX embeds it in the handshake ex)
             val causeIsExpiry = generateSequence(e.cause) { it.cause }
@@ -267,7 +276,7 @@ class HttpsCertRepository(
         } catch (e: java.net.ConnectException) {
             val msg = e.message.orEmpty()
             if (msg.contains("ENETUNREACH", ignoreCase = true) ||
-                msg.contains("Network is unreachable", ignoreCase = true)
+                msg.contains(ERROR_NETWORK_UNREACHABLE, ignoreCase = true)
             ) {
                 HttpsCertResult.NoNetwork
             } else {
@@ -277,7 +286,7 @@ class HttpsCertRepository(
         } catch (e: java.io.IOException) {
             val msg = e.message.orEmpty()
             if (msg.contains("ENETUNREACH", ignoreCase = true) ||
-                msg.contains("Network is unreachable", ignoreCase = true)
+                msg.contains(ERROR_NETWORK_UNREACHABLE, ignoreCase = true)
             ) {
                 HttpsCertResult.NoNetwork
             } else {
@@ -285,7 +294,7 @@ class HttpsCertRepository(
             }
 
         } catch (e: Exception) {
-            HttpsCertResult.Error(e.localizedMessage ?: "Unknown error")
+            HttpsCertResult.Error(e.localizedMessage ?: ERROR_UNKNOWN)
 
         } finally {
             runCatching { socket?.close() }
@@ -443,8 +452,8 @@ class HttpsCertRepository(
                 val typeCode = (san[0] as? Int) ?: return@mapNotNull null
                 val value    = san[1]?.toString() ?: return@mapNotNull null
                 when (typeCode) {
-                    2  -> SanEntry("DNS", value)   // dNSName
-                    7  -> SanEntry("IP",  value)   // iPAddress
+                    2  -> SanEntry(SAN_TYPE_DNS, value)   // dNSName
+                    7  -> SanEntry(SAN_TYPE_IP,  value)   // iPAddress
                     else -> null                   // skip URI, email, etc.
                 }
             }.orEmpty()

@@ -497,10 +497,10 @@ class BulkActionsRepository(
 
                 when (exitCode) {
                     0 -> BulkCommandSuccess(name, cmd, lines, duration)
-                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: ERROR_UNKNOWN)
                  }
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }
@@ -560,10 +560,10 @@ class BulkActionsRepository(
 
                 when (result) {
                     is DigResult.Success -> BulkCommandSuccess(name, cmd, lines, duration)
-                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: ERROR_UNKNOWN)
                  }
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }
@@ -602,10 +602,10 @@ class BulkActionsRepository(
 
                 when (result) {
                     is NtpResult.Success -> BulkCommandSuccess(name, cmd, lines, duration)
-                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: ERROR_UNKNOWN)
                  }
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }
@@ -658,7 +658,7 @@ class BulkActionsRepository(
                         add("[${timestampFmt.format(java.time.LocalDateTime.now())}] Status: HOST NOT FOUND (${duration}ms)")
                         add("    ${e.message}")
                     }
-                    return@withContext BulkCommandError(name, cmd, e.message ?: "Unknown host")
+                    return@withContext BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN_HOST)
                 }
 
                 val openPorts = mutableListOf<Int>()
@@ -708,7 +708,7 @@ class BulkActionsRepository(
                     BulkCommandSuccess(name, cmd, lines, duration)
                  }
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }
@@ -786,10 +786,10 @@ class BulkActionsRepository(
                 when {
                     warningResult != null -> warningResult
                     result is HttpsCertResult.Success -> BulkCommandSuccess(name, cmd, lines, duration)
-                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: ERROR_UNKNOWN)
                  }
              } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }
@@ -834,7 +834,7 @@ class BulkActionsRepository(
                 }
                 BulkCommandSuccess(name, cmd, lines, dur)
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }
@@ -912,7 +912,7 @@ class BulkActionsRepository(
                 out.add("  Reachable hops: $hops, Destination reached: $dstReached")
                 BulkCommandSuccess(name, cmd, out, dur)
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }
@@ -953,10 +953,10 @@ class BulkActionsRepository(
 
                 when (result) {
                     is GoogleTimeSyncResult.Success -> BulkCommandSuccess(name, cmd, lines, dur)
-                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: "Unknown error")
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: ERROR_UNKNOWN)
                  }
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }
@@ -969,7 +969,7 @@ class BulkActionsRepository(
                 val t0 = System.currentTimeMillis()
                 val repo = LanScannerRepository(context)
                 val subnet = repo.getLocalSubnetInfo()
-                    ?: return@withContext BulkCommandError(name, cmd, "No active WiFi network found")
+                    ?: return@withContext BulkCommandError(name, cmd, ERROR_NO_WIFI)
 
                 val out = mutableListOf<String>()
                 out.add("[${timestampFmt.format(LocalDateTime.now())}] $cmd")
@@ -1002,7 +1002,7 @@ class BulkActionsRepository(
                 devices.forEach { out.add("  $it") }
                 BulkCommandSuccess(name, cmd, out, dur)
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }
@@ -1043,7 +1043,7 @@ class BulkActionsRepository(
              } catch (e: CancellationException) {
                 BulkCommandClosed(name, cmd, emptyList(), System.currentTimeMillis() - t0)
              } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
              }
          }
      }
@@ -1072,7 +1072,7 @@ class BulkActionsRepository(
                 }
                 BulkCommandSuccess(name, cmd, lines, duration)
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: "Unknown error")
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }
@@ -1102,5 +1102,12 @@ class BulkActionsRepository(
         } catch (e: CancellationException) {
             throw e // Don't swallow cancellation
         }
+    }
+
+    companion object {
+        const val ERROR_UNKNOWN = "Unknown error"
+        const val ERROR_UNKNOWN_HOST = "Unknown host"
+        const val ERROR_NO_WIFI = "No active WiFi network found"
+        const val ERROR_HOST_NOT_FOUND = "HOST NOT FOUND"
     }
 }
