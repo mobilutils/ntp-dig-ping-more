@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-**ntp_dig_ping_more** is a production Android app (min SDK 26, target SDK 37) for network diagnostics. It provides 9 built-in tools plus a batch "Bulk Actions" feature: NTP Check, DIG (DNS), Ping, Traceroute, Port Scanner, LAN Scanner, Google Time Sync, HTTPS Certificate Inspector, Device Info, Settings, and Bulk Actions (JSON-configurable command batches). Current version: **3.1** (version code 24).
+**ntp_dig_ping_more** is a production Android app (min SDK 26, target SDK 37) for network diagnostics. It provides 9 built-in tools plus a batch "Bulk Actions" feature: NTP Check, DIG (DNS), Ping, Traceroute, Port Scanner, LAN Scanner, Google Time Sync, HTTPS Certificate Inspector, Device Info, Settings, and Bulk Actions (JSON-configurable command batches). Current version: **3.41** (version code 28).
 
-The app uses **ADB intent extras** for headless automation — configs can be pushed to the app's private directory via `run-as`, then the app launched with `--ez auto_run true` to execute commands without user interaction. Bundled shell scripts (`BULKACTIONS-ADB-SCRIPT.sh`, `.ps1`, `.bat`) wrap this into a fully automated workflow for CI/manual use.
+The app uses **ADB intent extras** for headless automation — configs can be pushed to the app's private directory via `run-as`, then the app launched with `--ez auto_run true` to execute commands without user interaction. Bundled shell scripts (`BULKACTIONS-ADB-SCRIPT.sh`, `BULKACTIONS-ADB-SCRIPT-NEW.bat`, `BULKACTIONS-ADB-SCRIPT-NEW.ps1`) wrap this into a fully automated workflow for CI/manual use.
 
 ---
 
@@ -27,27 +27,27 @@ The app uses **ADB intent extras** for headless automation — configs can be pu
 ## Architecture
 
 ```
-MainActivity.kt               ← Entry point, NavHost, bottom nav bar, intent extras (configUri + autoRun)
-     │
-     ├── AppRoot()             ← Composable with NavHost + NavigationBar
-     │
-     ├── Screen modules (per tool):
-     │   │
-     │   ├── *Screen.kt        ← Jetpack Compose UI (Material 3)
-     │   ├── *ViewModel.kt     ← StateFlow<UiState>, coroutine lifecycle, command dispatch
-     │   ├── *Repository.kt    ← Network I/O (NTPUDPClient, dnsjava, HttpURLConnection, Runtime.exec)
-     │   └── *HistoryStore.kt ← DataStore persistence (last 5–10 entries per tool)
-     │
-     ├── settings/             ← Global Settings + Proxy PAC configuration
-     │   ├── SettingsDataStore.kt
-     │   ├── SettingsRepository.kt
-     │   └── ProxyConfig.kt
-     ├── proxy/                ← PAC script evaluation
-     │   ├── JsEngine.kt           ← Interface
-     │   ├── QuickJsEngine.kt      ← QuickJS-based evaluator
-     │   └── ProxyResolver.kt      ← Fetch, eval, parse, cache (5min TTL)
-     ├── deviceinfo/           ← Device identity, network, battery, storage, MDM, CA certs
-     └── ui/theme/             ← Material 3 colors, typography, theme composable
+MainActivity.kt                 ← Entry point, NavHost, bottom nav bar, intent extras (configUri + autoRun)
+       │
+       ├── AppRoot()              ← Composable with NavHost + NavigationBar
+       │
+       ├── Screen modules (per tool):
+       │     │
+       │     ├── *Screen.kt          ← Jetpack Compose UI (Material 3)
+       │     ├── *ViewModel.kt       ← StateFlow<UiState>, coroutine lifecycle, command dispatch
+       │     ├── *Repository.kt      ← Network I/O (NTPUDPClient, dnsjava, HttpURLConnection, Runtime.exec)
+       │     └── *HistoryStore.kt ← DataStore persistence (last 5–10 entries per tool)
+       │
+       ├── settings/              ← Global Settings + Proxy PAC configuration
+       │     ├── SettingsDataStore.kt
+       │     ├── SettingsRepository.kt
+       │     └── ProxyConfig.kt
+       ├── proxy/                 ← PAC script evaluation
+       │     ├── JsEngine.kt       ← Interface
+       │     ├── QuickJsEngine.kt ← QuickJS-based evaluator
+       │     └── ProxyResolver.kt ← Fetch, eval, parse, cache (5min TTL)
+       ├── deviceinfo/           ← Device identity, network, battery, storage, MDM, CA certs
+       └── ui/theme/             ← Material 3 colors, typography, theme composable
 ```
 
 **Key patterns:**
@@ -64,20 +64,16 @@ Located in `app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/`.
 
 | Test Class | Count | Covers |
 |---|---|---|
-| History store tests | 30+ | All history store parsers (backward compat, edge cases) |
-| HttpsCertViewModelTest | 38+ | All cert result variants, full chain in PartialSuccess (collapsible intermediate/root with [Leaf]/[Intermediate N]/[Root] markers), history, state transitions |
-| BulkActionsCheckcertTest | 4 | checkcert UntrustedChain output formatting ([Leaf], [Intermediate N], [Root] markers) |
+| LanScannerRepositoryTest | 18 | IP conversion utilities (pure functions) |
+| HistoryStoreParsingTest | 30+ | All history store parsers (backward compat, edge cases) |
+| HttpsCertViewModelTest | 28+ | All cert result variants, full chain in PartialSuccess (collapsible intermediate/root with [Leaf]/[Intermediate N]/[Root] markers), history, state transitions |
 | LanScannerViewModelTest | 21 | Subnet sweep, quick/full modes, progress, error handling |
+| TracerouteViewModelTest | 16 | Start/stop, blank guards, history, cancellation |
 | NtpViewModelTest | 14 | State mutations, repo mocking, error paths, history |
 | GoogleTimeSyncViewModelTest | 14 | URL fallback, success/error states, reset |
-| TracerouteViewModelTest | 16 | Start/stop, blank guards, history, cancellation |
 | DigViewModelTest | 14 | Input handlers, DNS errors, CNAME chains |
 | PortScannerViewModelTest | 12 | Validation, scan lifecycle, history |
 | DeviceInfoViewModelTest | 13 | Permissions, loading/success/error, periodic updates |
-| LanScannerRepositoryTest | — | IP conversion utilities (pure functions) |
-| BulkActions tests | — | Bulk Actions config parsing + execution |
-| ProxyResolverTest | — | PAC script fetching, eval, cache |
-| SettingsViewModelTest | — | Timeout input, proxy toggle/PAC URL validation |
 
 **Testing conventions:**
 - JUnit 4 (`@RunWith(JUnit4::class)`) + MockK (`mockk(relaxed = true)` for dependencies)
@@ -95,11 +91,9 @@ Located in `app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/`.
 | `app/build.gradle.kts` | Module build config, dependencies, JaCoCo setup |
 | `build.gradle.kts` (root) | Plugin aliases, shared `targetSdk` extra property |
 | `gradle/libs.versions.toml` | Version catalog (all dependency versions) |
-| `BULKACTIONS-ADB-SCRIPT.sh` / `.ps1` / `.bat` | Automated ADB script for headless CI/manual use (Unix/PowerShell/Windows) |
-| `notes/config-files_bulk-actions/*.json` | 73 test configs for Bulk Actions automation |
-| `notes/20260501_BulkActions-ADB-Automations.md` | ADB automation documentation |
+| `BULKACTIONS-ADB-SCRIPT.sh` / `.bat` / `.ps1` | Automated ADB script for headless CI/manual use |
+| `notes/config-files_bulk-actions/*.json` | Test configs for Bulk Actions automation |
 | `TESTING.md` | Comprehensive testing guide |
-| `JACOCO_SETUP.md` | JaCoCo coverage configuration |
 
 ---
 
@@ -116,7 +110,7 @@ Located in `app/src/test/java/io/github/mobilutils/ntp_dig_ping_more/`.
 | `-f, --filepath <config>` | Config file path (required; supports `~` expansion and absolute paths) |
 | `-e, --emulator-name <name>` | AVD to launch (default: `Medium_Phone_API_35`) |
 | `-d, --real-device` | Skip emulator entirely; use connected physical device |
-| `-a, --no-interact` | Suppress all prompts (auto-exit) |
+| `-a, --no-interact` | Suppress all prompts (auto-exit after completion) |
 | `-s, --show-emulator` | Launch emulator in visible window mode |
 | `-h, --help` | Show usage help |
 
@@ -129,19 +123,19 @@ APP_ID="io.github.mobilutils.ntp_dig_ping_more"
 PRIVATE_DIR="/data/user/0/$APP_ID/files/files"
 
 # 1. Push config via run-as pipe (avoids /sdcard permission issues on SDK 33+)
-cat blkacts_single_ping_success.json \
-   | adb shell "run-as $APP_ID sh -c 'cat > $PRIVATE_DIR/blkacts_single_ping_success.json'"
+cat config.json \
+     | adb shell "run-as $APP_ID sh -c 'cat > $PRIVATE_DIR/config.json'"
 
 # 2. Launch with auto-load + auto-run (use --ez boolean, NOT --es string)
 adb shell am force-stop "$APP_ID"
 adb shell am start \
-     -n "$APP_ID/.MainActivity" \
-     -d "file://$PRIVATE_DIR/blkacts_single_ping_success.json" \
-     --ez auto_run true
+       -n "$APP_ID/.MainActivity" \
+       -d "file://$PRIVATE_DIR/config.json" \
+       --ez auto_run true
 
 # 3. Wait for execution, then pull results via run-as cat
 sleep 60
-adb shell "run-as $APP_ID cat $PRIVATE_DIR/blkacts_single_ping_success.txt" > ./test-results/output.txt
+adb shell "run-as $APP_ID cat $PRIVATE_DIR/config.txt" > ./test-results/output.txt
 ```
 
 ### `--ez` vs `--es`: Intent Extra Type Matters
@@ -153,8 +147,6 @@ The **flag type** in the ADB intent must match the Java/Kotlin type expected by 
 | `--ez` | boolean (`true/false`) | `getBooleanExtra()` | `auto_run` — tells the app to auto-execute Bulk Actions on launch |
 | `-d` (data URI) | String (URI) | `getDataString()` | Config file path — tells the app *which* config to load |
 | `-e, --es` | string | `getStringExtra()` | Strings only — **never use for booleans** |
-
-**Why `--ez` is required for `auto_run`:** The app calls `intent.getBooleanExtra("auto_run", false)` which expects a boolean extra. If you push it with `--es auto_run true`, Android stores the value as a String type, and `getBooleanExtra()` throws `ClassCastException` (or silently returns the default `false`). The result: config loads but **never auto-runs**.
 
 ```bash
 # ✅ Correct — boolean extra
@@ -179,13 +171,14 @@ adb shell am start -n "$APP_ID/.MainActivity" --es auto_run true
 
 | Library | Purpose |
 |---|---|
-| `org.apache.commons:commons-net:3.11.1` | NTP UDP client (`NTPUDPClient`) |
-| `dnsjava:dnsjava:3.6.2` | DNS resolution bypassing system resolver |
-| `app.cash.quickjs:quickjs-android-wrapper:0.9.2` | PAC script JS evaluation |
+| `commons-net:3.11.1` | NTP UDP client (`NTPUDPClient`) |
+| `dnsjava:3.6.2` | DNS resolution bypassing system resolver |
+| `androidx.javascriptengine:1.1.0` | PAC script JS evaluation (QuickJS) |
 | `androidx.datastore:datastore-preferences:1.1.1` | Persistent history + settings |
 | `androidx.navigation:navigation-compose:2.8.9` | Compose navigation |
+| `kotlinx-coroutines-guava:1.8.1` | Coroutines ↔ Guava ListenableFuture bridge |
 
-**Build toolchain:** AGP 9.2.0, Kotlin 2.2.10, JVM 11 target, AndroidX with non-transitive R class.
+**Build toolchain:** AGP 9.2.1, Kotlin 2.2.10, JVM 11 target, AndroidX with non-transitive R class.
 
 ---
 
@@ -203,3 +196,80 @@ adb shell am start -n "$APP_ID/.MainActivity" --es auto_run true
 ## Notable Known Issues
 
 - **PAC IsInNet Stub:** The `isInNet()` function in `QuickJsEngine.PAC_UTILS` always returns `false`, causing DIRECT rules to fall through to the proxy branch and fail with 403 Forbidden. Android's native PAC evaluator resolves hostnames via DNS before checking subnet membership; QuickJS engine lacks this capability. See memory file `PAC_IsInNetStubIssue.md` for details.
+
+---
+
+## Permissions
+
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+```
+
+`INTERNET`, `ACCESS_NETWORK_STATE`, and `ACCESS_WIFI_STATE` are normal permissions (auto-granted at install). `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION`, and `READ_PHONE_STATE` are dangerous permissions requested at runtime via `ActivityResultContracts`. They are needed for Wi-Fi SSID, carrier name, IMEI, ICCID, and serial number.
+
+> **Note:** `android:usesCleartextTraffic="true"` is set in `AndroidManifest.xml` because the Google Time Sync endpoint (`http://clients2.google.com/time/1/current`) is served over plain HTTP. All other features use HTTPS or non-HTTP protocols (UDP/ICMP/TCP sockets).
+
+---
+
+## Error States
+
+| Error | Cause |
+|---|---|
+| DNS Failure | Hostname could not be resolved |
+| NXDOMAIN | Queried name does not exist |
+| Timeout | Server did not respond within the timeout window |
+| No Network | Device has no active internet connection |
+| HTTP Error | Non-200 response from the Google Time endpoint |
+| Parse Error | Response body missing XSSI prefix or invalid JSON |
+| Untrusted Chain | TLS certificate chain failed PKIX validation |
+| Cert Expired | TLS certificate validity period has lapsed |
+| CONNECT Failed | Proxy rejected the HTTP CONNECT tunnel request |
+| Error | Any other unexpected exception |
+
+---
+
+## License
+
+MIT
+
+# Coding Style Guidelines
+
+## Indentation
+- Use **4 spaces** for indentation (no tabs).
+- Never mix spaces and tabs.
+- When editing existing code, match the indentation style of the surrounding code.
+
+## File Editing Instructions
+- Before editing, always read the file first to detect the current indentation style.
+- If a file uses 5-space indents, preserve that style in your edits.
+- Use the `read_file` tool before `edit` to verify formatting.
+- Use a Python script to edit this file instead of the `edit` tool, as it has strict whitespace requirements.
+
+For YAML, Kotlin, and Python files, prioritize `run_shell_command` with `sed` or Python scripts for edits if `edit` fails due to whitespace mismatches. Do not retry `edit` more than twice on these file types.
+
+If `write_file` fails on paths containing special characters (e.g., `.._`, `-_-`) or produces empty files, switch immediately to a shell heredoc (`cat << 'EOF' > path`) to write content.
+
+When requested to update documentation (e.g., QWEN.md, Nextra docs), perform a full audit of the target directory for unused files and redundancies before generating new content.
+
+## Line Endings
+- Use LF (`\n`) line endings (standard on macOS/Linux).
+
+## PHP Specific Rules
+- File encoding: UTF-8 without BOM
+- Line endings: LF (`\n`)
+- Indentation: 4 spaces (preserve existing style if different)
+- When editing: always include 2 lines of context before/after the change
+- Escape $ in old_string if it appears in double-quoted strings
+
+## Command line specifix
+on macosx, current os, there are some specifities to command line arguments, they are listed below
+
+## `cat -A`
+   argument `-A` isn't available on macOS, use arguments `-vet` instead
+- replace `cat -A` by `cat -vet`
+

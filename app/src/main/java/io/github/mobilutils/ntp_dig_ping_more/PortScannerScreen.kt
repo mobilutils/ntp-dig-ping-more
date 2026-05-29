@@ -243,7 +243,7 @@ fun PortScannerScreen() {
                             }
                             uiState.discoveredPorts.forEach { port ->
                                 Text(
-                                    text = "Port $port/${uiState.protocol} open",
+                                    text = stringResource(R.string.port_scanner_result_open_port_format, port, uiState.protocol.name),
                                     style = MaterialTheme.typography.bodySmall.copy(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 14.sp,
@@ -342,13 +342,13 @@ private fun PortScannerHistoryRow(entry: PortScannerHistoryEntry, onClick: () ->
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "${entry.timestamp}   [${entry.protocol}]",
+                text = stringResource(R.string.port_scanner_history_timestamp_format, entry.timestamp, entry.protocol.name),
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "${entry.host} : ${entry.startPort}-${entry.endPort}",
+                text = stringResource(R.string.port_scanner_history_range_format, entry.host, entry.startPort, entry.endPort),
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Medium,

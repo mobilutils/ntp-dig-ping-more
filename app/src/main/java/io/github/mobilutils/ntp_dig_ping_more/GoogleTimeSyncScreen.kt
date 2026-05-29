@@ -286,7 +286,7 @@ private fun TimeSyncResultCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector        = Icons.Filled.CheckCircle,
-                    contentDescription = "Success",
+                    contentDescription = stringResource(R.string.google_time_sync_cd_success),
                     tint               = MaterialTheme.colorScheme.secondary,
                     modifier           = Modifier.size(32.dp),
                 )
@@ -298,7 +298,7 @@ private fun TimeSyncResultCard(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text  = "RTT ${result.rttMillis} ms  ·  offset $offsetSign${result.offsetMillis} ms",
+                        text  = stringResource(R.string.google_time_sync_result_rtt_offset_format, result.rttMillis, offsetSign, result.offsetMillis),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -311,7 +311,7 @@ private fun TimeSyncResultCard(
 
             SyncMetricRow(icon = Icons.Filled.Schedule,  label = stringResource(R.string.google_time_sync_label_server_time),  value = serverTimeStr)
             Spacer(Modifier.height(10.dp))
-            SyncMetricRow(icon = Icons.Filled.SwapHoriz, label = stringResource(R.string.google_time_sync_label_rtt),           value = "${result.rttMillis} ms")
+            SyncMetricRow(icon = Icons.Filled.SwapHoriz, label = stringResource(R.string.google_time_sync_label_rtt), value = stringResource(R.string.google_time_sync_result_rtt_format, result.rttMillis))
             Spacer(Modifier.height(10.dp))
 
             // Clock offset (colour-coded)
@@ -336,7 +336,7 @@ private fun TimeSyncResultCard(
                 }
                 Column(horizontalAlignment = Alignment.End, modifier = Modifier.weight(1.5f)) {
                     Text(
-                        text       = "$offsetSign${result.offsetMillis} ms",
+                        text       = stringResource(R.string.google_time_sync_result_offset_format, offsetSign, result.offsetMillis),
                         style      = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                         fontWeight = FontWeight.Bold,
                         color      = offsetColor,
@@ -366,7 +366,7 @@ private fun TimeSyncResultCard(
                     modifier           = Modifier.size(16.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(if (copied) stringResource(R.string.google_time_sync_copied) else stringResource(R.string.google_time_sync_copy_offset) + " ($offsetSign${result.offsetMillis} ms)")
+                Text(if (copied) stringResource(R.string.google_time_sync_copied) else stringResource(R.string.google_time_sync_copy_offset_format, offsetSign, result.offsetMillis))
             }
         }
     }
@@ -390,7 +390,7 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector        = Icons.Filled.Error,
-                    contentDescription = "Error",
+                    contentDescription = stringResource(R.string.google_time_sync_cd_error),
                     tint               = MaterialTheme.colorScheme.error,
                     modifier           = Modifier.size(32.dp),
                 )
@@ -505,7 +505,7 @@ private fun HistoryRow(
             )
             if (entry.success) {
                 Text(
-                    text      = "\tRTT ${entry.rttMs} ms  ·  offset $offsetSign${entry.offsetMs} ms",
+                    text      = stringResource(R.string.google_time_sync_result_rtt_offset_format, entry.rttMs, offsetSign, entry.offsetMs),
                     style     = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color     = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -329,6 +329,7 @@
     <string name="device_info_field_battery_level">Level</string>
     <string name="device_info_field_charging">Charging</string>
     <string name="device_info_field_battery_health">Health</string>
+    <string name="device_info_field_health">Health</string>
     <string name="device_info_field_battery_yes">Yes</string>
     <string name="device_info_field_battery_no">No</string>
     <string name="device_info_field_total_ram">Total RAM</string>
@@ -363,5 +364,49 @@
     <string name="mdm_bulk_json_title">Bulk Actions JSON Config</string>
     <string name="mdm_bulk_url_title">Bulk Actions Config URL</string>
     <string name="mdm_bulk_auto_run_title">Bulk Actions Auto-Run</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Additional hardcoded strings moved to resources              -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="bulk_error_unknown">Unknown error</string>
+    <string name="bulk_error_unknown_host">Unknown host</string>
+    <string name="bulk_error_no_wifi">No active WiFi network found</string>
+    <string name="bulk_error_host_not_found">HOST NOT FOUND</string>
+    <string name="bulk_result_command_format">(%1$s)</string>
+    <string name="bulk_result_timeout_message">Command timed out after %1$s</string>
+    <string name="bulk_result_default_timeout">30s</string>
+    <string name="device_info_cert_type_user">User</string>
+    <string name="device_info_cert_type_system">System</string>
+    <string name="device_info_cert_type_other">Other</string>
+    <string name="device_info_cert_unavailable">Unavailable</string>
+    <string name="https_cert_dn_label_cn">CN</string>
+    <string name="https_cert_dn_label_o">O</string>
+    <string name="https_cert_dn_label_ou">OU</string>
+    <string name="https_cert_dn_label_c">C</string>
+    <string name="https_cert_dn_label_subject">Subject</string>
+    <string name="https_cert_dn_label_issuer">Issuer</string>
+    <string name="https_cert_dn_label_valid">Valid</string>
+    <string name="https_cert_dn_none">(none)</string>
+    <string name="https_cert_cd_success">Success</string>
+    <string name="https_cert_cd_error">Error</string>
+    <string name="https_cert_cd_warning">Warning</string>
+    <string name="https_cert_error_no_cert_in_chain">No certificate in chain</string>
+    <string name="https_cert_error_tls_handshake_failed">TLS handshake failed</string>
+    <string name="https_cert_error_network_unreachable">Network is unreachable</string>
+    <string name="https_cert_error_unknown">Unknown error</string>
+    <string name="https_cert_error_proxy_closed">Proxy closed connection before sending CONNECT response</string>
+    <string name="https_cert_error_unknown_host">Unknown host</string>
+    <string name="https_cert_san_type_dns">DNS</string>
+    <string name="https_cert_san_type_ip">IP</string>
+    <string name="port_scanner_result_open_port_format">Port %1$d/%2$s open</string>
+    <string name="port_scanner_history_timestamp_format">%1$s   [%2$s]</string>
+    <string name="port_scanner_history_range_format">%1$s : %2$s-%3$s</string>
+    <string name="google_time_sync_cd_success">Success</string>
+    <string name="google_time_sync_cd_error">Error</string>
+    <string name="google_time_sync_result_rtt_offset_format">RTT %1$d ms  ·  offset %2$s%3$d ms</string>
+    <string name="google_time_sync_result_rtt_format">RTT %1$d ms</string>
+    <string name="google_time_sync_result_offset_format">%1$s%2$d ms</string>
+    <string name="google_time_sync_copy_offset_format">Copy Offset (%1$s%2$d ms)</string>
+    <string name="traceroute_cd_error">Error</string>
 
 </resources>

@@ -67,12 +67,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mobilutils.ntp_dig_ping_more.R
@@ -205,11 +205,12 @@ fun DeviceInfoScreen(
 
         // Show rationale snackbar if permissions were denied
         if (shouldShowRationale) {
+            val message = stringResource(R.string.device_info_snackbar_permissions_denied)
+            val actionLabel = stringResource(R.string.device_info_snackbar_dismiss)
             LaunchedEffect(shouldShowRationale) {
                 snackbarHostState.showSnackbar(
-                    message = "Some permissions were denied. Certain information may be unavailable. " +
-                            "You can grant them in Settings.",
-                    actionLabel = "Dismiss"
+                    message = message,
+                    actionLabel = actionLabel
                 )
                 shouldShowRationale = false
             }
@@ -311,7 +312,7 @@ private fun ErrorContent(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "Error",
+            text = stringResource(R.string.common_label_error),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.error,
@@ -342,16 +343,16 @@ private fun DeviceInfoContent(
         // ── Device Identity ────────────────────────────────────────────
         item {
             InfoCard(
-                title = "Device",
+                title = stringResource(R.string.device_info_section_device),
                 icon = Icons.Filled.Smartphone,
                 items = listOfNotNull(
-                    InfoItem("Device", deviceInfo.deviceName),
-                    InfoItem("IMEI", deviceInfo.imei),
-                    InfoItem("Serial Number", deviceInfo.serialNumber),
-                    InfoItem("ICCID", deviceInfo.iccid),
-                    InfoItem("Android Version", deviceInfo.androidVersion),
-                    InfoItem("API Level", deviceInfo.apiLevel?.toString()),
-                    InfoItem("CPU Architecture", deviceInfo.cpuAbi.joinToString(", ")),
+                    InfoItem(stringResource(R.string.device_info_field_device), deviceInfo.deviceName),
+                    InfoItem(stringResource(R.string.device_info_field_imei), deviceInfo.imei),
+                    InfoItem(stringResource(R.string.device_info_field_serial), deviceInfo.serialNumber),
+                    InfoItem(stringResource(R.string.device_info_field_iccid), deviceInfo.iccid),
+                    InfoItem(stringResource(R.string.device_info_field_android_version), deviceInfo.androidVersion),
+                    InfoItem(stringResource(R.string.device_info_field_api_level), deviceInfo.apiLevel?.toString()),
+                    InfoItem(stringResource(R.string.device_info_field_cpu_arch), deviceInfo.cpuAbi.joinToString(", ")),
                 )
             )
         }
@@ -359,12 +360,12 @@ private fun DeviceInfoContent(
         // ── Time & Uptime ──────────────────────────────────────────────
         item {
             InfoCard(
-                title = "Time & Uptime",
+                title = stringResource(R.string.device_info_section_time_uptime),
                 icon = Icons.Filled.Timer,
                 items = listOfNotNull(
-                    InfoItem("Current Time", deviceInfo.deviceTime),
-                    InfoItem("Time Since Boot", deviceInfo.timeSinceReboot),
-                    InfoItem("Since Screen-Off", deviceInfo.timeSinceScreenOff),
+                    InfoItem(stringResource(R.string.device_info_field_current_time), deviceInfo.deviceTime),
+                    InfoItem(stringResource(R.string.device_info_field_time_since_boot), deviceInfo.timeSinceReboot),
+                    InfoItem(stringResource(R.string.device_info_field_since_screen_off), deviceInfo.timeSinceScreenOff),
                 )
             )
         }
@@ -372,16 +373,16 @@ private fun DeviceInfoContent(
         // ── Network Information ────────────────────────────────────────
         item {
             InfoCard(
-                title = "Network",
+                title = stringResource(R.string.device_info_section_network),
                 icon = Icons.Filled.Language,
                 items = listOfNotNull(
-                    InfoItem("Active Network", deviceInfo.activeNetworkType),
-                    InfoItem("IPv4 Address", deviceInfo.ipv4Address),
-                    InfoItem("IPv6 Address", deviceInfo.ipv6Address),
-                    InfoItem("Subnet Mask", deviceInfo.subnetMask),
-                    InfoItem("Default Gateway", deviceInfo.defaultGateway),
-                    InfoItem("DNS Servers", deviceInfo.dnsServers.joinToString(", ").takeIf { it.isNotEmpty() }),
-                    InfoItem("NTP Server", deviceInfo.ntpServer),
+                    InfoItem(stringResource(R.string.device_info_field_active_network), deviceInfo.activeNetworkType),
+                    InfoItem(stringResource(R.string.device_info_field_ipv4), deviceInfo.ipv4Address),
+                    InfoItem(stringResource(R.string.device_info_field_ipv6), deviceInfo.ipv6Address),
+                    InfoItem(stringResource(R.string.device_info_field_subnet_mask), deviceInfo.subnetMask),
+                    InfoItem(stringResource(R.string.device_info_field_gateway), deviceInfo.defaultGateway),
+                    InfoItem(stringResource(R.string.device_info_field_dns_servers), deviceInfo.dnsServers.joinToString(", ").takeIf { it.isNotEmpty() }),
+                    InfoItem(stringResource(R.string.device_info_field_ntp_server), deviceInfo.ntpServer),
                 )
             )
         }
@@ -389,10 +390,10 @@ private fun DeviceInfoContent(
         // ── Wi-Fi ──────────────────────────────────────────────────────
         item {
             InfoCard(
-                title = "Wi-Fi",
+                title = stringResource(R.string.device_info_section_wifi),
                 icon = Icons.Filled.Wifi,
                 items = listOfNotNull(
-                    InfoItem("Connected SSID", deviceInfo.wifiSSID),
+                    InfoItem(stringResource(R.string.device_info_field_wifi_ssid), deviceInfo.wifiSSID),
                 )
             )
         }
@@ -400,10 +401,10 @@ private fun DeviceInfoContent(
         // ── Mobile Carrier ─────────────────────────────────────────────
         item {
             InfoCard(
-                title = "Mobile Carrier",
+                title = stringResource(R.string.device_info_section_mobile_carrier),
                 icon = Icons.Filled.CellTower,
                 items = listOfNotNull(
-                    InfoItem("Operator", deviceInfo.carrierName),
+                    InfoItem(stringResource(R.string.device_info_field_carrier), deviceInfo.carrierName),
                 )
             )
         }
@@ -411,12 +412,12 @@ private fun DeviceInfoContent(
         // ── Battery ────────────────────────────────────────────────────
         item {
             InfoCard(
-                title = "Battery",
+                title = stringResource(R.string.device_info_section_battery),
                 icon = Icons.Filled.BatteryChargingFull,
                 items = listOfNotNull(
-                    InfoItem("Level", deviceInfo.batteryLevel?.let { "$it%" }),
-                    InfoItem("Charging", deviceInfo.isCharging?.let { if (it) "Yes" else "No" }),
-                    InfoItem("Health", deviceInfo.batteryHealth),
+                    InfoItem(stringResource(R.string.device_info_field_battery_level), deviceInfo.batteryLevel?.let { "$it%" }),
+                    InfoItem(stringResource(R.string.device_info_field_charging), deviceInfo.isCharging?.let { if (it) stringResource(R.string.device_info_field_battery_yes) else stringResource(R.string.device_info_field_battery_no) }),
+                    InfoItem(stringResource(R.string.device_info_field_health), deviceInfo.batteryHealth),
                 )
             )
         }
@@ -424,13 +425,13 @@ private fun DeviceInfoContent(
         // ── Memory & Storage ───────────────────────────────────────────
         item {
             InfoCard(
-                title = "Memory & Storage",
+                title = stringResource(R.string.device_info_section_memory_storage),
                 icon = Icons.Filled.Memory,
                 items = listOfNotNull(
-                    InfoItem("Total RAM", deviceInfo.totalRam),
-                    InfoItem("Available RAM", deviceInfo.availableRam),
-                    InfoItem("Total Storage", deviceInfo.totalStorage),
-                    InfoItem("Available Storage", deviceInfo.availableStorage),
+                    InfoItem(stringResource(R.string.device_info_field_total_ram), deviceInfo.totalRam),
+                    InfoItem(stringResource(R.string.device_info_field_available_ram), deviceInfo.availableRam),
+                    InfoItem(stringResource(R.string.device_info_field_total_storage), deviceInfo.totalStorage),
+                    InfoItem(stringResource(R.string.device_info_field_available_storage), deviceInfo.availableStorage),
                 )
             )
         }
@@ -486,7 +487,7 @@ private fun MdmStatusCard(
                     modifier = Modifier.size(24.dp),
                 )
                 Text(
-                    text = "Security & MDM",
+                    text = stringResource(R.string.device_info_section_security_mdm),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -512,7 +513,7 @@ private fun MdmStatusCard(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Text(
-                            text = "App is managed",
+                            text = stringResource(R.string.device_info_mdm_managed_badge),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -527,7 +528,7 @@ private fun MdmStatusCard(
                     verticalAlignment = Alignment.Top,
                 ) {
                     Text(
-                        text = "MDM Status",
+                        text = stringResource(R.string.device_info_mdm_status_label),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
@@ -549,14 +550,14 @@ private fun MdmStatusCard(
                     verticalAlignment = Alignment.Top,
                 ) {
                     Text(
-                        text = "MDM Status",
+                        text = stringResource(R.string.device_info_mdm_status_label),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        text = "Not managed",
+                        text = stringResource(R.string.device_info_mdm_not_managed),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
@@ -651,7 +652,7 @@ private fun InfoRow(item: InfoItem) {
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(12.dp))
-        val displayValue = item.value ?: "Unavailable"
+        val displayValue = item.value ?: stringResource(R.string.common_label_unavailable)
         val valueColor = if (item.value == null)
             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         else
@@ -703,7 +704,7 @@ private fun CertificateCard(
                     modifier = Modifier.size(24.dp),
                 )
                 Text(
-                    text = "Installed Certificates (${certificates.size} shown)",
+                    text = stringResource(R.string.device_info_section_installed_certs, certificates.size),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -724,7 +725,7 @@ private fun CertificateCard(
             if (certificates.size > 20) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "... and ${certificates.size - 20} more (not shown)",
+                    text = stringResource(R.string.device_info_section_certs_more, certificates.size - 20),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
@@ -765,7 +766,7 @@ private fun CertificateRow(cert: CertificateInfo) {
         )
         Spacer(Modifier.height(2.dp))
         Text(
-            text = "Valid: ${cert.notBefore} → ${cert.notAfter}",
+            text = stringResource(R.string.device_info_cert_valid_range, cert.notBefore, cert.notAfter),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

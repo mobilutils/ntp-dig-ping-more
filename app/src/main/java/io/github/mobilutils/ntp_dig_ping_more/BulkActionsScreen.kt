@@ -685,15 +685,15 @@ fun BulkActionsScreen(
 private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null) {
     val (icon, statusText, statusColor) = when (result) {
         is BulkCommandSuccess ->
-            Triple(Icons.Filled.CheckCircle, "SUCCESS", MaterialTheme.colorScheme.secondary)
+            Triple(Icons.Filled.CheckCircle, stringResource(R.string.bulk_status_success), MaterialTheme.colorScheme.secondary)
         is BulkCommandError ->
-            Triple(Icons.Filled.Error, "ERROR", MaterialTheme.colorScheme.error)
+            Triple(Icons.Filled.Error, stringResource(R.string.bulk_status_error), MaterialTheme.colorScheme.error)
         is BulkCommandTimeout ->
-            Triple(Icons.Filled.Close, "TIMEOUT", MaterialTheme.colorScheme.tertiary)
+            Triple(Icons.Filled.Close, stringResource(R.string.bulk_status_timeout), MaterialTheme.colorScheme.tertiary)
         is BulkCommandClosed ->
-            Triple(Icons.Filled.Warning, "CLOSED", MaterialTheme.colorScheme.error)
+            Triple(Icons.Filled.Warning, stringResource(R.string.bulk_status_closed), MaterialTheme.colorScheme.error)
         is BulkCommandWarning ->
-            Triple(Icons.Filled.Warning, "WARNING", MaterialTheme.colorScheme.tertiary)
+            Triple(Icons.Filled.Warning, stringResource(R.string.bulk_status_warning), MaterialTheme.colorScheme.tertiary)
     }
 
     Card(
@@ -722,7 +722,7 @@ private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null)
                     color = statusColor,
                 )
                 Text(
-                    text = "(${result.command})",
+                    text = stringResource(R.string.bulk_result_command_format, result.command),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace,
                         fontStyle = FontStyle.Italic,
@@ -763,9 +763,9 @@ private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null)
                         ),
                     )
                 }
-                val timeoutSec = configTimeoutMs?.let { "${it / 1000}s" } ?: "30s"
+                val timeoutSec = configTimeoutMs?.let { "${it / 1000}s" } ?: stringResource(R.string.bulk_result_default_timeout)
                 Text(
-                    text = "Command timed out after $timeoutSec",
+                    text = stringResource(R.string.bulk_cmd_timed_out, timeoutSec),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace,
                         fontStyle = FontStyle.Italic,

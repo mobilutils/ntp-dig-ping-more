@@ -326,16 +326,16 @@ private fun CertResultContent(
          }
 
          // ── Fingerprints ───────────────────────────────────────────────
-        CertSection(title = "Fingerprints", icon = Icons.Filled.Fingerprint) {
+        CertSection(title = stringResource(R.string.https_cert_section_fingerprints), icon = Icons.Filled.Fingerprint) {
             CopyableRow(
-                label   = "SHA-256",
+                label   = stringResource(R.string.https_cert_label_sha256),
                 value   = info.sha256Fingerprint,
                 copied = copiedKeys["sha256"] == true,
                 onCopy = { copyToClipboard("sha256", info.sha256Fingerprint) },
              )
             Spacer(Modifier.height(8.dp))
             CopyableRow(
-                label   = "SHA-1",
+                label   = stringResource(R.string.https_cert_label_sha1),
                 value   = info.sha1Fingerprint,
                 copied = copiedKeys["sha1"] == true,
                 onCopy = { copyToClipboard("sha1", info.sha1Fingerprint) },
@@ -452,8 +452,8 @@ private fun CollapsibleChainSection(
 
                 val isExpanded = expandedStates[idx] ?: true
                 val label = when {
-                    idx == chain.size - 1 -> "[Root]"
-                    else                   -> "[Intermediate $idx]"
+                    idx == chain.size - 1 -> stringResource(R.string.https_cert_chain_label_root)
+                    else                   -> stringResource(R.string.https_cert_chain_label_intermediate, idx)
                 }
 
                 CollapsibleCertEntry(
@@ -608,7 +608,7 @@ private fun WarningBanner(message: String) {
         ) {
             Icon(
                 imageVector        = Icons.Filled.Warning,
-                contentDescription = "Warning",
+                contentDescription = stringResource(R.string.https_cert_cd_warning),
                 tint               = Color(0xFFE65100),
                 modifier           = Modifier.size(20.dp),
             )
@@ -783,7 +783,7 @@ private fun CertErrorCard(message: String, onRetry: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector        = Icons.Filled.Error,
-                    contentDescription = "Error",
+                    contentDescription = stringResource(R.string.https_cert_cd_error),
                     tint               = MaterialTheme.colorScheme.error,
                     modifier           = Modifier.size(32.dp),
                 )
