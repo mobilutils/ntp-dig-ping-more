@@ -55,6 +55,7 @@ docs/content/available-features/template.md
 node_modules/
 package.json
 package-lock.json
+QWEN.md
 
 # -- NEXTRA RELATED ----------------------------------------------------------------------
 

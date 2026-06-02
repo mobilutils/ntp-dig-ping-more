@@ -1,0 +1,288 @@
+---
+title: Politique de Confidentialité
+description: Politique de Confidentialité pour NTP DIG PING MORE — conforme au RGPD, CCPA, COPPA et aux Règles pour les développeurs Google Play.
+---
+
+# Politique de Confidentialité
+
+**Date d'effet :** 2 juin 2026
+**Dernière mise à jour :** 2 juin 2026
+
+Cette Politique de Confidentialité explique comment **mobilutils** (« nous », « notre » ou « nos ») collecte, utilise, traite et protège les informations relatives à l'application mobile **NTP DIG PING MORE** (l'« Application ») pour Android, distribuée via Google Play.
+
+Nous prenons la protection de votre vie privée très au sérieux. Cette Application est conçue comme une **boîte à outils d'analyse réseau côté client uniquement** — elle ne dispose pas de base de données propriétaire, de serveur distant ou de service externe pour collecter vos informations personnelles. Tout le traitement des données a lieu localement sur votre appareil.
+
+Cette Politique de Confidentialité est conforme aux réglementations suivantes :
+
+- Le **Règlement Général sur la Protection des Données (RGPD)** (Règlement (UE) 2016/679)
+- Le **California Consumer Privacy Act (CCPA)** / California Privacy Rights Act (CPRA)
+- La loi **Children's Online Privacy Protection Act (COPPA)** (15 U.S.C. § 6501 et seq.)
+- Les **Règles pour les développeurs Google Play** (Google Play Developer Program Policies), y compris la section Sécurité des Données
+- Les exigences de divulgation des **autorisations Android**
+
+Veuillez lire attentivement cette Politique de Confidentialité pour comprendre nos pratiques concernant vos informations. En installant et en utilisant l'Application, vous acceptez la collecte et l'utilisation d'informations conformément à cette politique.
+
+---
+
+## 1. Introduction
+
+**NTP DIG PING MORE** est une boîte à outils complète d'analyse et de dépannage réseau, développée par **mobilutils**. Elle permet aux utilisateurs d'effectuer des analyses réseau locales, notamment :
+
+- **Contrôles NTP (Network Time Protocol)** — Interroger les serveurs NTP pour la synchronisation temporelle
+- **Recherches DIG (DNS)** — Résoudre les noms de domaine via DNS
+- **Ping ICMP** — Tester l'accessibilité d'un hôte
+- **Tracé de Route (Traceroute)** — Tracer le chemin des paquets réseau
+- **Scan de Ports TCP/UDP** — Identifier les ports ouverts sur des hôtes cibles
+- **Scanner LAN** — Découvrir les appareils sur votre sous-réseau local
+- **Synchronisation Google Time** — Se synchroniser avec les serveurs temporels de Google
+- **Inspecteur de Certificats HTTPS** — Examiner les détails des certificats TLS
+- **Informations Appareil** — Afficher l'identité de l'appareil, l'état du réseau et les détails matériels
+- **Actions en Lote (Bulk Actions)** — Exécuter des lots de commandes de diagnostic à partir de configurations JSON
+
+L'Application est conçue pour fonctionner **exclusivement sur votre appareil**. Elle n'envoie aucune donnée à nos serveurs ou à des plateformes tierces. Tous les résultats de diagnostic sont traités en temps réel et affichés localement.
+
+---
+
+## 2. Données Collectées
+
+Pour fournir des services de diagnostic réseau robustes, l'Application nécessite l'accès à certaines fonctionnalités de l'appareil et traite des informations spécifiques réseau/appareil. Voici une divulgation complète de tous les types de données collectés, traités et stockés.
+
+### A. Données Réseau et de Diagnostic (Traitées Uniquement sur l'Appareil)
+
+Lorsque vous effectuez des tests de diagnostic, les paramètres suivants sont **traités localement** au sein de l'Application :
+
+| Type de Donnée | Description | Où Utilisé |
+|---|---|---|
+| **Noms d'Hôte / Adresses IP Cibles** | Les noms d'hôte ou adresses IP que vous saisissez pour effectuer un ping, un scan, une résolution ou une requête (ex. `google.com`, `192.168.1.1`) | Tous les écrans de diagnostic (NTP, DIG, Ping, Traceroute, Scan de Ports, Certificat HTTPS) |
+| **SSID et BSSID Wi-Fi** | Le nom (SSID) et l'adresse MAC (BSSID) du réseau Wi-Fi auquel vous êtes connecté | Écran Informations Appareil, Scanner LAN |
+| **Force du Signal Wi-Fi (RSSI)** | Détails techniques de votre connexion Wi-Fi actuelle : force du signal, bande de fréquence, vitesse de liaison | Écran Informations Appareil |
+| **Latence Réseau / RTT** | Temps de ping, délai d'aller-retour, décalage horaire NTP, réponses DNS, valeurs TTL | Tous les écrans de diagnostic |
+| **Numéros de Ports Orverts** | Numéros de ports TCP/UDP trouvés ouverts sur les hôtes cibles lors des scans | Écran Scan de Ports |
+| **Données de Scan du Sous-Réseau Local** | Adresses IP, noms d'hôte, temps de réponse et adresses MAC des appareils découverts sur votre sous-réseau local (strictement lors de scans LAN actifs initiés par vos soins) | Écran Scanner LAN |
+| **Détails Opérateur Cellulaire** | Type de réseau mobile (LTE, 5G, etc.), nom de l'opérateur, état de la SIM | Écran Informations Appareil |
+| **Identifiants Matériels de l'Appareil** | Fabricant/modèle de l'appareil, version d'Android, IMEI (Android 9 et antérieur uniquement), numéro de série matériel (Android 9 et antérieur uniquement), ICCID (numéro de série SIM) | Écran Informations Appareil |
+
+> **Important :** Toutes les données ci-dessus sont traitées **uniquement sur votre appareil**. Nous ne collectons, ne transmettons, ne stockons et n'accédons à aucune de ces données de diagnostic sur nos serveurs.
+
+### B. Autorisations Android Sensibles
+
+Conformément aux **Règles pour les développeurs Google Play** et au **modèle d'autorisation Android**, nous divulguons explicitement l'utilisation des autorisations sensibles suivantes :
+
+#### 1. `android.permission.INTERNET`
+- **Catégorie :** Autorisation Normale (auto-acquise à l'installation)
+- **Objectif :** Permet à l'Application d'ouvrir des sockets réseau. Essentiel pour exécuter les pings ICMP, les échanges de paquets UDP NTP (port 123), les requêtes DNS (port 53), les scans de ports TCP, les requêtes HTTP(S) (y compris Google Time Sync) et les handshakes TLS.
+
+#### 2. `android.permission.ACCESS_NETWORK_STATE`
+- **Catégorie :** Autorisation Normale (auto-acquise à l'installation)
+- **Objectif :** Permet à l'Application de vérifier si l'appareil dispose d'une connexion réseau active (et le type — Wi-Fi, Cellulaire, Ethernet, VPN) avant d'initier des outils de diagnostic. Utilisé pour éviter les requêtes échouées lorsqu'aucune connexion internet n'est disponible.
+
+#### 3. `android.permission.ACCESS_WIFI_STATE`
+- **Catégorie :** Autorisation Normale (auto-acquise à l'installation)
+- **Objectif :** Permet à l'Application d'accéder aux détails techniques de votre connexion Wi-Fi active, tels que la force du signal Wi-Fi (RSSI), la bande de fréquence (2,4 GHz / 5 GHz), la vitesse de connexion (Mbps), le SSID et le BSSID. Requis pour la section de diagnostics réseau de l'écran Informations Appareil.
+
+#### 4. `android.permission.ACCESS_COARSE_LOCATION` & `android.permission.ACCESS_FINE_LOCATION`
+- **Catégorie :** Autorisations Dangereuses (requièrent une demande runtime, Android 10+)
+- **Divulgation Politique Critique :** Sur les systèmes d'exploitation Android modernes (API 29+), l'accès au nom d'un réseau (SSID) et à l'identifiant du point d'accès (BSSID) est légalement classé comme des données pouvant révéler votre position géographique. Par conséquent, **Android exige les autorisations de localisation** pour récupérer le SSID et le BSSID Wi-Fi aux fins d'affichage.
+- **Notre Pratique :** **Nous ne suivons pas, ne collectons pas, ne stockons pas et ne transmettons pas vos coordonnées géographiques (localisation GPS).** Ces autorisations sont demandées **uniquement** pour récupérer le SSID et le BSSID Wi-Fi aux fins de diagnostics réseau local et de scans LAN. Vous pouvez refuser ou révoquer cette autorisation à tout moment dans les paramètres système ; cela limitera la capacité de l'Application à afficher le SSID/BSSID du réseau, mais n'empêchera pas les autres outils de diagnostic de fonctionner.
+- **Données Traitées :** SSID Wi-Fi (nom du réseau), BSSID (adresse MAC du point d'accès). Aucune coordonnée GPS n'est accédée.
+
+#### 5. `android.permission.READ_PHONE_STATE`
+- **Catégorie :** Autorisation Dangereuse (requiert une demande runtime)
+- **Objectif :** Utilisé strictement pour lire les détails de l'opérateur cellulaire et du type de réseau (ex. nom de l'opérateur SIM, classe de réseau — LTE/5G/CDMA) afin d'afficher des diagnostics de réseau mobile détaillés sur l'écran Informations Appareil. Sur Android 10+ (API 29+), cette autorisation ne permet plus l'accès aux IMEI ou numéros de série pour les applications tierces.
+- **Notre Pratique :** **Nous ne collectons pas, ne stockons pas et ne transmettons pas votre numéro de téléphone, IMEI, MEID ou numéro de série matériel.** Tout identifiant d'appareil potentiellement accessible est affiché localement à l'écran uniquement et n'est ni persisté ni transmis externement.
+
+#### 6. `android.permission.WRITE_EXTERNAL_STORAGE` & `android.permission.READ_EXTERNAL_STORAGE`
+- **Catégorie :** Autorisation Dangereuse (jusqu'à `maxSdkVersion="32"` / Android 12)
+- **Objectif :** Utilisé exclusivement pour vous permettre d'exporter des rapports de scan réseau locaux, des journaux de diagnostic ou des résultats d'Actions en Lote vers le stockage partagé de votre appareil à votre demande explicite. N'est utilisé à aucune autre fin.
+- **Note :** Sur Android 13+ (API 33+), `READ_EXTERNAL_STORAGE` n'est plus accordable ; l'Application utilise le Storage Access Framework (SAF) pour les opérations de fichiers à la place.
+
+### C. Stockage Local (Uniquement sur l'Appareil)
+
+L'Application stocke une quantité limitée d'informations **localement sur votre appareil** en utilisant le **Preferences DataStore** d'Android (stockage privé et sandboxé de l'application). Ces données ne sont jamais transmises à nous ou à des tiers :
+
+| Type de Donnée | Mécanisme de Stockage | Rétention | Exemples |
+|---|---|---|---|
+| **Historique des Requêtes de Diagnostic** | Preferences DataStore (par écran) | Jusqu'à 5–10 entrées les plus récentes par outil ; persiste jusqu'à suppression manuelle ou désinstallation de l'Application | Derniers serveurs NTP interrogés, derniers noms de domaine DNS, dernières cibles ping, dernières plages de scan de ports |
+| **Paramètres et Configuration** | Preferences DataStore (global) | Persiste jusqu'à réinitialisation manuelle ou désinstallation de l'Application | Valeur de délai d'attente opérationnel, état activé/désactivé du Proxy PAC, URL ou chemin du fichier PAC, toggle de journalisation Proxy |
+| **Configurations Actions en Lote** | Stockage partagé de l'appareil (emplacement défini par l'utilisateur) | Jusqu'à suppression manuelle des fichiers JSON de configuration | Fichiers JSON contenant des lots de commandes de diagnostic pour la fonctionnalité Actions en Lote |
+
+**Détails du Format de Stockage :**
+- Les entrées d'historique de requêtes sont stockées sous forme de chaînes délimitées par des pipes (ex. `horodatage\|serveur\|port\|succès`) ou d'objets JSON (pour le Scanner LAN) dans les clés de préférence DataStore.
+- Aucun identifiant personnel, numéro de série matériel ou résultat de scan réseau au-delà des 5–10 dernières requêtes n'est conservé.
+
+---
+
+## 3. Utilisation des Données
+
+Les informations traitées par l'Application sont utilisées **uniquement** aux finalités suivantes :
+
+- **Fournir les Fonctionnalités de Diagnostic :** Exécuter les requêtes d'utilitaires réseau (ex. résoudre un nom de domaine via DNS, tester la disponibilité d'un port via TCP handshake, mesurer la perte de paquets et la latence via ICMP)
+- **Afficher les Résultats en Local :** Afficher la sortie terminal en temps réel, les journaux de latence, les détails des appareils, les informations sur les certificats et les résultats de scan directement dans l'interface de l'Application
+- **Préservation de l'Historique Local :** Sauvegarder un historique local de vos dernières requêtes (5–10 entrées récentes par outil) pour un accès rapide. Cet historique est stocké strictement dans le DataStore de préférences local sécurisé de votre appareil et n'est **jamais transmis à nous**
+- **Améliorer la Stabilité et l'Expérience Utilisateur :** Identifier et résoudre les plantages, les goulots d'étranglement de performance et les problèmes d'interface utilisateur à l'aide des journaux de débogage locaux générés lors de votre utilisation de l'Application
+
+---
+
+## 4. Partage de Données et SDK Tiers
+
+### A. Politique Générale de Partage
+
+**Nous ne vendons, n'échangeons, ne louons, ne partageons ni ne divulguons autrement aucune de vos informations personnelles ou données réseau à des tiers.**
+
+Étant donné que l'Application fonctionne strictement sur l'appareil, **aucun tiers ne reçoit vos saisies de diagnostic, votre historique de requêtes ou vos résultats de scan de réseau local**. Toute communication avec des serveurs externes est initiée **uniquement par vos soins** pour effectuer des tests que vous demandez activement (ex. interroger votre serveur DNS choisi, pinger un hôte cible, synchroniser l'heure avec un pool NTP).
+
+### B. Fournisseurs de Services Tiers et SDK
+
+> **Cette Application n'intègre aucun SDK tiers de publicité, de suivi, d'analyse ou de rapport de plantage.**
+>
+> L'Application est entièrement autonome et hors ligne. Elle n'utilise pas Google Firebase (Crashlytics/Analytics), Google AdMob, Facebook SDK ou toute autre bibliothèque de suivi/analytics tierce.
+
+Le seul réseau externe avec lequel l'Application communique — lorsque vous choisissez de l'utiliser — implique :
+
+#### Service Google Time Sync (`clients2.google.com`)
+- **Données Transmises :** Une requête HTTP GET standard est envoyée à `http://clients2.google.com/time/1/current` (ou sa variante XSSI-prefixed) lors de l'exécution du test de synchronisation temporelle Google. Cela transmet uniquement une **requête HTTP publique contenant votre adresse IP device** dans le cadre du handshake TCP/IP standard — aucune donnée d'identification personnelle, identifiant d'appareil ou contenu de requête n'est inclus dans le corps ou les en-têtes de la requête au-delà de ce qu'une requête HTTP standard contient intrinsèquement.
+- **Objectif :** Strictement récupérer les horodatages des serveurs temporels publics de Google pour calculer le délai d'aller-retour et déterminer le décalage d'horloge local précis sur l'appareil.
+- **Lien Politique de Confidentialité :** [Google Privacy & Terms](https://policies.google.com/privacy)
+- **Votre Contrôle :** Vous pouvez entièrement ignorer cette fonctionnalité ou utiliser un autre pool de serveurs NTP (ex. `pool.ntp.org`) à la place.
+
+#### Vos Serveurs Tiers Choisies (Cibles Sélectionnées par l'Utilisateur)
+
+Lorsque vous saisissez un nom d'hôte ou une adresse IP pour effectuer un ping, une résolution ou un scan, l'Application envoie des paquets réseau **directement à la cible que vous avez spécifiée**. Cela inclut :
+- **Requêtes DNS** envoyées à votre résolveur DNS choisi (ex. `8.8.8.8`, `1.1.1.1`, ou un serveur personnalisé)
+- **Paquets ICMP ping** envoyés à l'hôte cible
+- **Tentatives de connexion TCP** aux ports spécifiés sur les hôtes cibles
+- **Paquets UDP NTP** envoyés au serveur pool NTP que vous avez sélectionné
+- **Requêtes de certificat TLS** à l'hôte HTTPS que vous avez inspecté
+
+> **Important :** Ces communications ont lieu entre votre appareil et les serveurs tiers que vous spécifiez. Nous n'interceptons, ne consignons, ne stockons ni n'accédons à ces données. Veuillez consulter les politiques de confidentialité des services tiers que vous choisissez d'interroger.
+
+### C. Fonctionnalité Proxy PAC (Optionnelle)
+
+L'Application inclut une fonctionnalité optionnelle **Proxy PAC (Proxy Auto-Configuration)**. Si vous activez une URL de script PAC dans les Paramètres :
+- L'URL du script PAC est récupérée depuis le serveur que vous spécifiez (ex. `http://proxy.corp.com/proxy.pac`)
+- Le script PAC est évalué localement sur votre appareil en utilisant le moteur JavaScript QuickJS
+- Le trafic réseau pour certains outils peut être acheminé via le proxy déterminé par le script PAC
+- **Nous ne collectons, ne consignons ni n'accédons à aucune donnée transitant par votre proxy configuré**
+
+---
+
+## 5. Conservation et Sécurité des Données
+
+### Conservation des Données
+
+- **Historique de Diagnostic Local :** Tous les journaux de scan réseau, historiques de diagnostic et saisies de cibles sont stockés exclusivement dans le DataStore local sandboxé de votre appareil. Ils y restent jusqu'à ce que vous :
+   - Vidiez les données de l'Application dans les paramètres Android (`Paramètres → Applications → NTP DIG PING MORE → Stockage → Effacer les Données`)
+   - Désinstalliez l'Application
+   - Supprimiez manuellement les entrées d'historique de requêtes dans l'interface de l'Application (là où disponible)
+- **Paramètres et Configuration :** Vos paramètres configurés (valeurs de délai d'attente, URLs proxy, toggles PAC) sont conservés localement sur votre appareil jusqu'à ce que vous les réinitialisiez ou désinstalliez l'Application.
+- **Aucun Stockage Serveur :** Nous n'hébergeons pas, n'exploitons ni ne maintenons de serveurs backend qui stockeraient vos requêtes, historiques de diagnostic ou aucune donnée réseau.
+
+### Sécurité des Données
+
+Nous mettons en œuvre des mesures de sécurité conformes aux standards de l'industrie pour protéger les données stockées sur votre appareil :
+
+- **Sandbox Android :** L'Application utilise le mécanisme de stockage sandboxé natif d'Android, qui empêche les autres applications d'accéder aux fichiers de données internes de NTP DIG PING MORE et au Preferences DataStore
+- **Aucune Transmission Réseau des Données Locales :** Toutes les données stockées localement (historique de requêtes, paramètres) ne sont jamais transmises sur le réseau — elles restent dans le répertoire privé de l'application de votre appareil (`/data/user/0/io.github.mobilutils.ntp_dig_ping_more/`)
+- **Paramètres Sécurisés par Défaut :** Les autorisations sensibles (localisation, état téléphone) sont demandées au runtime uniquement lorsque nécessaire, et vous conservez un contrôle total pour les refuser ou les révoquer à tout moment
+- **Pas de Stockage en Clair des Identifiants :** L'Application ne stocke pas de mots de passe, clés API ou jetons d'authentification
+
+> **Veuillez noter :** Bien que nous mettions en œuvre des mesures de sécurité raisonnables, aucune méthode de transmission sur Internet ni méthode de stockage électronique n'est sûre à 100 %. Nous ne pouvons garantir une sécurité absolue des données stockées sur votre appareil, surtout si votre appareil est rooté, compromis ou accédé par des parties non autorisées.
+
+---
+
+## 6. Vie Privée des Enfants
+
+L'Application **n'est pas destinée aux enfants de moins de 13 ans** et ne collecte pas sciemment de informations personnelles auprès d'enfants de moins de 13 ans (ou de l'âge minimum applicable dans votre juridiction). Nous respectons strictement :
+
+- La loi **Children's Online Privacy Protection Act (COPPA)** (15 U.S.C. § 6501 et seq.)
+- Les **Règles pour les développeurs Google Play sur les Familles** (Google Play Developer Program Policies on Families)
+- L'**Article 8 du Règlement Général sur la Protection des Données (RGPD)** concernant le consentement relatif aux enfants
+
+Toutes les données traitées par l'Application sont générées en résultat de votre utilisation active des outils de diagnostic réseau. Aucune information personnelle concernant des enfants n'est sciemment collectée ou transmise.
+
+**Si vous êtes un parent ou tuteur et croyez que votre enfant a fourni des informations personnelles via cette Application, veuillez nous contacter à l'adresse [Contact GitHub](https://github.com/mobilutils/ntp-dig-ping-more/issues) afin que nous puissions traiter vos préoccupations.**
+
+---
+
+## 7. Vos Droits
+
+Selon votre situation géographique, vous disposez de certains droits concernant vos informations personnelles en vertu des réglementations applicables sur la protection des données :
+
+### RGPD (Espace Économique Européen)
+- **Droit d'Accès :** Vous pouvez consulter tout votre historique de diagnostic réseau directement au sein de l'Application à tout moment.
+- **Droit à l'Effacement (Droit à l'Oubli) :** Vous pouvez supprimer tout votre historique de requêtes en vidant les données de l'Application dans les paramètres Android ou en utilisant le bouton « Effacer l'historique » dans l'interface de l'Application (là où disponible).
+- **Droit de Limiter le Traitement :** Vous pouvez limiter l'accès réseau de l'Application en révoquant les autorisations dans les paramètres système.
+- **Droit à la Portabilité des Données :** Étant donné que nous ne collectons ni ne stockons pas vos données sur des serveurs distants, toutes vos données résident localement sur votre appareil et sont accessibles via l'interface de l'Application.
+- **Droit d'Opposition :** Vous pouvez vous opposer à tout traitement de données en révoquant les autorisations ou en désinstallant l'Application.
+- **Droit de Retirer le Consentement :** Vous pouvez révoquer les autorisations réseau, de localisation ou de stockage à tout moment via les paramètres système de votre appareil Android (`Paramètres → Applications → NTP DIG PING MORE → Autorisations`).
+
+### CCPA / CPRA (Californie)
+- **Droit de Savoir :** Vous pouvez consulter les catégories de données stockées localement au sein de l'Application.
+- **Droit de Suppression :** Vous pouvez supprimer toutes les données stockées en vidant les données de l'Application dans les paramètres Android.
+- **Droit de S'Opposer à la Vente :** Étant donné que nous ne vendons pas vos informations personnelles, ce droit n'est pas applicable.
+- **Droit à la Non-Discrimination :** Nous ne discriminerons pas les utilisateurs qui exercent leurs droits CCPA.
+
+### Exercice Pratique des Droits
+Étant donné que **nous ne collectons ni ne stockons pas vos données sur des serveurs distants**, nous ne pouvons pas vérifier, exporter ou supprimer vos données en votre nom — **toutes vos données résident strictement sur votre appareil physique**. Pour exercer l'un des droits ci-dessus :
+
+1. Ouvrez l'Application et consultez/effacez votre historique de diagnostic dans l'interface de chaque outil
+2. Ou allez dans `Paramètres Android → Applications → NTP DIG PING MORE → Stockage → Effacer les Données` pour effacer toutes les données locales
+3. Ou désinstallez entièrement l'Application
+
+---
+
+## 8. Modifications de cette Politique de Confidentialité
+
+Nous pouvons mettre à jour cette Politique de Confidentialité de temps à autre pour refléter des changements dans nos pratiques, exigences légales ou autres facteurs. Lorsque nous apportons des modifications :
+
+- Nous vous informerons de tout changement majeur en mettant à jour la date **« Dernière Mise à Jour »** en haut de cette politique
+- Nous pouvons fournir une notification supplémentaire via l'interface de l'Application, notre dépôt GitHub ou d'autres canaux appropriés
+- Les modifications de cette Politique de Confidentialité entrent en vigueur dès leur publication sur cette page
+- Votre utilisation continue de l'Application après la publication des changements constitue votre acceptation de la politique mise à jour
+
+Nous vous encourageons à consulter périodiquement cette Politique de Confidentialité pour tout changement.
+
+---
+
+## 9. Section Sécurité des Données Google Play
+
+Conformément aux exigences du **formulaire Google Play Data Safety**, nous divulgons les éléments suivants :
+
+| Catégorie | Divulgation |
+|---|---|
+| **Données Partagées avec des Tiers** | **Aucune donnée** — Cette Application ne partage aucune donnée avec des tiers |
+| **Données Collectées** | **Informations Appareil/Réseau** — L'Application peut collecter des identifiants d'appareil (IMEI, numéro de série sur les anciennes versions d'Android), des détails réseau (adresse IP, SSID/BSSID Wi-Fi) et des saisies de diagnostic (noms d'hôte, adresses IP) strictement aux fins fonctionnelles de l'Application. Toutes les données collectées sont stockées localement sur l'appareil uniquement |
+| **Pratiques de Sécurité** | Les données sont stockées dans le bac à sable privé de l'application ; aucune donnée n'est transmise à des serveurs externes (sauf requêtes utilisateur-initiées vers des hôtes tiers via HTTP/HTTPS/TCP/UDP/DNS/NTP/ICMP) ; le sandbox Android protège contre les autres applications |
+| **Rétention des Données** | Les données sont conservées sur l'appareil jusqu'à ce que vous vidiez les données de l'Application ou la désinstalliez |
+| **Suppression des Données** | Vous pouvez supprimer toutes les données à tout moment en vidant les données de l'Application dans les Paramètres ou en désinstallant l'Application |
+| **Données Chiffrées** | N/A — Aucune donnée n'est transmise sur le réseau (sauf requêtes utilisateur-initiées : paquets HTTP/HTTPS/TCP/UDP/DNS/NTP/ICMP standards) |
+| **Engagement à Suivre la Politique Familles de Play** | Oui — Cette Application est conforme aux politiques Google Play concernant la vie privée des enfants |
+
+---
+
+## 10. Vos Droits de Californien (Avis CCPA)
+
+En vertu du **California Consumer Privacy Act (CCPA)** et du **California Privacy Rights Act (CPRA)**, les résidents californiens disposent de droits spécifiques :
+
+- **Droit de Savoir :** Vous avez le droit de demander des informations sur les catégories et pièces d'informations personnelles que nous collectons, utilisons et divulgons. Étant donné que toutes les données sont stockées localement sur votre appareil, aucune information personnelle n'est collectée par nos soins.
+- **Droit de Suppression :** Vous pouvez supprimer toutes les données stockées par cette Application en vidant les données de l'Application via les paramètres Android.
+- **Droit de S'Opposer à la Vente :** Nous ne vendons aucune information personnelle. Ce droit n'est pas applicable.
+- **Droit à la Non-Discrimination :** Nous ne discriminerons pas les utilisateurs qui exercent leurs droits CCPA.
+
+**Ne Vendez Pas Mes Informations :** Nous ne vendons aucune information personnelle. Vous n'avez aucune action à entreprendre pour vous opposer.
+
+---
+
+## 11. Nous Contacter
+
+Si vous avez des questions, préoccupations ou demandes concernant cette Politique de Confidentialité ou nos pratiques en matière de données, veuillez nous contacter via les canaux suivants :
+
+- **Dépôt GitHub :** [github.com/mobilutils/ntp-dig-ping-more](https://github.com/mobilutils/ntp-dig-ping-more)
+- **GitHub Issues :** [github.com/mobilutils/ntp-dig-ping-more/issues](https://github.com/mobilutils/ntp-dig-ping-more/issues) — Signalez les préoccupations liées à la confidentialité ou les demandes d'exercice de droits via GitHub Issues
+- **E-mail :** [mailto:ntp-dig-ping-more@googlegroups.com](mailto:ntp-dig-ping-more@googlegroups.com)
+
+Nous nous engageons à répondre à toutes les inquiries liées à la confidentialité dans des délais raisonnables (généralement sous 30 jours).
+
+---
+
+**mobilutils** — 2 juin 2026
