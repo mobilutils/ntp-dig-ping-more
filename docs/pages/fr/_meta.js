@@ -3,6 +3,7 @@ export default {
     'getting-started': 'Démarrage',
     'available-features': 'Fonctionnalités',
     'pseudo-commands': 'Pseudo-commandes',
+    'privacy-policy': 'Politique de Confidentialité',
    github: {
      title: 'GitHub',
      href: 'https://github.com/mobilutils/ntp-dig-ping-more',

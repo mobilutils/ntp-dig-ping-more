@@ -1,0 +1,287 @@
+---
+title: Privacy Policy
+description: Privacy Policy for NTP DIG PING MORE — compliant with GDPR, CCPA, COPPA, and Google Play Developer Program Policies.
+---
+
+# Privacy Policy
+
+**Effective Date:** June 2, 2026
+**Last Updated:** June 2, 2026
+
+This Privacy Policy explains how **mobilutils** ("we," "us," or "our") collects, uses, processes, and protects information in relation to the **NTP DIG PING MORE** mobile application (the "App" or "Application") for Android, distributed via Google Play.
+
+We take your privacy very seriously. This App is designed as a **client-side-only Network Diagnostics Toolbox** — it does not operate a proprietary backend database, cloud server, or remote service to collect your personal information. All data processing occurs locally on your device.
+
+This Privacy Policy complies with:
+
+- The **General Data Protection Regulation (GDPR)** (Regulation (EU) 2016/679)
+- The **California Consumer Privacy Act (CCPA)** / California Privacy Rights Act (CPRA)
+- The **Children's Online Privacy Protection Act (COPPA)** (15 U.S.C. § 6501 et seq.)
+- **Google Play Developer Program Policies**, including the Data Safety section requirements
+- **Android Permission** disclosure requirements
+
+Please read this Privacy Policy carefully to understand our practices regarding your information. By installing and using the App, you agree to the collection and use of information in accordance with this policy.
+
+---
+
+## 1. Introduction
+
+**NTP DIG PING MORE** is a comprehensive, client-side Network Diagnostics and Troubleshooting Toolbox developed by **mobilutils**. It enables users to perform local network analysis, including:
+
+- **NTP (Network Time Protocol) Checks** — Query NTP servers for time synchronization
+- **DIG (DNS) Lookups** — Resolve domain names using DNS servers
+- **ICMP Ping** — Test host reachability
+- **Traceroute** — Trace network packet paths
+- **TCP/UDP Port Scanning** — Identify open ports on target hosts
+- **LAN Scanner** — Discover devices on your local subnet
+- **Google Time Sync** — Synchronize with Google's time servers
+- **HTTPS Certificate Inspector** — Examine TLS certificate details
+- **Device Info** — Display device identity, network state, and hardware details
+- **Bulk Actions** — Execute batch diagnostic commands from JSON configurations
+
+The App is built to operate **exclusively on your device**. It does not send your data to any of our servers or third-party analytics platforms. All diagnostic results are processed in real-time and displayed locally.
+
+---
+
+## 2. Information We Collect
+
+To provide robust network diagnostic services, the App requires access to certain device capabilities and processes specific network/device information. Below is a comprehensive disclosure of all data types collected, processed, and stored.
+
+### A. Network and Diagnostic Data (Processed On-Device Only)
+
+When you run diagnostic tests, the following parameters are **processed locally** within the App:
+
+| Data Type | Description | Where Used |
+|---|---|---|
+| **Target Hostnames / IP Addresses** | The hostnames or IP addresses you enter to ping, scan, resolve, or query (e.g., `google.com`, `192.168.1.1`) | All diagnostic screens (NTP Check, DIG Test, Ping, Traceroute, Port Scan, HTTPS Cert) |
+| **Wi-Fi SSID & BSSID** | The name (SSID) and MAC address (BSSID) of the Wi-Fi network you are connected to | Device Info screen, LAN Scanner |
+| **Wi-Fi Signal Strength (RSSI)** | Technical details of your current Wi-Fi connection including signal strength, frequency band, and link speed | Device Info screen |
+| **Network Latency / RTT** | Ping times, round-trip delay, NTP clock offset, DNS response payloads, TTL values | All diagnostic screens |
+| **Open Port Numbers** | TCP/UDP port numbers found open on target hosts during port scans | Port Scanner screen |
+| **Local Subnet Scan Data** | IP addresses, hostnames, response times, and MAC addresses of devices discovered on your local subnet (strictly during active LAN sweeps initiated by you) | LAN Scanner screen |
+| **Cellular Carrier Details** | Mobile carrier network type (LTE, 5G, etc.), operator name, SIM state | Device Info screen |
+| **Device Hardware Identifiers** | Device manufacturer/model, Android version, IMEI (Android 9 and below only), hardware serial number (Android 9 and below only), ICCID (SIM card serial) | Device Info screen |
+
+> **Important:** All of the above data is processed **entirely on your device**. We do not collect, transmit, store, or access any of this diagnostic data on our servers.
+
+### B. Sensitive Android Permissions
+
+Under **Google Play's Developer Program Policies** and **Android's permission model**, we explicitly disclose the use of sensitive permissions and resources. The App requests the following permissions strictly for core diagnostic utility:
+
+#### 1. `android.permission.INTERNET`
+- **Category:** Normal Permission (auto-granted at install)
+- **Purpose:** Allows the App to open network sockets. This is essential for executing ICMP pings, NTP UDP packet exchanges (port 123), DNS lookups (port 53), TCP port scans, HTTP(S) requests (including Google Time Sync), and TLS certificate handshakes.
+
+#### 2. `android.permission.ACCESS_NETWORK_STATE`
+- **Category:** Normal Permission (auto-granted at install)
+- **Purpose:** Allows the App to verify whether the device has an active network connection (and the type — Wi-Fi, Cellular, Ethernet, VPN) before initiating diagnostic tools. Used to prevent failed requests when no internet is available.
+
+#### 3. `android.permission.ACCESS_WIFI_STATE`
+- **Category:** Normal Permission (auto-granted at install)
+- **Purpose:** Allows the App to access technical details of your current Wi-Fi connection, such as Wi-Fi signal strength (RSSI), frequency band (2.4 GHz / 5 GHz), connection speed (Mbps), and SSID/BSSID. Required for the Device Info screen's network diagnostics section.
+
+#### 4. `android.permission.ACCESS_COARSE_LOCATION` & `android.permission.ACCESS_FINE_LOCATION`
+- **Category:** Dangerous Permissions (require runtime request, Android 10+)
+- **Critical Policy Disclosure:** On modern Android operating systems (API 29+), access to a network's name (SSID) and access point identifier (BSSID) is legally classified as data that could reveal your location. Therefore, **Android requires location permissions** to retrieve the Wi-Fi SSID and BSSID for display purposes.
+- **Our Practice:** **We do not track, collect, store, or transmit your geographical coordinates (GPS location).** These permissions are requested **solely** to retrieve the Wi-Fi SSID and BSSID for local network diagnostics and LAN subnet scans. You may refuse or revoke this permission at any time in system settings; doing so will limit the App's ability to display the network SSID/BSSID but will not prevent other diagnostic tools from running.
+- **Data Processed:** Wi-Fi SSID (network name), BSSID (MAC address of access point). No GPS coordinates are accessed.
+
+#### 5. `android.permission.READ_PHONE_STATE`
+- **Category:** Dangerous Permission (requires runtime request)
+- **Purpose:** Used strictly to read cellular carrier and network type details (e.g., SIM operator name, network class — LTE/5G/CDMA) to display detailed mobile network diagnostics on the Device Info screen. On Android 10+ (API 29+), this permission no longer grants access to IMEI or serial numbers for third-party apps.
+- **Our Practice:** **We do not collect, store, or transmit your phone number, IMEI, MEID, or hardware serial number.** Any device identifiers that may be accessible are displayed locally on-screen only and are not persisted or transmitted externally.
+
+#### 6. `android.permission.WRITE_EXTERNAL_STORAGE` & `android.permission.READ_EXTERNAL_STORAGE`
+- **Category:** Dangerous Permission (up to `maxSdkVersion="32"` / Android 12)
+- **Purpose:** Used exclusively to allow you to export local network scan reports, diagnostic logs, or Bulk Actions results to your device's shared storage at your explicit request. Not used for any other purpose.
+- **Note:** On Android 13+ (API 33+), `READ_EXTERNAL_STORAGE` is no longer grantable; the App uses the Storage Access Framework (SAF) for file operations instead.
+
+### C. Local Data Storage (On-Device Only)
+
+The App stores a limited amount of data **locally on your device** using Android's **Preferences DataStore** (sandboxed, private app storage). This data is never transmitted to us or any third party:
+
+| Data Type | Storage Mechanism | Retention | Examples |
+|---|---|---|---|
+| **Diagnostic Query History** | Preferences DataStore (per-screen) | Up to 5–10 most recent entries per tool; persists until manually cleared or app is uninstalled | Last NTP servers queried, last DNS FQDNs, last ping targets, last port scan ranges |
+| **Settings & Configuration** | Preferences DataStore (global) | Persists until manually reset or app is uninstalled | Operation timeout value, Proxy PAC enable/disable state, PAC URL or file path, Proxy logging toggle |
+| **Bulk Actions Configs** | Device shared storage (user-saved location) | Until you manually delete the JSON config files | JSON files containing diagnostic command batches for Bulk Actions feature |
+
+**Storage Format Details:**
+- Query history entries are stored as pipe-delimited strings (e.g., `timestamp|server|port|success`) or JSON objects (for LAN Scanner) within DataStore preference keys.
+- No personal identifiers, device serial numbers, or network scan results beyond the last 5–10 queries are retained.
+
+---
+
+## 3. How We Use the Information
+
+The information processed by the App is used **solely** for the following purposes:
+
+- **To Provide Diagnostic Functionality:** Executing network utility requests (e.g., resolving a domain name via DNS, testing port availability via TCP handshake, measuring packet loss and latency via ICMP)
+- **To Display Local Results:** Showing real-time terminal output, latency logs, device details, certificate information, and scan results directly to you inside the App UI
+- **On-Device History Preservation:** Saving a local history of your most recent queries (last 5–10 entries per tool) for quick access. This history is stored strictly in your device's local secure Preferences DataStore and is **never sent to us**
+- **To Improve App Stability & User Experience:** Identifying and troubleshooting crashes, performance bottlenecks, and UI issues using local debug logs generated during your use of the App
+
+---
+
+## 4. Third-Party Sharing & SDKs
+
+### A. General Sharing Policy
+
+**We do not sell, trade, rent, share, or otherwise disclose any of your personal information or network diagnostic data to any third parties.**
+
+Because the App operates strictly on-device, **no third parties receive your diagnostic inputs, query history, or local network scan results**. Any communication with external servers is initiated **solely by you** to carry out tests you actively request (e.g., querying your chosen DNS server, pinging a target host, synchronizing time with an NTP pool).
+
+### B. Third-Party Service Providers & SDKs
+
+> **This App integrates no third-party advertising, tracking, analytics, or crash-reporting SDKs.**
+>
+> The App is completely self-contained and offline. It does not use Google Firebase (Crashlytics/Analytics), Google AdMob, Facebook SDK, or any other third-party tracking/analytics library.
+
+The only external network communication initiated by the App — when you choose to use it — involves:
+
+#### Google Time Sync Service (`clients2.google.com`)
+- **Data Transmitted:** A standard HTTP GET request is sent to `http://clients2.google.com/time/1/current` (or its XSSI-prefixed variant) when running the Google Time Sync diagnostic test. This transmits only a **public HTTP request containing your device's IP address** as part of the standard TCP/IP protocol handshake — no identifying personal user data, device identifiers, or query content is included in the request body or headers beyond what a standard HTTP request inherently contains.
+- **Purpose:** Strictly to retrieve public Google Time server timestamps to calculate round-trip delay and compute precise on-device clock offset.
+- **Privacy Link:** [Google Privacy & Terms](https://policies.google.com/privacy)
+- **Your Control:** You may skip this feature entirely or use a different NTP server pool (e.g., `pool.ntp.org`) instead.
+
+#### Your Chosen Third-Party Servers (User-Selected Targets)
+When you enter a hostname or IP address to ping, resolve, or scan, the App sends network packets **directly to the target you specified**. This includes:
+- **DNS queries** sent to your chosen DNS resolver (e.g., `8.8.8.8`, `1.1.1.1`, or a custom server)
+- **ICMP ping packets** sent to the target host
+- **TCP connection attempts** to specified ports on target hosts
+- **NTP UDP packets** sent to the NTP pool server you selected
+- **TLS certificate requests** to the HTTPS host you inspected
+
+> **Important:** These communications occur between your device and the third-party servers you specify. We do not intercept, log, store, or have access to this data. Please review the privacy policies of any third-party services you choose to query.
+
+### C. Proxy PAC (Optional Feature)
+
+The App includes an optional **Proxy PAC (Proxy Auto-Configuration)** feature. If you enable a PAC script URL in Settings:
+- The PAC script URL is fetched from the server you specify (e.g., `http://proxy.corp.com/proxy.pac`)
+- The PAC script is evaluated locally on your device using the QuickJS JavaScript engine
+- Network traffic for specified tools may be routed through the proxy determined by the PAC script
+- **We do not collect, log, or access any data passing through your configured proxy**
+
+---
+
+## 5. Data Retention and Security
+
+### Data Retention
+
+- **Local Diagnostic History:** All network scan logs, diagnostic query history, and target inputs are stored exclusively in your device's local `DataStore` sandbox. They remain on your device until you:
+  - Clear the App's data in Android Settings (`Settings → Apps → NTP DIG PING MORE → Storage → Clear Data`)
+  - Uninstall the App
+  - Manually delete query history entries within the App UI (where available)
+- **Settings & Configuration:** Your configured settings (timeout values, proxy URLs, PAC toggles) are retained locally on your device until you reset them or uninstall the App.
+- **No Server Storage:** We do not host, operate, or maintain backend servers that store your queries, diagnostic histories, or any network data.
+
+### Data Security
+
+We implement industry-standard security measures to protect data stored on your device:
+
+- **Android Sandbox:** The App uses Android's built-in sandboxed storage mechanism, which prevents other apps from accessing NTP DIG PING MORE's internal data files and Preferences DataStore
+- **No Network Transmission of Local Data:** All locally stored data (query history, settings) is never transmitted over the network — it remains in your device's private app directory (`/data/user/0/io.github.mobilutils.ntp_dig_ping_more/`)
+- **Secure Defaults:** Sensitive permissions (location, phone state) are requested at runtime only when needed, and you retain full control to deny or revoke them at any time
+- **No Plaintext Storage of Credentials:** The App does not store passwords, API keys, or authentication tokens
+
+> **Please note:** While we implement reasonable security measures, no method of transmission over the internet or method of electronic storage is 100% secure. We cannot guarantee absolute security of data stored on your device, especially if your device is rooted, compromised, or accessed by unauthorized parties.
+
+---
+
+## 6. Children's Privacy
+
+The App is **not directed at children under the age of 13** and does not knowingly collect, store, or solicit personal information from children under 13 (or the applicable minimum age in your jurisdiction). We strictly comply with:
+
+- The **Children's Online Privacy Protection Act (COPPA)** (15 U.S.C. § 6501 et seq.)
+- **Google Play Developer Program Policies on Families** / Family Line
+- The **General Data Protection Regulation (GDPR)** Article 8 regarding children's consent
+
+All data processed by the App is generated as a result of your active use of network diagnostic tools. No personal information about children is knowingly collected or transmitted.
+
+**If you are a parent or guardian and believe that your child has provided personal information through the use of this App, please contact us at [GitHub Contact](https://github.com/mobilutils/ntp-dig-ping-more/issues) so that we can address your concerns.**
+
+---
+
+## 7. Your Rights
+
+Depending on your geographical location, you have certain rights regarding your personal information under applicable data protection regulations:
+
+### GDPR (European Economic Area)
+- **Right of Access:** You may review all network diagnostic history directly within the App at any time.
+- **Right to Erasure (Right to be Forgotten):** You may delete all your query history by clearing the App's data in Android Settings or using the "Clear History" button within the App interface (where available).
+- **Right to Restrict Processing:** You may restrict the App's network access by revoking permissions in system settings.
+- **Right to Data Portability:** Since we do not collect or store your data on remote servers, all your data resides locally on your device and is accessible via the App's UI.
+- **Right to Object:** You may object to any data processing by revoking permissions or uninstalling the App.
+- **Right to Withdraw Consent:** You may revoke network, location, or storage permissions at any time via your Android device's system settings (`Settings → Apps → NTP DIG PING MORE → Permissions`).
+
+### CCPA / CPRA (California)
+- **Right to Know:** You may review the diagnostic data stored locally within the App.
+- **Right to Delete:** You may delete all stored data by clearing the App's data in Android Settings.
+- **Right to Opt-Out:** Since we do not sell your personal information, this right is not applicable.
+- **Right to Non-Discrimination:** We do not discriminate against users who exercise their CCPA rights.
+
+### Practical Exercise of Rights
+Since **we do not collect or store your data on remote servers**, we cannot verify, export, or delete data on your behalf — **all your data resides strictly on your physical device**. To exercise any of the above rights:
+
+1. Open the App and review/clear your diagnostic history within each tool's interface
+2. Or go to `Android Settings → Apps → NTP DIG PING MORE → Storage → Clear Data` to erase all local data
+3. Or uninstall the App entirely
+
+---
+
+## 8. Changes to This Privacy Policy
+
+We may update this Privacy Policy from time to time to reflect changes in our practices, legal requirements, or other factors. When we make changes:
+
+- We will notify you of any material changes by updating the **"Last Updated"** date at the top of this policy
+- We may provide additional notice through the App's UI, our GitHub repository, or other channels as appropriate
+- Changes to this Privacy Policy are effective when they are posted on this page
+- Your continued use of the App after changes are posted constitutes your acceptance of the updated policy
+
+We encourage you to review this Privacy Policy periodically for any changes.
+
+---
+
+## 9. Google Play Data Safety Section
+
+In compliance with **Google Play's Data Safety form** requirements, we disclose the following:
+
+| Category | Disclosure |
+|---|---|
+| **Data Shared with Third Parties** | **No data** — This App does not share any data with third parties |
+| **Data Collected** | **Device/Network information** — The App may collect device identifiers (IMEI, serial number on older Android versions), network details (IP address, Wi-Fi SSID/BSSID), and diagnostic query inputs (hostnames, IP addresses) strictly for the App's functional purposes. All collected data is stored locally on the device only |
+| **Security Practices** | Data is stored in the app's private sandbox; no data is transmitted to external servers (except user-initiated queries to third-party hosts); Android sandbox protects against other apps |
+| **Data Retention** | Data is retained on-device until you clear the App's data or uninstall it |
+| **Data Deletion** | You may delete all data at any time by clearing App data in Settings or uninstalling the App |
+| **Data Encrypted** | N/A — No data is transmitted over the network (except user-initiated, standard HTTP/HTTPS/TCP/UDP/DNS/NTP/ICMP packets) |
+| **Committed to Follow Play's Families Policy** | Yes — This App complies with Google Play's policies regarding children's privacy |
+
+---
+
+## 10. Your California Privacy Rights (CCPA Notice)
+
+Under the **California Consumer Privacy Act (CCPA)** and **California Privacy Rights Act (CPRA)**, California residents have specific rights:
+
+- **Right to Know:** You have the right to request information about the categories and specific pieces of personal information we collect, use, and disclose. Since all data is stored locally on your device, no personal information is collected by us.
+- **Right to Delete:** You may delete all data stored by this App by clearing the App's data through Android Settings.
+- **Right to Opt-Out of Sale:** We do not sell your personal information. This right is not applicable.
+- **Right to Non-Discrimination:** We will not discriminate against you for exercising your CCPA rights.
+
+**Do Not Sell My Info:** We do not sell any personal information. You do not need to take any action to opt out.
+
+---
+
+## 11. Contact Us
+
+If you have any questions, concerns, or requests regarding this Privacy Policy or our data practices, please contact us through the following channels:
+
+- **GitHub Repository:** [github.com/mobilutils/ntp-dig-ping-more](https://github.com/mobilutils/ntp-dig-ping-more)
+- **GitHub Issues:** [github.com/mobilutils/ntp-dig-ping-more/issues](https://github.com/mobilutils/ntp-dig-ping-more/issues) — Report privacy-related concerns or data subject requests via GitHub Issues
+- **Email:** [mailto:ntp-dig-ping-more@googlegroups.com](mailto:ntp-dig-ping-more@googlegroups.com)
+
+We aim to respond to all privacy-related inquiries within a reasonable timeframe (typically within 30 days).
+
+---
+
+**mobilutils** — June 2, 2026
