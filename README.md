@@ -1,38 +1,3 @@
-# Coding Style Guidelines
-
-## Indentation
-- Use **4 spaces** for indentation (no tabs).
-- Never mix spaces and tabs.
-- When editing existing code, match the indentation style of the surrounding code.
-
-## File Editing Instructions
-- Before editing, always read the file first to detect the current indentation style.
-- If a file uses 5-space indents, preserve that style in your edits.
-- Use the `read_file` tool before `edit` to verify formatting.
-- Use a Python script to edit this file instead of the `edit` tool, as it has strict whitespace requirements.
-
-For YAML, Kotlin, and Python files, prioritize `run_shell_command` with `sed` or Python scripts for edits if `edit` fails due to whitespace mismatches. Do not retry `edit` more than twice on these file types.
-
-If `write_file` fails on paths containing special characters (e.g., `.._`, `-_-`) or produces empty files, switch immediately to a shell heredoc (`cat << 'EOF' > path`) to write content.
-
-When requested to update documentation (e.g., QWEN.md, Nextra docs), perform a full audit of the target directory for unused files and redundancies before generating new content.
-
-## Line Endings
-- Use LF (`\n`) line endings (standard on macOS/Linux).
-
-## PHP Specific Rules
-- File encoding: UTF-8 without BOM
-- Line endings: LF (`\n`)
-- Indentation: 4 spaces (preserve existing style if different)
-- When editing: always include 2 lines of context before/after the change
-- Escape $ in old_string if it appears in double-quoted strings
-
-## Command line
-### cat -A
-  argument `-A` isn't available on macOS, use arguments `-vet` instead
-  - replace `cat -A` by `cat -vet`
-
-
 # Network Utilities Checker
 
 <p align="left">
