@@ -35,6 +35,7 @@ data class PortScannerUiState(
     val endPort: String = "1024",
     val protocol: PortScannerProtocol = PortScannerProtocol.TCP,
     val isRunning: Boolean = false,
+    val isScanFinished: Boolean = false,
     val progress: Float = 0f,
     val discoveredPorts: List<Int> = emptyList(),
     val history: List<PortScannerHistoryEntry> = emptyList(),
@@ -44,6 +45,7 @@ class PortScannerViewModel(
     private val historyStore: PortScannerHistoryStore,
     private val settingsRepository: SettingsRepository,
     private val managedConfigRepository: ManagedConfigRepository? = null,
+    private val scanDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PortScannerUiState())
@@ -98,11 +100,12 @@ class PortScannerViewModel(
 
         _uiState.value = _uiState.value.copy(
             isRunning = true,
+            isScanFinished = false,
             progress = 0f,
             discoveredPorts = emptyList(),
         )
 
-        scanJob = viewModelScope.launch(Dispatchers.IO) {
+        scanJob = viewModelScope.launch(scanDispatcher) {
             val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
             try {
                 withTimeout(timeoutMs) {
@@ -150,13 +153,13 @@ class PortScannerViewModel(
 
                     // Once scan completes
                     withContext(Dispatchers.Main) {
-                        _uiState.value = _uiState.value.copy(isRunning = false, progress = 1f)
+                        _uiState.value = _uiState.value.copy(isRunning = false, isScanFinished = true, progress = 1f)
                         saveHistory(host, startPort.toString(), endPort.toString(), protocol)
                     }
                 }
             } catch (_: TimeoutCancellationException) {
                 withContext(Dispatchers.Main) {
-                    _uiState.value = _uiState.value.copy(isRunning = false)
+                    _uiState.value = _uiState.value.copy(isRunning = false, isScanFinished = true)
                     saveHistory(host, startPort.toString(), endPort.toString(), protocol)
                 }
             }
@@ -165,7 +168,7 @@ class PortScannerViewModel(
 
     fun stopScan() {
         scanJob?.cancel()
-        _uiState.value = _uiState.value.copy(isRunning = false)
+        _uiState.value = _uiState.value.copy(isRunning = false, isScanFinished = true)
         viewModelScope.launch {
             val s = _uiState.value
             saveHistory(s.host.trim(), s.startPort, s.endPort, s.protocol)
