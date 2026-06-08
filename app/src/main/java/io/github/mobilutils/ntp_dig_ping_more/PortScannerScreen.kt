@@ -194,7 +194,7 @@ fun PortScannerScreen() {
             }
         }
 
-        if (uiState.isRunning || uiState.discoveredPorts.isNotEmpty()) {
+        if (uiState.isRunning || uiState.discoveredPorts.isNotEmpty() || uiState.isScanFinished) {
             if (uiState.isRunning) {
                 LinearProgressIndicator(
                     progress = { uiState.progress },
@@ -233,11 +233,11 @@ fun PortScannerScreen() {
                                 .fillMaxWidth()
                                 .padding(8.dp),
                         ) {
-                            if (uiState.discoveredPorts.isEmpty() && !uiState.isRunning) {
+                            if (uiState.discoveredPorts.isEmpty() && uiState.isScanFinished) {
                                 Text(
                                     text = stringResource(R.string.port_scanner_msg_no_open_ports),
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.padding(4.dp)
                                 )
                             }
