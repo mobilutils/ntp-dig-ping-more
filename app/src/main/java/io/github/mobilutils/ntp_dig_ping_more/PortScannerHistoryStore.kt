@@ -21,6 +21,7 @@ data class PortScannerHistoryEntry(
     val startPort: String,
     val endPort: String,
     val protocol: PortScannerProtocol,
+    val openPortsCount: Int = 0,
 )
 
 class PortScannerHistoryStore(private val context: Context) {
@@ -38,7 +39,7 @@ class PortScannerHistoryStore(private val context: Context) {
     suspend fun save(history: List<PortScannerHistoryEntry>) {
         context.portScannerHistoryDataStore.edit { prefs ->
             prefs[KEY] = history.take(MAX_ENTRIES).joinToString(ENTRY_SEP) { entry ->
-                "${entry.timestamp}$FIELD_SEP${entry.host}$FIELD_SEP${entry.startPort}$FIELD_SEP${entry.endPort}$FIELD_SEP${entry.protocol.name}"
+                "${entry.timestamp}$FIELD_SEP${entry.host}$FIELD_SEP${entry.startPort}$FIELD_SEP${entry.endPort}$FIELD_SEP${entry.protocol.name}$FIELD_SEP${entry.openPortsCount}"
             }
         }
     }
@@ -53,11 +54,13 @@ class PortScannerHistoryStore(private val context: Context) {
                         "UDP" -> PortScannerProtocol.UDP
                         else -> PortScannerProtocol.TCP
                     }
+                    val openPortsCount = if (parts.size >= 6) parts[5].toIntOrNull() ?: 0 else 0
                     PortScannerHistoryEntry(
                         timestamp = parts[0],
                         host = parts[1],
                         startPort = parts[2],
                         endPort = parts[3],
+                        openPortsCount = openPortsCount,
                         protocol = protocol
                     )
                 } else null
