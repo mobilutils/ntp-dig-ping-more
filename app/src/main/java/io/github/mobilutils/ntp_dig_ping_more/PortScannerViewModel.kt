@@ -106,7 +106,12 @@ class PortScannerViewModel(
         )
 
         scanJob = viewModelScope.launch(scanDispatcher) {
-            val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+            val baseTimeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+            val portCount = endPort - startPort + 1
+            // Port scanning takes longer than ping/dig/ntp — calculate a minimum timeout
+            // based on port range size, capped at 5 minutes to avoid hanging forever.
+            val estimatedScanTimeout = ((portCount + 49) / 50) * 2000L + 10000L
+            val timeoutMs = maxOf(baseTimeoutMs, minOf(estimatedScanTimeout, 300_000L))
             try {
                 withTimeout(timeoutMs) {
                     val totalPorts = endPort - startPort + 1
@@ -189,13 +194,16 @@ class PortScannerViewModel(
     private fun checkTcpPort(host: String, port: Int): Boolean {
         return try {
             Socket().use { socket ->
-                socket.connect(InetSocketAddress(host, port), 1000)
+                socket.connect(InetSocketAddress(host, port), 2000)
                 true
-            }
-        } catch (e: Exception) {
+               }
+           } catch (e: SocketTimeoutException) {
             false
-        }
+           } catch (e: Exception) {
+            false
+           }
     }
+
 
     private fun checkUdpPort(host: String, port: Int): Boolean {
         return try {
@@ -229,7 +237,8 @@ class PortScannerViewModel(
             host = host,
             startPort = startPort,
             endPort = endPort,
-            protocol = protocol
+            protocol = protocol,
+            openPortsCount = _uiState.value.discoveredPorts.size
         )
         val updatedHistory = (listOf(newEntry) + _uiState.value.history
             .filter { it.host != host || it.protocol != protocol || it.startPort != startPort || it.endPort != endPort })

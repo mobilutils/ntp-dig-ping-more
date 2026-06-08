@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -335,25 +336,42 @@ private fun PortScannerHistorySection(
 private fun PortScannerHistoryRow(entry: PortScannerHistoryEntry, onClick: () -> Unit) {
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 4.dp),
+             .fillMaxWidth()
+             .clickable(onClick = onClick)
+             .padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-    ) {
+     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(R.string.port_scanner_history_timestamp_format, entry.timestamp, entry.protocol.name),
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+              )
             Text(
                 text = stringResource(R.string.port_scanner_history_range_format, entry.host, entry.startPort, entry.endPort),
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.primary,
-            )
-        }
-    }
+              )
+          }
+        val badgeColor = if (entry.openPortsCount > 0)
+            MaterialTheme.colorScheme.primary
+        else
+            MaterialTheme.colorScheme.error
+        Surface(
+            color = badgeColor,
+            shape = RoundedCornerShape(12.dp),
+          ) {
+            Text(
+                text = "${entry.openPortsCount}",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+              )
+          }
+      }
 }
+
