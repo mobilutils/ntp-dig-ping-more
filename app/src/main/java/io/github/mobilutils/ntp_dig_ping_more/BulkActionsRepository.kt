@@ -151,7 +151,11 @@ object BulkConfigParser {
      */
     @Throws(IllegalArgumentException::class)
     fun parse(json: String): BulkConfig {
-        val root = JSONObject(json)
+        val root = try {
+            JSONObject(json)
+        } catch (e: org.json.JSONException) {
+            throw IllegalArgumentException("Malformed JSON: ${e.message}", e)
+        }
 
         val outputFile = runCatching {
             val path = root.optString("output-file", "")
