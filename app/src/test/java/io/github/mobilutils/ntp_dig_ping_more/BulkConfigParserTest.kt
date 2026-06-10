@@ -16,6 +16,9 @@ import org.junit.Test
  * Unit tests for the BulkActions JSON config parsing logic.
  * Mirrors the parsing code from BulkConfigParser to avoid Android API dependencies
  * in JVM unit tests (no Robolectric in this project).
+ *
+ * Note: Tests that verify malformed JSON handling must be done on actual Android devices
+ * since org.json.JSONObject behavior differs between JVM (mocked) and Android runtime.
  */
 class BulkConfigParserTest {
 
