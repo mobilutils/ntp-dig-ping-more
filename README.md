@@ -6,7 +6,8 @@
 
 A modern Android app for network diagnostics: **NTP reachability testing**, **DNS lookup (DIG)**, **Ping**, **Traceroute**, **Port Scanner**, **LAN Scanner**, **Google Time Sync**, **HTTPS Certificate Inspector**, and **Bulk Actions** (batch execute commands from a JSON config). Includes a global **Settings** screen with configurable operation timeouts and optional **Proxy PAC** routing.
 
-Github pages : [https://mobilutils.github.io/ntp-dig-ping-more/](https://mobilutils.github.io/ntp-dig-ping-more/)
+Available on the playstore: https://play.google.com/store/apps/details?id=io.github.mobilutils.ntp_dig_ping_more
+Github pages: [https://mobilutils.github.io/ntp-dig-ping-more/](https://mobilutils.github.io/ntp-dig-ping-more/)
 
 ## Visuals
 

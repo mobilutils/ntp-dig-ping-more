@@ -96,3 +96,5 @@ docs/.DS_Store
 
 notes/
 .codegraphy/*
+.github/ISSUE_TEMPLATE
+tmp/
