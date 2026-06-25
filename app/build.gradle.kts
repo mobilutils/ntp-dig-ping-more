@@ -34,8 +34,8 @@ android {
         applicationId = "io.github.mobilutils.ntp_dig_ping_more"
         minSdk = 26
         targetSdk { version = release(rootProject.extra["defaultTargetSdkVersion"] as Int) }
-        versionCode = 32
-        versionName = "3.45"
+        versionCode = 33
+        versionName = "3.46"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
