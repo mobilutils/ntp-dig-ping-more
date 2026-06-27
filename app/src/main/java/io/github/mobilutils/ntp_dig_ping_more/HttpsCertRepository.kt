@@ -2,6 +2,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -199,6 +200,9 @@ class HttpsCertRepository(
         port: Int = 443,
     ): HttpsCertResult = withContext(Dispatchers.IO) {
 
+        // Check for cancellation before SSL context setup
+        ensureActive()
+
         // ── Build the recording SSLContext ────────────────────────────────
         val systemTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
         systemTmf.init(null as java.security.KeyStore?) // use system key store
@@ -215,6 +219,9 @@ class HttpsCertRepository(
         var socket: SSLSocket? = null
 
         try {
+            // Check for cancellation before connection establishment
+            ensureActive()
+
             // ── Establish connection (direct or proxied) ─────────────────
             val proxy = proxyResolver?.resolveProxy("https://$host:$port")
 
@@ -234,6 +241,9 @@ class HttpsCertRepository(
                     s.useClientMode = true
                 }
             }
+
+            // Check for cancellation before TLS handshake
+            ensureActive()
 
             // ── Attempt handshake ─────────────────────────────────────────
             // Will throw SSLHandshakeException if chain is untrusted/expired.

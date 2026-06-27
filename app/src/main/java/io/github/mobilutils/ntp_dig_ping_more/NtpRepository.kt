@@ -1,6 +1,7 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.apache.commons.net.ntp.NTPUDPClient
 import org.apache.commons.net.ntp.TimeInfo
@@ -82,12 +83,17 @@ class NtpRepository {
         try {
             client.open()
 
+            // Check for cancellation before DNS resolution
+            ensureActive()
+
             val address: InetAddress = try {
                 InetAddress.getByName(host)
             } catch (e: UnknownHostException) {
                 return@withContext NtpResult.DnsFailure(host)
             }
 
+            // Check for cancellation before the blocking getTime() call
+            ensureActive()
             val info: TimeInfo = try {
                 client.getTime(address, port)
             } catch (e: SocketException) {

@@ -2,6 +2,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
@@ -87,12 +88,17 @@ class GoogleTimeSyncRepository(
         var connection: HttpURLConnection? = null
 
         try {
+            // Check for cancellation before making the HTTP request
+            ensureActive()
+
             // T1: record timestamp BEFORE the request goes out.
             val t1 = System.currentTimeMillis()
 
             // Resolve proxy (if configured); null → direct connection
             val proxy = proxyResolver?.resolveProxy(url)
 
+            // Check for cancellation before opening connection
+            ensureActive()
             connection = if (proxy != null) {
                 URL(url).openConnection(proxy) as HttpURLConnection
             } else {
