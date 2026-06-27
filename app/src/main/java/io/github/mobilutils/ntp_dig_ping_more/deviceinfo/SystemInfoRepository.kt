@@ -90,7 +90,6 @@ class SystemInfoRepository(
             isAppManaged = restrictionsManager.applicationRestrictions.size() > 0
                     || devicePolicyManager.isDeviceOwnerApp(context.packageName)
                     || devicePolicyManager.isProfileOwnerApp(context.packageName),
-            installedCertificates = getInstalledCertificates(),
 
             // Additional suggested fields
             androidVersion = getAndroidVersion(),
@@ -536,44 +535,6 @@ class SystemInfoRepository(
             }
         } catch (e: Exception) {
             "Not managed"
-        }
-    }
-
-    /**
-     * Enumerates installed certificates from the Android KeyStore.
-     * Reads from "AndroidCAStore" which includes both system and user CAs.
-     * Note: This reads the CA trust store, not app-specific keystores.
-     */
-    fun getInstalledCertificates(): List<CertificateInfo> {
-        return try {
-            val keyStore = KeyStore.getInstance("AndroidCAStore")
-            keyStore.load(null)
-
-            val aliases = keyStore.aliases()
-            val certs = mutableListOf<CertificateInfo>()
-
-            aliases.asSequence().take(50).forEach { alias ->
-                // Determine if it's a user or system cert by alias convention
-                // System certs have numeric aliases; user certs start with "user:"
-                val certType = if (alias.startsWith("user:")) "User" else "System"
-
-                val certificate = keyStore.getCertificate(alias)
-                if (certificate is X509Certificate) {
-                    val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                    certs.add(
-                        CertificateInfo(
-                            subject = certificate.subjectX500Principal.name,
-                            notBefore = dateFormat.format(certificate.notBefore),
-                            notAfter = dateFormat.format(certificate.notAfter),
-                            type = certType,
-                        )
-                    )
-                }
-            }
-
-            certs
-        } catch (e: Exception) {
-            emptyList()
         }
     }
 
