@@ -1,6 +1,7 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.xbill.DNS.DClass
 import org.xbill.DNS.Message
@@ -68,6 +69,9 @@ class DigRepository {
                 val resolver = SimpleResolver(server)
                 resolver.setTimeout(TIMEOUT)
 
+                // Check for cancellation before DNS processing
+                ensureActive()
+
                 // Ensure the FQDN is absolute (trailing dot)
                 val name: Name = try {
                     val raw = if (fqdn.endsWith(".")) fqdn else "$fqdn."
@@ -79,6 +83,9 @@ class DigRepository {
                 // Query A records (CNAME chain is included automatically)
                 val questionRecord = Record.newRecord(name, Type.A, DClass.IN)
                 val query = Message.newQuery(questionRecord)
+                
+                // Check for cancellation before the blocking resolver.send() call
+                ensureActive()
                 val response: Message = resolver.send(query)
 
                 val answerRecords = response.getSection(Section.ANSWER)
@@ -87,8 +94,13 @@ class DigRepository {
                 val questionSection = ";${name}    IN    A"
 
                 if (answerRecords.isNullOrEmpty()) {
+                    // Check for cancellation before AAAA query
+                    ensureActive()
                     // Also try AAAA before declaring NXDOMAIN
                     val query6 = Message.newQuery(Record.newRecord(name, Type.AAAA, DClass.IN))
+                    
+                    // Check for cancellation before the blocking resolver.send() call
+                    ensureActive()
                     val response6: Message = resolver.send(query6)
                     val aaaa = response6.getSection(Section.ANSWER)
                     if (aaaa.isNullOrEmpty()) {
@@ -102,6 +114,8 @@ class DigRepository {
                 }
 
                 // Also append AAAA records if present
+                // Check for cancellation before the blocking resolver.send() call
+                ensureActive()
                 val query6 = Message.newQuery(Record.newRecord(name, Type.AAAA, DClass.IN))
                 val response6: Message = resolver.send(query6)
                 val aaaaRecords = response6.getSection(Section.ANSWER) ?: emptyList()

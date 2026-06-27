@@ -42,7 +42,7 @@ class DeviceInfoViewModelTest {
         timeSinceReboot = "2h 15m 30s",
         timeSinceScreenOff = "Not exposed by OS",
         mdmStatus = "None",
-        installedCertificates = emptyList(),
+        isAppManaged = false,
         androidVersion = "14",
         apiLevel = 34,
         batteryLevel = 85,
