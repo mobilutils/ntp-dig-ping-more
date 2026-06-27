@@ -441,14 +441,6 @@ private fun DeviceInfoContent(
             MdmStatusCard(deviceInfo = deviceInfo)
         }
 
-        // ── Installed Certificates ─────────────────────────────────────
-        if (deviceInfo.installedCertificates.isNotEmpty()) {
-            item {
-                CertificateCard(
-                    certificates = deviceInfo.installedCertificates,
-                )
-            }
-        }
     }
 }
 
@@ -810,11 +802,6 @@ private fun DeviceInfoScreenPreview() {
                 availableStorage = "45.3 GB",
                 cpuAbi = listOf("arm64-v8a", "armeabi-v7a", "armeabi"),
                 activeNetworkType = "Wi-Fi",
-                installedCertificates = listOf(
-                    CertificateInfo("CN=Let's Encrypt R3, O=Let's Encrypt, C=US", "2021-01-01", "2031-01-01", "System"),
-                    CertificateInfo("CN=DigiCert Global Root G2, O=DigiCert Inc, C=US", "2013-08-01", "2038-01-01", "System"),
-                    CertificateInfo("CN=My Custom CA, O=My Org, C=US", "2024-01-01", "2025-01-01", "User"),
-                ),
             )
         )
     }
