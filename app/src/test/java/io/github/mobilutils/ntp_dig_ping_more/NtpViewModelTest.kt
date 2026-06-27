@@ -4,9 +4,13 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,6 +19,7 @@ import org.junit.Test
 /**
  * Unit tests for [SimpleNtpViewModel] using MockK for mocking dependencies.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class NtpViewModelTest {
 
     private fun fakeSettingsRepository(): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
@@ -31,6 +36,9 @@ class NtpViewModelTest {
 
     @Test
     fun `initial state has default values`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
         val viewModel = createViewModel()
         val state = viewModel.uiState.value
 
@@ -43,6 +51,9 @@ class NtpViewModelTest {
 
     @Test
     fun `onServerAddressChange updates server address and clears result`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
         val viewModel = createViewModel()
         viewModel.onServerAddressChange("time.google.com")
 
@@ -53,6 +64,9 @@ class NtpViewModelTest {
 
     @Test
     fun `onPortChange accepts only digits`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
         val viewModel = createViewModel()
         viewModel.onPortChange("123abc456")
 
@@ -63,6 +77,9 @@ class NtpViewModelTest {
 
     @Test
     fun `onPortChange caps at 5 characters`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
         val viewModel = createViewModel()
         viewModel.onPortChange("123456789")
 
@@ -72,6 +89,9 @@ class NtpViewModelTest {
 
     @Test
     fun `onPortChange clears result`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
         val viewModel = createViewModel()
         viewModel.onPortChange("8080")
 
@@ -84,6 +104,9 @@ class NtpViewModelTest {
         val repository = mockk<NtpRepository>(relaxed = true)
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
 
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("")
@@ -99,6 +122,9 @@ class NtpViewModelTest {
         val repository = mockk<NtpRepository>(relaxed = true)
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
 
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
@@ -128,6 +154,9 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("invalid.host.xyz")
 
@@ -145,6 +174,9 @@ class NtpViewModelTest {
         val repository = mockk<NtpRepository>(relaxed = true)
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
 
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("slow.server.com")
@@ -164,6 +196,9 @@ class NtpViewModelTest {
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
 
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
 
@@ -181,6 +216,9 @@ class NtpViewModelTest {
         val repository = mockk<NtpRepository>(relaxed = true)
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
 
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
@@ -202,6 +240,9 @@ class NtpViewModelTest {
         val repository = mockk<NtpRepository>(relaxed = true)
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
 
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         val entry = NtpHistoryEntry(
@@ -231,6 +272,9 @@ class NtpViewModelTest {
         val repository = mockk<NtpRepository>(relaxed = true)
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
 
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
@@ -264,6 +308,9 @@ class NtpViewModelTest {
             delayMs = 120L
         )
 
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
 
         // Run 6 different queries
@@ -282,6 +329,9 @@ class NtpViewModelTest {
         val repository = mockk<NtpRepository>(relaxed = true)
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
 
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
@@ -304,6 +354,9 @@ class NtpViewModelTest {
         val repository = mockk<NtpRepository>(relaxed = true)
         val historyStore = mockk<NtpHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
 
         val viewModel = SimpleNtpViewModel(repository, historyStore, fakeSettingsRepository())
         viewModel.onServerAddressChange("pool.ntp.org")
