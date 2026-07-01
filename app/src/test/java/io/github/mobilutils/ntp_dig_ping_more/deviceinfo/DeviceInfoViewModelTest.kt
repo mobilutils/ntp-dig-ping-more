@@ -27,7 +27,7 @@ class DeviceInfoViewModelTest {
 
     private val sampleDeviceInfo = DeviceInfo(
         deviceName = "Samsung Galaxy S21",
-        imei = null,
+        imeiList = emptyList(),
         serialNumber = "Restricted by Android 10+",
         iccid = "Restricted by Android 10+",
         deviceTime = "2024-01-15 10:30:00",
@@ -50,8 +50,10 @@ class DeviceInfoViewModelTest {
         batteryHealth = "Good",
         totalRam = "8.0 GB",
         availableRam = "3.2 GB",
+        usedRam = "4.8 GB",
         totalStorage = "128.0 GB",
         availableStorage = "64.5 GB",
+        usedStorage = "63.5 GB",
         cpuAbi = listOf("arm64-v8a", "armeabi-v7a"),
         activeNetworkType = "WiFi",
     )

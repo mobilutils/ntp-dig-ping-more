@@ -20,6 +20,8 @@ import android.os.Environment
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
+import android.telephony.SubscriptionInfo
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
@@ -72,7 +74,7 @@ class SystemInfoRepository(
         return DeviceInfo(
             // Required data points
             deviceName = getDeviceName(),
-            imei = getImei(),
+            imeiList = getImeiList(),
             serialNumber = getSerialNumber(),
             iccid = getIccid(),
             deviceTime = getCurrentDeviceTime(),
@@ -99,8 +101,10 @@ class SystemInfoRepository(
             batteryHealth = getBatteryHealth(),
             totalRam = getTotalRam(),
             availableRam = getAvailableRam(),
+            usedRam = getUsedRam(),
             totalStorage = getTotalStorage(),
             availableStorage = getAvailableStorage(),
+            usedStorage = getUsedStorage(),
             cpuAbi = getCpuAbi(),
             activeNetworkType = getActiveNetworkType(),
         )
@@ -126,10 +130,10 @@ class SystemInfoRepository(
     /**
      * Gets the device IMEI (International Mobile Equipment Identity).
      *
-     * Android 10+ (API 29+) restriction:
-     *   - Requires READ_PHONE_STATE permission AND the app to be a device/profile owner,
-     *     OR have the READ_PRIVILEGED_PHONE_STATE permission (system apps only).
-     *   - For normal third-party apps on Android 10+, this returns null.
+     * Android 10+ (API 29+) behavior:
+     *   - Requires READ_PHONE_STATE permission.
+     *   - On many devices, normal apps can read IMEI even without device owner status.
+     *   - Returns null only if the call throws an exception or no cellular radio.
      *
      * Android 9 and below:
      *   - Requires READ_PHONE_STATE permission.
@@ -140,17 +144,54 @@ class SystemInfoRepository(
     @SuppressLint("MissingPermission", "HardwareIds")
     fun getImei(): String? {
         return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Android 10+: IMEI is restricted to system/privileged apps
-                // Non-privileged apps get null or an exception
-                null
-            } else {
-                // Android 9 and below: use TelephonyManager.getDeviceId()
-                @Suppress("DEPRECATION")
-                telephonyManager.getDeviceId()
-            }
+            // Try to get IMEI using getDeviceId() - works on single-SIM devices
+            @Suppress("DEPRECATION")
+            telephonyManager.getDeviceId()
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /**
+     * Gets the device IMEIs for all SIM slots.
+     *
+     * Android 10+ (API 29+) behavior:
+     *   - Requires READ_PHONE_STATE permission.
+     *   - On many devices, normal apps can read IMEI even without device owner status.
+     *   - Returns empty list only if the call throws an exception (permission denied, no SIM).
+     *
+     * Uses SubscriptionManager to get active subscriptions and TelephonyManager.getImei(slotId)
+     * for multi-SIM support.
+     */
+    @SuppressLint("MissingPermission", "HardwareIds")
+    fun getImeiList(): List<String> {
+        return try {
+            // Use SubscriptionManager to get all active SIM subscriptions
+            val subscriptionManager = SubscriptionManager.from(context)
+            val subscriptionInfoList = subscriptionManager.activeSubscriptionInfoList
+
+            if (subscriptionInfoList == null || subscriptionInfoList.isEmpty()) {
+                // No active subscriptions - no SIMs or permission denied
+                emptyList()
+            } else {
+                // For each subscription, get the IMEI
+                subscriptionInfoList.mapIndexed { index, _ ->
+                    try {
+                        // Use getImei(slotId) for multi-SIM support (API 23+)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            telephonyManager.getImei(index)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            telephonyManager.getDeviceId()
+                        }
+                    } catch (e: Exception) {
+                        // IMEI access failed for this slot (permission denied, no SIM, etc.)
+                        null
+                    }
+                }.filterNotNull()
+            }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 
@@ -655,6 +696,22 @@ class SystemInfoRepository(
     }
 
     /**
+     * Used RAM in human-readable format.
+     */
+    fun getUsedRam(): String? {
+        return try {
+            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val memInfo = ActivityManager.MemoryInfo()
+            activityManager.getMemoryInfo(memInfo)
+            // used = total - available
+            val usedBytes = memInfo.totalMem - memInfo.availMem
+            formatBytes(usedBytes)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
      * Total internal storage capacity.
      * Reads from /data partition (user-accessible storage).
      */
@@ -678,6 +735,21 @@ class SystemInfoRepository(
             val stat = android.os.StatFs(dataDir.path)
             val availableBytes = stat.availableBytes
             formatBytes(availableBytes)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Used internal storage.
+     */
+    fun getUsedStorage(): String? {
+        return try {
+            val dataDir = Environment.getDataDirectory()
+            val stat = android.os.StatFs(dataDir.path)
+            // used = total - available
+            val usedBytes = stat.totalBytes - stat.availableBytes
+            formatBytes(usedBytes)
         } catch (e: Exception) {
             null
         }

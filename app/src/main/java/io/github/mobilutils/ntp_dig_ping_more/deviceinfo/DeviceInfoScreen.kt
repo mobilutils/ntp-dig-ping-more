@@ -347,7 +347,9 @@ private fun DeviceInfoContent(
                 icon = Icons.Filled.Smartphone,
                 items = listOfNotNull(
                     InfoItem(stringResource(R.string.device_info_field_device), deviceInfo.deviceName),
-                    InfoItem(stringResource(R.string.device_info_field_imei), deviceInfo.imei),
+                    *deviceInfo.imeiList.mapIndexed { index, imei ->
+                        InfoItem(stringResource(R.string.device_info_field_imei_slot, index + 1), imei)
+                    }.toTypedArray(),
                     InfoItem(stringResource(R.string.device_info_field_serial), deviceInfo.serialNumber),
                     InfoItem(stringResource(R.string.device_info_field_iccid), deviceInfo.iccid),
                     InfoItem(stringResource(R.string.device_info_field_android_version), deviceInfo.androidVersion),
@@ -428,10 +430,22 @@ private fun DeviceInfoContent(
                 title = stringResource(R.string.device_info_section_memory_storage),
                 icon = Icons.Filled.Memory,
                 items = listOfNotNull(
-                    InfoItem(stringResource(R.string.device_info_field_total_ram), deviceInfo.totalRam),
-                    InfoItem(stringResource(R.string.device_info_field_available_ram), deviceInfo.availableRam),
-                    InfoItem(stringResource(R.string.device_info_field_total_storage), deviceInfo.totalStorage),
-                    InfoItem(stringResource(R.string.device_info_field_available_storage), deviceInfo.availableStorage),
+                    InfoItem(stringResource(R.string.device_info_field_ram), 
+                        buildString {
+                            append("Total: ${deviceInfo.totalRam ?: stringResource(R.string.common_label_unavailable)}")
+                            if (deviceInfo.availableRam != null || deviceInfo.usedRam != null) {
+                                append(" | Available: ${deviceInfo.availableRam ?: stringResource(R.string.common_label_unavailable)}")
+                                deviceInfo.usedRam?.let { append(" | Used: $it") }
+                            }
+                        }),
+                    InfoItem(stringResource(R.string.device_info_field_storage),
+                        buildString {
+                            append("Total: ${deviceInfo.totalStorage ?: stringResource(R.string.common_label_unavailable)}")
+                            if (deviceInfo.availableStorage != null || deviceInfo.usedStorage != null) {
+                                append(" | Available: ${deviceInfo.availableStorage ?: stringResource(R.string.common_label_unavailable)}")
+                                deviceInfo.usedStorage?.let { append(" | Used: $it") }
+                            }
+                        }),
                 )
             )
         }
@@ -776,7 +790,7 @@ private fun DeviceInfoScreenPreview() {
         DeviceInfoContent(
             deviceInfo = DeviceInfo(
                 deviceName = "Google Pixel 7",
-                imei = "35 123456 789012 3",
+                imeiList = listOf("35 123456 789012 3", "35 987654 321098 7"),
                 serialNumber = "Restricted by Android 10+",
                 iccid = "8901 2601 2345 6789 0123",
                 deviceTime = "2026-04-17 14:30:00",
@@ -798,8 +812,10 @@ private fun DeviceInfoScreenPreview() {
                 batteryHealth = "Good",
                 totalRam = "8.0 GB",
                 availableRam = "3.2 GB",
+                usedRam = "4.8 GB",
                 totalStorage = "128.0 GB",
                 availableStorage = "45.3 GB",
+                usedStorage = "82.7 GB",
                 cpuAbi = listOf("arm64-v8a", "armeabi-v7a", "armeabi"),
                 activeNetworkType = "Wi-Fi",
             )
