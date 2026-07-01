@@ -826,7 +826,13 @@ class BulkActionsRepository(
                     add("  Charging: ${di.isCharging ?: "N/A"}")
                     add("  Battery Health: ${di.batteryHealth ?: "N/A"}")
                     add("  Time Since Reboot: ${di.timeSinceReboot}")
-                    add("  IMEI: ${di.imei ?: "Restricted by Android 10+"}")
+                    if (di.imeiList.isEmpty()) {
+                        add("  IMEI: Restricted by Android 10+")
+                    } else {
+                        di.imeiList.forEachIndexed { index, imei ->
+                            add("  IMEI Slot ${index + 1}: $imei")
+                        }
+                    }
                     add("  Serial: ${di.serialNumber ?: "Restricted by Android 10+"}")
                     add("  ICCID: ${di.iccid ?: "Restricted by Android 10+"}")
                     add("  Total RAM: ${di.totalRam ?: "N/A"}")

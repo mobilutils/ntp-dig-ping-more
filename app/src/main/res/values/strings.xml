@@ -334,8 +334,13 @@
     <string name="device_info_field_battery_no">No</string>
     <string name="device_info_field_total_ram">Total RAM</string>
     <string name="device_info_field_available_ram">Available RAM</string>
+    <string name="device_info_field_used_ram">Used RAM</string>
     <string name="device_info_field_total_storage">Total Storage</string>
     <string name="device_info_field_available_storage">Available Storage</string>
+    <string name="device_info_field_used_storage">Used Storage</string>
+    <string name="device_info_field_ram">Memory</string>
+    <string name="device_info_field_storage">Storage</string>
+    <string name="device_info_field_imei_slot">IMEI Slot %1$d</string>
     <string name="device_info_mdm_status_label">MDM Status</string>
     <string name="device_info_mdm_managed_badge">App is managed</string>
     <string name="device_info_mdm_managed_default">Managed (restrictions active)</string>

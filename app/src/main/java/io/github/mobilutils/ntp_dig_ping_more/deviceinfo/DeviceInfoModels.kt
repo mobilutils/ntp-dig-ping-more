@@ -7,7 +7,7 @@ package io.github.mobilutils.ntp_dig_ping_more.deviceinfo
 data class DeviceInfo(
     // ── Required data points ──────────────────────────────────────────
     val deviceName: String? = null,
-    val imei: String? = null,
+    val imeiList: List<String> = emptyList(),
     val serialNumber: String? = null,
     val iccid: String? = null,
     val deviceTime: String? = null,
@@ -32,8 +32,10 @@ data class DeviceInfo(
     val batteryHealth: String? = null,
     val totalRam: String? = null,
     val availableRam: String? = null,
+    val usedRam: String? = null,
     val totalStorage: String? = null,
     val availableStorage: String? = null,
+    val usedStorage: String? = null,
     val cpuAbi: List<String> = emptyList(),
     val activeNetworkType: String? = null,
 )
