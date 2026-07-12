@@ -247,6 +247,7 @@ class HttpsCertViewModel(
                         settingsRepo,
                         io.github.mobilutils.ntp_dig_ping_more.proxy.QuickJsEngine(appContext),
                         logger = logger,
+                        appContext = appContext,
                     )
                     return HttpsCertViewModel(
                         repository   = HttpsCertRepository(proxyResolver),
