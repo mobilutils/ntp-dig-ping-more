@@ -131,8 +131,12 @@ class QuickJsEngine(private val context: Context) : JsEngine {
             }
 
             // isInNet: pure-JS bitwise subnet comparison matching the PAC spec.
+            // Per the PAC spec (Netscape), the first argument may be either a
+            // hostname OR an already-resolved IP address string. When it is
+            // already an IPv4 dotted-decimal string we use it directly instead
+            // of calling dnsResolve(), which would incorrectly return "127.0.0.1"
+            // for any host that is not the pre-resolved _resolvedTargetHost.
             function isInNet(host, pattern, mask) {
-                var ip = dnsResolve(host);
                 function parseOctets(s) {
                     var parts = s.split('.');
                     if (parts.length !== 4) return null;
@@ -144,6 +148,10 @@ class QuickJsEngine(private val context: Context) : JsEngine {
                     }
                     return r;
                 }
+                // Use host directly if it is already a dotted-decimal IPv4 address,
+                // otherwise resolve it (dnsResolve falls back to "127.0.0.1" for
+                // any host other than the pre-resolved target host).
+                var ip = parseOctets(host) ? host : dnsResolve(host);
                 var h = parseOctets(ip);
                 var p = parseOctets(pattern);
                 var m = parseOctets(mask);

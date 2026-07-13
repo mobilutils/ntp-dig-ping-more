@@ -3,6 +3,11 @@ package io.github.mobilutils.ntp_dig_ping_more
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.lifecycleScope
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyPacLogger
+import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -145,6 +150,19 @@ class MainActivity : ComponentActivity() {
         } catch (_: Exception) {
             // Silently ignore - just ensure stale marker is cleared
         }
+
+        // Bootstrap ProxyPacLogger.enabled from the persisted setting so proxy
+        // log events are captured on every screen, not just after Settings is opened.
+        lifecycleScope.launch {
+            val loggingEnabled = SettingsRepository(applicationContext)
+                .proxyConfigFlow
+                .first()
+                .loggingEnabled
+            ProxyPacLogger.getInstance(
+                logFile = java.io.File(applicationContext.filesDir, "proxypac-logs.txt"),
+            ).enabled = loggingEnabled
+        }
+
         enableEdgeToEdge()
         val configUri = intent?.data?.toString()
         val autoRun = intent?.getBooleanExtra("auto_run", false) ?: false
