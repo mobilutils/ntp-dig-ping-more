@@ -245,7 +245,7 @@ class HttpsCertViewModel(
                     )
                     val proxyResolver = io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver(
                         settingsRepo,
-                        io.github.mobilutils.ntp_dig_ping_more.proxy.QuickJsEngine(appContext),
+                        io.github.mobilutils.ntp_dig_ping_more.proxy.AndroidXJsEngine(appContext),
                         logger = logger,
                         appContext = appContext,
                     )

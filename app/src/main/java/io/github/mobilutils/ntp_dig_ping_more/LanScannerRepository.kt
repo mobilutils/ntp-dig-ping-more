@@ -119,25 +119,32 @@ class LanScannerRepository(private val context: Context) {
      * but we provide it as a best-effort.
      */
     suspend fun getMacFromArpTable(ip: String): String? = withContext(Dispatchers.IO) {
-        var mac: String? = null
         try {
-            val reader = BufferedReader(java.io.FileReader("/proc/net/arp"))
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                val tokens = line!!.split(Regex("\\s+"))
-                if (tokens.size >= 4 && ip == tokens[0]) {
-                    val macAddress = tokens[3]
-                    if (macAddress.matches(Regex("..:..:..:..:..:..")) && macAddress != "00:00:00:00:00:00") {
-                        mac = macAddress
-                        break
+            val file = java.io.File("/proc/net/arp")
+            if (!file.exists() || !file.canRead()) return@withContext null
+
+            file.useLines { lines ->
+                for (line in lines) {
+                    val tokens = line.split(Regex("\\s+"))
+                    if (tokens.size >= 4 && ip == tokens[0]) {
+                        val macAddress = tokens[3]
+                        if (macAddress.matches(Regex("..:..:..:..:..:..")) && macAddress != "00:00:00:00:00:00") {
+                            return@withContext macAddress
+                        }
                     }
                 }
             }
-            reader.close()
-        } catch (e: Exception) {
-            // Ignore /proc/net/arp read failures
+            null
+        } catch (_: SecurityException) {
+            // Android 13+ / SELinux policy blocks direct /proc/net/arp reads for third-party apps
+            null
+        } catch (_: java.io.FileNotFoundException) {
+            null
+        } catch (_: java.io.IOException) {
+            null
+        } catch (_: Exception) {
+            null
         }
-        mac
     }
 
     fun longToIp(ipLong: Long): String {

@@ -34,8 +34,8 @@ android {
         applicationId = "io.github.mobilutils.ntp_dig_ping_more"
         minSdk = 26
         targetSdk { version = release(rootProject.extra["defaultTargetSdkVersion"] as Int) }
-        versionCode = 37
-        versionName = "3.50"
+        versionCode = 38
+        versionName = "3.51"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -56,8 +56,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     buildFeatures {
@@ -134,8 +134,8 @@ dependencies {
     // dnsjava – full DNS resolution (records, TTL, CNAME chains)
     implementation(libs.dnsjava)
 
-    // QuickJS – lightweight JS engine for PAC script evaluation (replaced by androidx.javascriptengine)
-    implementation(libs.quickjs)
+    // AndroidX JavaScript Sandbox for PAC script evaluation
+    implementation(libs.androidx.javascriptengine)
     // Coroutines ↔ Guava ListenableFuture bridge (required by JavaScriptSandbox API)
     implementation(libs.kotlinx.coroutines.guava)
 

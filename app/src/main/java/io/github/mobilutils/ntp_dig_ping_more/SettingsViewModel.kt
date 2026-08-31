@@ -467,7 +467,7 @@ class SettingsViewModel(
                      )
                     val proxyResolver = ProxyResolver(
                         settingsRepository = settingsRepo,
-                        jsEngine = QuickJsEngine(appContext),
+                        jsEngine = io.github.mobilutils.ntp_dig_ping_more.proxy.AndroidXJsEngine(appContext),
                         logger = logger,
                         appContext = appContext,
                      )
