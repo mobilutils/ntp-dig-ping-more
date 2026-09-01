@@ -285,6 +285,10 @@
     <string name="bulk_btn_clear">Clear</string>
     <string name="bulk_results_header">Results (%1$d/%2$d)</string>
     <string name="bulk_cmd_timed_out">Command timed out after %1$s</string>
+    <string name="bulk_cd_expand_results">Expand results</string>
+    <string name="bulk_cd_collapse_results">Collapse results</string>
+    <string name="bulk_btn_expand">Expand</string>
+    <string name="bulk_btn_collapse">Collapse</string>
 
     <!-- ══════════════════════════════════════════════════════════════ -->
     <!-- Device Info screen                                             -->
