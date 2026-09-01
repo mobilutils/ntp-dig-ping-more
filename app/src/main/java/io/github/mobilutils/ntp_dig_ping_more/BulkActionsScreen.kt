@@ -2,6 +2,7 @@ package io.github.mobilutils.ntp_dig_ping_more
 
 import android.content.Context
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,17 +32,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloseFullscreen
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -57,7 +62,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -66,6 +73,7 @@ import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -212,6 +220,19 @@ fun BulkActionsScreen(
         }
     }
 
+    var resultsExpanded by remember { mutableStateOf(false) }
+
+    // Reset expanded state if results become empty
+    LaunchedEffect(uiState.results.isEmpty()) {
+        if (uiState.results.isEmpty()) {
+            resultsExpanded = false
+        }
+    }
+
+    BackHandler(enabled = resultsExpanded) {
+        resultsExpanded = false
+    }
+
     // Helper to format validation message
     fun formatValidationMessage(msg: BulkActionsViewModel.ValidationMessage): String {
         return when (msg) {
@@ -221,76 +242,510 @@ fun BulkActionsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 20.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        // ── Title ──
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 20.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Icon(
-                imageVector = Icons.Filled.Terminal,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp),
-            )
-            Text(
-                text = "Bulk Actions",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
+            // ── Title ──
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Terminal,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+                Text(
+                    text = "Bulk Actions",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            // ── Load Config Button ──
+            Button(
+                onClick = { filePickerLauncher.launch("application/json") },
+                enabled = !uiState.isExecuting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                ),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.FileOpen,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.bulk_btn_load_config), fontWeight = FontWeight.Medium)
+            }
+
+            // ── CSV Output Checkbox ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = csvOutputEnabled,
+                    onCheckedChange = { viewModel.toggleCsvOutput() },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                    ),
+                )
+                Text(
+                    text = "CSV output",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+
+            // ── Config Loaded Summary ──
+            AnimatedVisibility(
+                visible = uiState.configLoaded,
+                enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 },
+                exit = fadeOut(tween(200)),
+            ) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Config loaded",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "${uiState.commandCount} command(s)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        val (outputIcon, outputFileMessage, outputFileColor) = when (uiState.validationMessage) {
+                            is BulkActionsViewModel.ValidationMessage.Success ->
+                                Triple(Icons.Filled.CheckCircle, "output-file: ${uiState.validatedOutputFile}", MaterialTheme.colorScheme.secondary)
+                            else ->
+                                Triple(Icons.Filled.Warning, "output-file: invalid (select one after run)", MaterialTheme.colorScheme.tertiary)
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(
+                                imageVector = outputIcon,
+                                contentDescription = null,
+                                tint = outputFileColor,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(
+                                text = outputFileMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                        uiState.configTimeoutMs?.let { timeoutMs ->
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "timeout: ${timeoutMs / 1000}s",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── Run / Stop Button ──
+            Button(
+                onClick = {
+                    if (uiState.isExecuting) {
+                        viewModel.onStopClicked()
+                    } else {
+                        viewModel.onRunClicked()
+                    }
+                },
+                enabled = uiState.configLoaded || uiState.isExecuting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = if (uiState.isExecuting)
+                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                else
+                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+            ) {
+                if (uiState.isExecuting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onError,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Filled.Stop,
+                        contentDescription = stringResource(R.string.common_cd_stop),
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.bulk_btn_stop), fontWeight = FontWeight.Medium)
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = stringResource(R.string.bulk_cd_run),
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.bulk_btn_run), fontWeight = FontWeight.Medium)
+                }
+            }
+
+            // ── Progress Bar ──
+            AnimatedVisibility(
+                visible = uiState.isExecuting,
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200)),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    LinearProgressIndicator(
+                        progress = { uiState.progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.primaryContainer,
+                    )
+                    uiState.currentCommand?.let { cmd ->
+                        Text(
+                            text = cmd,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        )
+                    }
+                }
+            }
+
+            // ── Inline Results (Visible when not expanded) ──
+            AnimatedVisibility(
+                visible = uiState.results.isNotEmpty() && !resultsExpanded,
+                enter = fadeIn(tween(300)),
+                exit = fadeOut(tween(200)),
+            ) {
+                ResultsContent(
+                    uiState = uiState,
+                    resultsExpanded = false,
+                    onToggleExpand = { resultsExpanded = true },
+                    onClear = viewModel::onClearResults,
+                    onWriteToFile = {
+                        val filename = "bulk-output-${System.currentTimeMillis()}.txt"
+                        outputLauncher.launch(filename)
+                    },
+                )
+            }
+
+            // ── Config parse error (always visible when config failed to load) ──
+            AnimatedVisibility(
+                visible = !uiState.configLoaded && uiState.validationMessage is BulkActionsViewModel.ValidationMessage.Error,
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200)),
+            ) {
+                val errorMsg = (uiState.validationMessage as? BulkActionsViewModel.ValidationMessage.Error)?.text ?: ""
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                    ),
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Error,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Text(
+                                text = "Config error",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = errorMsg,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
+
+            // ── Config info (e.g. output-file fallback suggestion) ──
+            AnimatedVisibility(
+                visible = uiState.validationMessage is BulkActionsViewModel.ValidationMessage.Info,
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200)),
+            ) {
+                val infoMsg = (uiState.validationMessage as? BulkActionsViewModel.ValidationMessage.Info)?.text ?: ""
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    ),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Text(
+                            text = infoMsg,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                    }
+                }
+            }
+
+            // ── Error banner ──
+            AnimatedVisibility(
+                visible = uiState.outputFileWritten == false,
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200)),
+            ) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                    ),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Error,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Text(
+                            text = "Failed to write output file. Check permissions or try saving to a different location.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
         }
 
-        // ── Load Config Button ──
-        Button(
-            onClick = { filePickerLauncher.launch("application/json") },
-            enabled = !uiState.isExecuting,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
+        // ── Floating Overlay for Expanded Results (Above all other elements, 90% screen height) ──
+        AnimatedVisibility(
+            visible = uiState.results.isNotEmpty() && resultsExpanded,
+            enter = fadeIn(tween(250)) + slideInVertically(tween(300)) { it / 4 },
+            exit = fadeOut(tween(200)) + slideOutVertically(tween(250)) { it / 4 },
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.54f))
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.9f),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                ) {
+                    ResultsContent(
+                        uiState = uiState,
+                        resultsExpanded = true,
+                        onToggleExpand = { resultsExpanded = false },
+                        onClear = {
+                            viewModel.onClearResults()
+                            resultsExpanded = false
+                        },
+                        onWriteToFile = {
+                            val filename = "bulk-output-${System.currentTimeMillis()}.txt"
+                            outputLauncher.launch(filename)
+                        },
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Results Content
+// ────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ResultsContent(
+    uiState: BulkUiState,
+    resultsExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onClear: () -> Unit,
+    onWriteToFile: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Header row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Results (${uiState.results.count { it is BulkCommandSuccess }}/ ${uiState.results.size})",
+                style = if (resultsExpanded) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = onClear,
+                    enabled = !uiState.isFileWriting,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.bulk_btn_clear))
+                }
+                Spacer(Modifier.width(4.dp))
+                TextButton(
+                    onClick = onToggleExpand,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                ) {
+                    Icon(
+                        imageVector = if (resultsExpanded) Icons.Filled.CloseFullscreen else Icons.Filled.OpenInFull,
+                        contentDescription = if (resultsExpanded) stringResource(R.string.bulk_cd_collapse_results) else stringResource(R.string.bulk_cd_expand_results),
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (resultsExpanded) stringResource(R.string.bulk_btn_collapse) else stringResource(R.string.bulk_btn_expand))
+                }
+            }
+        }
+
+        // Output terminal card
+        Card(
+            modifier = if (resultsExpanded) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
             ),
         ) {
-            Icon(
-                imageVector = Icons.Filled.FileOpen,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.bulk_btn_load_config), fontWeight = FontWeight.Medium)
+            Box(
+                modifier = (if (resultsExpanded) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(200.dp))
+                    .background(
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                        shape = RoundedCornerShape(12.dp),
+                    ),
+            ) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    itemsIndexed(uiState.results) { _, result ->
+                        ResultItem(result, configTimeoutMs = uiState.configTimeoutMs)
+                    }
+                }
+            }
         }
 
-        // ── CSV Output Checkbox ──
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(
-                checked = csvOutputEnabled,
-                onCheckedChange = { viewModel.toggleCsvOutput() },
-                colors = CheckboxDefaults.colors(
-                    checkedColor = MaterialTheme.colorScheme.primary,
-                ),
-            )
-            Text(
-                text = "CSV output",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-
-        // ── Config Loaded Summary ──
+        // Write to file button
         AnimatedVisibility(
-            visible = uiState.configLoaded,
+            visible = uiState.results.any { it is BulkCommandSuccess },
+            enter = fadeIn(tween(200)),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onWriteToFile,
+                    enabled = !uiState.isFileWriting,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary,
+                    ),
+                ) {
+                    if (uiState.isFileWriting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onTertiary,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.bulk_btn_writing))
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.UploadFile,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.bulk_btn_write_to_file), fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+        }
+
+        // ── Green success card for auto-save ──
+        AnimatedVisibility(
+            visible = uiState.autoSaved && uiState.autoSavedPath != null,
             enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 },
             exit = fadeOut(tween(200)),
         ) {
@@ -298,378 +753,24 @@ fun BulkActionsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                 ),
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Config loaded",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "${uiState.commandCount} command(s)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    val (outputIcon, outputFileMessage, outputFileColor) = when (uiState.validationMessage) {
-                        is BulkActionsViewModel.ValidationMessage.Success ->
-                            Triple(Icons.Filled.CheckCircle, "output-file: ${uiState.validatedOutputFile}", MaterialTheme.colorScheme.secondary)
-                        else ->
-                            Triple(Icons.Filled.Warning, "output-file: invalid (select one after run)", MaterialTheme.colorScheme.tertiary)
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(
-                            imageVector = outputIcon,
-                            contentDescription = null,
-                            tint = outputFileColor,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Text(
-                            text = outputFileMessage,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
-                    uiState.configTimeoutMs?.let { timeoutMs ->
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "timeout: ${timeoutMs / 1000}s",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
-                }
-            }
-        }
-
-        // ── Run / Stop Button ──
-        Button(
-            onClick = {
-                if (uiState.isExecuting) {
-                    viewModel.onStopClicked()
-                } else {
-                    viewModel.onRunClicked()
-                }
-            },
-            enabled = uiState.configLoaded || uiState.isExecuting,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = if (uiState.isExecuting)
-                ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            else
-                ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-        ) {
-            if (uiState.isExecuting) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onError,
-                )
-                Spacer(Modifier.width(8.dp))
-                Icon(
-                    imageVector = Icons.Filled.Stop,
-                    contentDescription = stringResource(R.string.common_cd_stop),
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.bulk_btn_stop), fontWeight = FontWeight.Medium)
-            } else {
-                Icon(
-                    imageVector = Icons.Filled.PlayArrow,
-                    contentDescription = stringResource(R.string.bulk_cd_run),
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.bulk_btn_run), fontWeight = FontWeight.Medium)
-            }
-        }
-
-        // ── Progress Bar ──
-        AnimatedVisibility(
-            visible = uiState.isExecuting,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(200)),
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                LinearProgressIndicator(
-                    progress = { uiState.progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp)),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.primaryContainer,
-                )
-                uiState.currentCommand?.let { cmd ->
-                    Text(
-                        text = cmd,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                    )
-                }
-            }
-        }
-
-        // ── Results ──
-        AnimatedVisibility(
-            visible = uiState.results.isNotEmpty(),
-            enter = fadeIn(tween(300)),
-            exit = fadeOut(tween(200)),
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                // Header row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "Results (${uiState.results.count { it is BulkCommandSuccess }}/ ${uiState.results.size})",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    OutlinedButton(
-                        onClick = viewModel::onClearResults,
-                        enabled = !uiState.isFileWriting,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Delete,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.bulk_btn_clear))
-                    }
-                }
-
-                // Output terminal card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    ),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(300.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
-                                shape = RoundedCornerShape(12.dp),
-                            ),
-                    ) {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                        ) {
-                            itemsIndexed(uiState.results) { index, result ->
-                                ResultItem(result, configTimeoutMs = uiState.configTimeoutMs)
-                            }
-                        }
-                    }
-                }
-
-                // Write to file button
-                AnimatedVisibility(
-                    visible = uiState.results.any { it is BulkCommandSuccess },
-                    enter = fadeIn(tween(200)),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(
-                            onClick = {
-                                val filename = "bulk-output-${System.currentTimeMillis()}.txt"
-                                outputLauncher.launch(filename)
-                            },
-                            enabled = !uiState.isFileWriting,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiary,
-                            ),
-                        ) {
-                            if (uiState.isFileWriting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onTertiary,
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(stringResource(R.string.bulk_btn_writing))
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Filled.UploadFile,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(stringResource(R.string.bulk_btn_write_to_file), fontWeight = FontWeight.Medium)
-                            }
-                        }
-                    }
-                }
-
-                // ── Green success card for auto-save ──
-                AnimatedVisibility(
-                    visible = uiState.autoSaved && uiState.autoSavedPath != null,
-                    enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 },
-                    exit = fadeOut(tween(200)),
-                ) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        ),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Text(
-                                text = "File saved to: ${uiState.autoSavedPath}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-         // ── Config parse error (always visible when config failed to load) ──
-        AnimatedVisibility(
-            visible = !uiState.configLoaded && uiState.validationMessage is BulkActionsViewModel.ValidationMessage.Error,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(200)),
-         ) {
-            val errorMsg = (uiState.validationMessage as? BulkActionsViewModel.ValidationMessage.Error)?.text ?: ""
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                 ),
-             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Error,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.size(20.dp),
-                         )
-                        Text(
-                            text = "Config error",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                         )
-                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = errorMsg,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                     )
-                 }
-             }
-         }
-
-         // ── Config info (e.g. output-file fallback suggestion) ──
-        AnimatedVisibility(
-            visible = uiState.validationMessage is BulkActionsViewModel.ValidationMessage.Info,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(200)),
-         ) {
-            val infoMsg = (uiState.validationMessage as? BulkActionsViewModel.ValidationMessage.Info)?.text ?: ""
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                 ),
-             ) {
                 Row(
                     modifier = Modifier.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                 ) {
+                ) {
                     Icon(
-                        imageVector = Icons.Filled.Warning,
+                        imageVector = Icons.Filled.CheckCircle,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onTertiaryContainer,
                         modifier = Modifier.size(20.dp),
-                     )
-                    Text(
-                        text = infoMsg,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                     )
-                 }
-             }
-         }
-
-        // ── Error banner ──
-        AnimatedVisibility(
-            visible = uiState.outputFileWritten == false,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(200)),
-        ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                ),
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Error,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.size(20.dp),
                     )
                     Text(
-                        text = "Failed to write output file. Check permissions or try saving to a different location.",
+                        text = "File saved to: ${uiState.autoSavedPath}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
                     )
                 }
             }
