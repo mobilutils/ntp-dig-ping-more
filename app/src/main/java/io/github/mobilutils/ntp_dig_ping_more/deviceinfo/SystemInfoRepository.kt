@@ -387,39 +387,33 @@ class SystemInfoRepository(
     private fun getGatewayFromProcNetRoute(): String? {
         return try {
             val procFile = File("/proc/net/route")
-            if (!procFile.exists()) return null
+            if (!procFile.exists() || !procFile.canRead()) return null
 
-            val lines = procFile.readLines()
-            if (lines.size < 2) return null
-
-            // Skip header line (interface names), parse each route entry
-            for (i in 1 until lines.size) {
-                val line = lines[i].trim()
-                if (line.isBlank()) continue
-
-                val parts = line.split(Regex("\\s+"))
-                if (parts.size < 9) continue
-
-                // Column layout (hex fields):
-                // [0] = interface name (e.g., "wlan0")
-                // [1] = destination IP (hex, little-endian) — "00000000" = default route
-                // [2] = gateway IP (hex, little-endian)
-                // [3] = flags
-                // [8] = metric
-                val destHex = parts[1]
-                val gatewayHex = parts[2]
-
-                // Default route: destination is 0.0.0.0 (all zeros in hex)
-                if (destHex == "00000000" || destHex == "0000000000000000") {
-                    // Skip directly connected routes (gateway 0.0.0.0)
-                    if (gatewayHex == "00000000" || gatewayHex == "0000000000000000") continue
-                    val gwIp = hexToIpv4(gatewayHex)
-                    if (gwIp != null) return gwIp
+            procFile.useLines { lines ->
+                lines.drop(1).firstNotNullOfOrNull { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isNotBlank()) {
+                        val parts = trimmed.split(Regex("\\s+"))
+                        if (parts.size >= 9) {
+                            val destHex = parts[1]
+                            val gatewayHex = parts[2]
+                            if ((destHex == "00000000" || destHex == "0000000000000000") &&
+                                (gatewayHex != "00000000" && gatewayHex != "0000000000000000")
+                            ) {
+                                hexToIpv4(gatewayHex)
+                            } else null
+                        } else null
+                    } else null
                 }
             }
-
+        } catch (_: SecurityException) {
+            // Blocked by Android SELinux sandbox on modern API levels
             null
-        } catch (e: Exception) {
+        } catch (_: java.io.FileNotFoundException) {
+            null
+        } catch (_: java.io.IOException) {
+            null
+        } catch (_: Exception) {
             null
         }
     }
@@ -473,6 +467,21 @@ class SystemInfoRepository(
             linkProps?.dnsServers?.map { it.hostAddress ?: it.hostName } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * Checks if Android Private DNS (DNS-over-TLS) is active on the network.
+     */
+    @SuppressLint("MissingPermission")
+    fun isPrivateDnsActive(): Boolean {
+        return try {
+            val network = connectivityManager.activeNetwork
+            val linkProps = connectivityManager.getLinkProperties(network)
+            linkProps?.privateDnsServerName != null ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && linkProps?.isPrivateDnsActive == true)
+        } catch (_: Exception) {
+            false
         }
     }
 

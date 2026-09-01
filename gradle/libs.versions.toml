@@ -42,7 +42,7 @@ dnsjava = { group = "dnsjava", name = "dnsjava", version.ref = "dnsjava" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
 kotlinx-coroutines-guava = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-guava", version.ref = "coroutinesGuava" }
-quickjs = { group = "androidx.javascriptengine", name = "javascriptengine", version.ref = "javascriptengine" }
+androidx-javascriptengine = { group = "androidx.javascriptengine", name = "javascriptengine", version.ref = "javascriptengine" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

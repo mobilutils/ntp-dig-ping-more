@@ -95,7 +95,17 @@ class NtpRepository {
             // Check for cancellation before the blocking getTime() call
             ensureActive()
             val info: TimeInfo = try {
-                client.getTime(address, port)
+                kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+                    continuation.invokeOnCancellation {
+                        runCatching { client.close() }
+                    }
+                    try {
+                        val result = client.getTime(address, port)
+                        continuation.resumeWith(Result.success(result))
+                    } catch (e: Exception) {
+                        continuation.resumeWith(Result.failure(e))
+                    }
+                }
             } catch (e: SocketException) {
                 // A SocketException with "Network is unreachable" means no connectivity.
                 val msg = e.message ?: ""

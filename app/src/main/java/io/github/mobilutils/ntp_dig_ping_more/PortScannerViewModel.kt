@@ -19,15 +19,18 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.coroutines.resume
 
 data class PortScannerUiState(
     val host: String = "",
@@ -191,40 +194,56 @@ class PortScannerViewModel(
         startScan()
     }
 
-    private fun checkTcpPort(host: String, port: Int): Boolean {
-        return try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(host, port), 2000)
-                true
-               }
-           } catch (e: SocketTimeoutException) {
-            false
-           } catch (e: Exception) {
-            false
-           }
+    private suspend fun checkTcpPort(host: String, port: Int): Boolean = withContext(Dispatchers.IO) {
+        val socket = Socket()
+        try {
+            suspendCancellableCoroutine { continuation ->
+                continuation.invokeOnCancellation {
+                    runCatching { socket.close() }
+                }
+                try {
+                    socket.connect(InetSocketAddress(host, port), 2000)
+                    continuation.resume(true)
+                } catch (_: SocketTimeoutException) {
+                    continuation.resume(false)
+                } catch (_: Exception) {
+                    continuation.resume(false)
+                }
+            }
+        } finally {
+            runCatching { socket.close() }
+        }
     }
 
+    private suspend fun checkUdpPort(host: String, port: Int): Boolean = withContext(Dispatchers.IO) {
+        var socket: DatagramSocket? = null
+        try {
+            suspendCancellableCoroutine { continuation ->
+                continuation.invokeOnCancellation {
+                    runCatching { socket?.close() }
+                }
+                try {
+                    val ds = DatagramSocket().apply {
+                        soTimeout = 1000 // 1 second timeout
+                    }
+                    socket = ds
+                    val address = InetAddress.getByName(host)
+                    val buffer = ByteArray(0)
+                    val packet = DatagramPacket(buffer, buffer.size, address, port)
+                    ds.send(packet)
 
-    private fun checkUdpPort(host: String, port: Int): Boolean {
-        return try {
-            DatagramSocket().use { socket ->
-                socket.soTimeout = 1000 // 1 second timeout
-                socket.connect(InetSocketAddress(host, port))
-                val sendData = ByteArray(0)
-                val sendPacket = DatagramPacket(sendData, sendData.size)
-                socket.send(sendPacket)
-
-                val receiveData = ByteArray(1024)
-                val receivePacket = DatagramPacket(receiveData, receiveData.size)
-                socket.receive(receivePacket)
-                true // got a response
+                    val receiveData = ByteArray(1024)
+                    val receivePacket = DatagramPacket(receiveData, receiveData.size)
+                    ds.receive(receivePacket)
+                    continuation.resume(true) // got a response
+                } catch (_: SocketTimeoutException) {
+                    continuation.resume(false)
+                } catch (_: Exception) {
+                    continuation.resume(false)
+                }
             }
-        } catch (e: SocketTimeoutException) {
-            // No response. Could be open or filtered.
-            false
-        } catch (e: Exception) {
-            // PortUnreachableException or other errors
-            false
+        } finally {
+            runCatching { socket?.close() }
         }
     }
 

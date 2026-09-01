@@ -119,7 +119,7 @@ class ProxyResolver(
         fun forStaticPacUrl(
             pacUrl: String,
             context: Context,
-            jsEngine: JsEngine = QuickJsEngine(context),
+            jsEngine: JsEngine = AndroidXJsEngine(context),
             logger: ProxyPacLogger? = null,
             forceLogging: Boolean = false,
         ): ProxyResolver = ProxyResolver(
