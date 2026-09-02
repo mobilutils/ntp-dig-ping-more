@@ -10,7 +10,11 @@ plugins {
 
 android {
     val signingProps = file("signing.properties")
-    val releaseKeystore = file(".keystore/my-release.keystore")
+    val releaseKeystore = if (file(".keystore/my-release.keystore").exists()) {
+        file(".keystore/my-release.keystore")
+    } else {
+        rootProject.file(".keystore/my-release.keystore")
+    }
 
     if (signingProps.exists() && releaseKeystore.exists()) {
         val props = Properties().apply {
@@ -21,6 +25,7 @@ android {
                 storeFile = releaseKeystore
                 storePassword = props.getProperty("RELEASE_STORE_PASSWORD") ?: ""
                 keyAlias = props.getProperty("RELEASE_KEY_ALIAS") ?: ""
+                keyPassword = props.getProperty("RELEASE_KEY_PASSWORD") ?: props.getProperty("RELEASE_STORE_PASSWORD") ?: ""
             }
         }
     } else if (!signingProps.exists()) {
@@ -34,19 +39,21 @@ android {
         applicationId = "io.github.mobilutils.ntp_dig_ping_more"
         minSdk = 26
         targetSdk { version = release(rootProject.extra["defaultTargetSdkVersion"] as Int) }
-        versionCode = 39
-        versionName = "3.52"
+        versionCode = 40
+        versionName = "3.53"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.findByName("release")
         }
         debug {
             versionNameSuffix = "-dev"
@@ -73,6 +80,8 @@ android {
             excludes += "META-INF/NOTICE*"
             excludes += "META-INF/INDEX.LIST"        // dnsjava
             excludes += "META-INF/io.netty.versions.properties" // netty (transitive)
+            excludes += "META-INF/services/java.net.spi.InetAddressResolverProvider"
+            excludes += "META-INF/services/sun.net.spi.nameservice.NameServiceDescriptor"
         }
     }
     buildToolsVersion = "36.0.0"
