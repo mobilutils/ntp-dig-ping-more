@@ -1,6 +1,7 @@
 package io.github.mobilutils.ntp_dig_ping_more.proxy
 
 import android.content.Context
+import android.util.Log
 import androidx.javascriptengine.IsolateStartupParameters
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
@@ -20,12 +21,14 @@ import java.net.UnknownHostException
  * [JsEngine] implementation backed by [JavaScriptSandbox] (androidx.javascriptengine).
  *
  * **Hardened Features:**
- * - **Persistent Sandbox Connection:** Reuses the out-of-process [JavaScriptSandbox] instance across evaluations,
- *   avoiding expensive process binding/unbinding cycles per PAC request.
+ * - **Process-Wide Shared Sandbox Connection:** Reuses a single out-of-process [JavaScriptSandbox]
+ *   instance across all ViewModels, screens, and bulk actions. This complies with the Android platform rule
+ *   that only one sandbox connection may be open per application process at any given time.
  * - **Availability Verification:** Checks [JavaScriptSandbox.isSupported] before attempting IPC initialization.
  * - **Injection Safety:** Uses [JSONObject.quote] for embedding user strings into JavaScript code.
  * - **Resource Bounds:** Restricts isolate memory via [IsolateStartupParameters] (16 MB cap when supported).
- * - **Crash Recovery:** Catches [SandboxDeadException] and resets the stale sandbox connection for auto-recovery.
+ * - **Crash Recovery & Auto-Retry:** Catches [SandboxDeadException] and [IllegalStateException] (stale/dead sandbox),
+ *   resets the stale process-wide connection, and retries once with a fresh connection.
  * - **Evaluation Timeout:** Caps evaluation at [evalTimeoutMs] (default 5 seconds).
  *
  * @param context Application or activity context.
@@ -36,83 +39,65 @@ class AndroidXJsEngine(
     private val evalTimeoutMs: Long = 5_000L,
 ) : JsEngine, Closeable {
 
-    private val sandboxMutex = Mutex()
-
-    @Volatile
-    private var sandboxInstance: JavaScriptSandbox? = null
-
-    private suspend fun getOrCreateSandbox(): JavaScriptSandbox? = sandboxMutex.withLock {
-        sandboxInstance?.let { return it }
-
-        if (!JavaScriptSandbox.isSupported()) {
-            return null
-        }
-
-        return try {
-            val sandbox = JavaScriptSandbox
-                .createConnectedInstanceAsync(context.applicationContext)
-                .await()
-            sandboxInstance = sandbox
-            sandbox
-        } catch (_: Exception) {
-            null
-        }
-    }
-
     override suspend fun evaluatePac(
         pacScript: String,
         targetUrl: String,
         targetHost: String,
     ): String = withContext(Dispatchers.IO) {
-        val sandbox = getOrCreateSandbox() ?: return@withContext "DIRECT"
         val resolvedIp = resolveHost(targetHost)
 
-        try {
-            withTimeout(evalTimeoutMs) {
-                val isolateParams = IsolateStartupParameters().apply {
-                    if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE)) {
-                        maxHeapSizeBytes = this@AndroidXJsEngine.maxHeapSizeBytes
+        // Attempt evaluation; if the sandbox was dead or closed, retry once after resetting
+        for (attempt in 1..2) {
+            val sandbox = getOrCreateSandbox(context) ?: return@withContext "DIRECT"
+
+            try {
+                return@withContext withTimeout(evalTimeoutMs) {
+                    val isolateParams = IsolateStartupParameters().apply {
+                        if (sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE)) {
+                            maxHeapSizeBytes = this@AndroidXJsEngine.maxHeapSizeBytes
+                        }
+                    }
+
+                    var isolate: JavaScriptIsolate? = null
+                    try {
+                        isolate = sandbox.createIsolate(isolateParams)
+
+                        // 1. Inject pre-resolved DNS target constants safely using JSONObject.quote
+                        val initJs = """
+                            var _resolvedTargetHost = ${JSONObject.quote(targetHost)};
+                            var _resolvedTargetIp   = ${JSONObject.quote(resolvedIp)};
+                        """.trimIndent()
+                        isolate.evaluateJavaScriptAsync(initJs).await()
+
+                        // 2. Load standard PAC utility stubs
+                        isolate.evaluateJavaScriptAsync(PAC_UTILS_JS).await()
+
+                        // 3. Load PAC script
+                        isolate.evaluateJavaScriptAsync(pacScript).await()
+
+                        // 4. Invoke FindProxyForURL safely
+                        val evalJs = "FindProxyForURL(${JSONObject.quote(targetUrl)}, ${JSONObject.quote(targetHost)});"
+                        val result = isolate.evaluateJavaScriptAsync(evalJs).await()
+
+                        result?.takeIf { it.isNotBlank() } ?: "DIRECT"
+                    } finally {
+                        runCatching { isolate?.close() }
                     }
                 }
-
-                var isolate: JavaScriptIsolate? = null
-                try {
-                    isolate = sandbox.createIsolate(isolateParams)
-
-                    // 1. Inject pre-resolved DNS target constants safely using JSONObject.quote
-                    val initJs = """
-                        var _resolvedTargetHost = ${JSONObject.quote(targetHost)};
-                        var _resolvedTargetIp   = ${JSONObject.quote(resolvedIp)};
-                    """.trimIndent()
-                    isolate.evaluateJavaScriptAsync(initJs).await()
-
-                    // 2. Load standard PAC utility stubs
-                    isolate.evaluateJavaScriptAsync(PAC_UTILS_JS).await()
-
-                    // 3. Load PAC script
-                    isolate.evaluateJavaScriptAsync(pacScript).await()
-
-                    // 4. Invoke FindProxyForURL safely
-                    val evalJs = "FindProxyForURL(${JSONObject.quote(targetUrl)}, ${JSONObject.quote(targetHost)});"
-                    val result = isolate.evaluateJavaScriptAsync(evalJs).await()
-
-                    result?.takeIf { it.isNotBlank() } ?: "DIRECT"
-                } catch (e: SandboxDeadException) {
-                    // Reset stale sandbox connection on WebView process termination
-                    sandboxMutex.withLock {
-                        runCatching { sandboxInstance?.close() }
-                        sandboxInstance = null
-                    }
-                    "DIRECT"
-                } catch (_: Exception) {
-                    "DIRECT"
-                } finally {
-                    runCatching { isolate?.close() }
-                }
+            } catch (e: SandboxDeadException) {
+                logW("SandboxDeadException on attempt $attempt, resetting shared sandbox", e)
+                resetSandbox()
+                if (attempt == 2) return@withContext "DIRECT"
+            } catch (e: IllegalStateException) {
+                logW("IllegalStateException on attempt $attempt, resetting shared sandbox", e)
+                resetSandbox()
+                if (attempt == 2) return@withContext "DIRECT"
+            } catch (e: Exception) {
+                logE("PAC evaluation error for host $targetHost", e)
+                return@withContext "DIRECT"
             }
-        } catch (_: Exception) {
-            "DIRECT"
         }
+        "DIRECT"
     }
 
     private fun resolveHost(host: String): String =
@@ -125,11 +110,64 @@ class AndroidXJsEngine(
         }
 
     override fun close() {
-        sandboxInstance?.close()
-        sandboxInstance = null
+        // Individual instance close. Does not tear down the process-wide shared sandbox connection,
+        // which remains active for other ViewModels and screens. Use [resetSandbox] for full teardown.
     }
 
     companion object {
+        private const val TAG = "AndroidXJsEngine"
+
+        private fun logD(msg: String) { runCatching { Log.d(TAG, msg) } }
+        private fun logW(msg: String, tr: Throwable? = null) { runCatching { Log.w(TAG, msg, tr) } }
+        private fun logE(msg: String, tr: Throwable? = null) { runCatching { Log.e(TAG, msg, tr) } }
+
+        private val sandboxMutex = Mutex()
+
+        @Volatile
+        private var sharedSandbox: JavaScriptSandbox? = null
+
+        /**
+         * Returns the process-wide [JavaScriptSandbox] connection, initializing it if necessary.
+         *
+         * [JavaScriptSandbox] allows only one active connection per application process.
+         * Sharing this single connection across all [AndroidXJsEngine] instances avoids
+         * "Binding to already bound service" [IllegalStateException] errors and eliminates
+         * process spawning overhead.
+         */
+        suspend fun getOrCreateSandbox(context: Context): JavaScriptSandbox? = sandboxMutex.withLock {
+            sharedSandbox?.let { return it }
+
+            if (!JavaScriptSandbox.isSupported()) {
+                logW("JavaScriptSandbox is not supported on this device")
+                return null
+            }
+
+            return try {
+                val sandbox = JavaScriptSandbox
+                    .createConnectedInstanceAsync(context.applicationContext)
+                    .await()
+                sharedSandbox = sandbox
+                logD("Successfully connected to process-wide JavaScriptSandbox")
+                sandbox
+            } catch (e: Exception) {
+                logE("Failed to create JavaScriptSandbox connection", e)
+                null
+            }
+        }
+
+        /**
+         * Closes and resets the process-wide [JavaScriptSandbox] connection.
+         */
+        suspend fun resetSandbox() = sandboxMutex.withLock {
+            runCatching { sharedSandbox?.close() }
+            sharedSandbox = null
+            logD("Process-wide JavaScriptSandbox reset")
+        }
+
+        /**
+         * Returns `true` if a process-wide [JavaScriptSandbox] instance is currently connected.
+         */
+        fun isSandboxConnected(): Boolean = sharedSandbox != null
 
         // ── IP parsing & subnet comparison helpers ──────────────────────────────
         // Kept as public internal helpers so unit tests cover the pure-Kotlin logic.

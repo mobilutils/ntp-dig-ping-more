@@ -45,10 +45,16 @@ class TracerouteViewModelTest {
         coEvery { it.timeoutSecondsFlow } returns flowOf(5)
     }
 
-    private fun createViewModel(): TracerouteViewModel {
-        val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
-        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        return TracerouteViewModel(historyStore, fakeSettingsRepository())
+    private fun createViewModel(
+        historyStore: TracerouteHistoryStore = mockk<TracerouteHistoryStore>(relaxed = true).also {
+            coEvery { it.historyFlow } returns flowOf(emptyList())
+        },
+    ): TracerouteViewModel {
+        return TracerouteViewModel(historyStore, fakeSettingsRepository(), testDispatcher).apply {
+            probeHopOverride = { _, ttl ->
+                TracerouteViewModel.HopResult("$ttl * * *", isReachable = false, isDestination = false)
+            }
+        }
     }
 
     @Test
@@ -151,7 +157,7 @@ class TracerouteViewModelTest {
     fun `stopTraceroute saves history when stopped`() = runTest {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
+        val viewModel = createViewModel(historyStore)
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
         viewModel.stopTraceroute()
@@ -170,18 +176,21 @@ class TracerouteViewModelTest {
         )
 
         viewModel.selectHistoryEntry(entry)
-        advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertEquals("google.com", state.host)
         assertTrue(state.isRunning)
+
+        // Cleanup
+        viewModel.stopTraceroute()
+        advanceUntilIdle()
     }
 
     @Test
     fun `selectHistoryEntry stops previous traceroute if running`() = runTest {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
+        val viewModel = createViewModel(historyStore)
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
 
@@ -209,7 +218,7 @@ class TracerouteViewModelTest {
         coEvery { historyStore.historyFlow } returns flowOf(savedHistory)
 
         // Create a new ViewModel to trigger history loading
-        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
+        val viewModel = createViewModel(historyStore)
         advanceUntilIdle()
 
         assertEquals(2, viewModel.uiState.value.history.size)
@@ -230,7 +239,7 @@ class TracerouteViewModelTest {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(largeHistory)
 
-        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
+        val viewModel = createViewModel(historyStore)
         advanceUntilIdle()
 
         // HistoryStore should already have capped at 5
@@ -241,7 +250,7 @@ class TracerouteViewModelTest {
     fun `stopTraceroute calculates ALL_FAILED status when no hops replied`() = runTest {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
+        val viewModel = createViewModel(historyStore)
         viewModel.onHostChange("example.com")
         viewModel.startTraceroute()
         viewModel.stopTraceroute()
@@ -284,7 +293,7 @@ class TracerouteViewModelTest {
     fun `multiple startTraceroute calls with different hosts`() = runTest {
         val historyStore = mockk<TracerouteHistoryStore>(relaxed = true)
         coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-        val viewModel = TracerouteViewModel(historyStore, fakeSettingsRepository())
+        val viewModel = createViewModel(historyStore)
         // Start first traceroute
         viewModel.onHostChange("google.com")
         viewModel.startTraceroute()
