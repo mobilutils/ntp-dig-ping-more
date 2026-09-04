@@ -267,6 +267,14 @@ class QuickJsEngineTest {
         assertFalse(QuickJsEngine.compareSubnet(otherHost, pattern, mask))
     }
 
+    // ── Companion state helpers ─────────────────────────────────────────────
+
+    @Test
+    fun `resetSandbox resets connection state`() = kotlinx.coroutines.test.runTest {
+        QuickJsEngine.resetSandbox()
+        assertFalse(QuickJsEngine.isSandboxConnected())
+    }
+
     // ── Integration: evaluatePac ─────────────────────────────────────────────
     //
     // NOTE: Tests that call evaluatePac require JavaScriptSandbox, which is backed

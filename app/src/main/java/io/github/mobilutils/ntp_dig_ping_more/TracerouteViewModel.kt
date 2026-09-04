@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -54,6 +55,7 @@ data class TracerouteUiState(
 class TracerouteViewModel(
     private val historyStore: TracerouteHistoryStore,
     private val settingsRepository: SettingsRepository,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TracerouteUiState())
@@ -105,7 +107,7 @@ class TracerouteViewModel(
                     for (ttl in 1..30) {
                         if (!isActive) break
 
-                        val hopResult = withContext(Dispatchers.IO) { probeHop(host, ttl) }
+                        val hopResult = withContext(ioDispatcher) { probeHop(host, ttl) }
                         appendLine(hopResult.displayLine)
 
                         if (hopResult.isReachable) reachableHops++
@@ -159,17 +161,20 @@ class TracerouteViewModel(
 
     // ── Hop probing ───────────────────────────────────────────────────────────
 
-    private data class HopResult(
+    internal data class HopResult(
         val displayLine: String,
         val isReachable: Boolean,
         val isDestination: Boolean,
     )
+
+    internal var probeHopOverride: ((host: String, ttl: Int) -> HopResult)? = null
 
     /**
      * Probes a single hop at [ttl] by running `ping -c 1 -t <ttl> -W 2 <host>`.
      * Blocks the calling IO thread until the ping finishes (≤ 2 s per hop).
      */
     private fun probeHop(host: String, ttl: Int): HopResult {
+        probeHopOverride?.let { return it(host, ttl) }
         val paddedTtl = ttl.toString().padStart(2)
         return try {
             val t0 = System.currentTimeMillis()

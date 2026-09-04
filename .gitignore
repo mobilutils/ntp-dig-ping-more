@@ -98,3 +98,4 @@ notes/
 .codegraphy/*
 .github/ISSUE_TEMPLATE
 tmp/
+test-results/
