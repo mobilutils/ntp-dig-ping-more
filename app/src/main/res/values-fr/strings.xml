@@ -264,6 +264,8 @@
     <string name="bulk_title">Actions Groupées</string>
     <string name="bulk_btn_load_config">Charger config JSON</string>
     <string name="bulk_label_csv_output">Sortie CSV</string>
+    <string name="bulk_label_load_mdm">Charger les actions groupées envoyées par MDM</string>
+    <string name="bulk_help_load_mdm">Affiche les actions groupées ajoutées à la configuration MDM, le cas échéant. Si vous ne voyez aucune payload d\'actions groupées, l\'administrateur MDM n\'en a pas configuré ou l\'a mal configurée</string>
     <string name="bulk_config_loaded_title">Config chargée</string>
     <string name="bulk_config_commands_count">%1$d commande(s)</string>
     <string name="bulk_config_output_file_valid">fichier de sortie : %1$s</string>

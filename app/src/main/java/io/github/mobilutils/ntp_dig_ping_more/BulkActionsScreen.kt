@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ButtonDefaults
@@ -221,6 +223,7 @@ fun BulkActionsScreen(
     }
 
     var resultsExpanded by remember { mutableStateOf(false) }
+    var showMdmHelpDialog by remember { mutableStateOf(false) }
 
     // Reset expanded state if results become empty
     LaunchedEffect(uiState.results.isEmpty()) {
@@ -289,11 +292,56 @@ fun BulkActionsScreen(
                 Text(stringResource(R.string.bulk_btn_load_config), fontWeight = FontWeight.Medium)
             }
 
+            // ── Load MDM Bulk Actions Checkbox with Help mark (i) ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(enabled = !uiState.isExecuting) {
+                            viewModel.setLoadMdmChecked(!uiState.loadMdmChecked)
+                        },
+                ) {
+                    Checkbox(
+                        checked = uiState.loadMdmChecked,
+                        onCheckedChange = { checked ->
+                            viewModel.setLoadMdmChecked(checked)
+                        },
+                        enabled = !uiState.isExecuting,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    )
+                    Text(
+                        text = stringResource(R.string.bulk_label_load_mdm),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                IconButton(
+                    onClick = { showMdmHelpDialog = true },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Info,
+                        contentDescription = stringResource(R.string.bulk_help_load_mdm),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+
             // ── CSV Output Checkbox ──
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -325,7 +373,7 @@ fun BulkActionsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Config loaded",
+                            text = if (uiState.configFileName != null) "Config loaded (${uiState.configFileName})" else "Config loaded",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -614,6 +662,39 @@ fun BulkActionsScreen(
                 }
             }
         }
+    }
+
+    // ── MDM Help Dialog ──
+    if (showMdmHelpDialog) {
+        AlertDialog(
+            onDismissRequest = { showMdmHelpDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+            },
+            title = {
+                Text(
+                    text = stringResource(R.string.bulk_label_load_mdm),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.bulk_help_load_mdm),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showMdmHelpDialog = false }) {
+                    Text(stringResource(R.string.common_btn_close))
+                }
+            },
+        )
     }
 }
 

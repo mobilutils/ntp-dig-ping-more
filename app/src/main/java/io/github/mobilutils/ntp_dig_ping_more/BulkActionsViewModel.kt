@@ -52,6 +52,7 @@ data class BulkUiState(
     val validatedOutputFile: String? = null,
     val validationMessage: BulkActionsViewModel.ValidationMessage? = null,
     val outputFilePath: String? = null,
+    val loadMdmChecked: Boolean = false,
 )
 
 // ────────────────────────────────────────────────────────────────────
@@ -66,6 +67,8 @@ class BulkActionsViewModel(
 
     internal val _uiState = MutableStateFlow(BulkUiState())
     val uiState: StateFlow<BulkUiState> = _uiState.asStateFlow()
+
+    internal var loadedBulkConfig: BulkConfig? = null
 
     private var executionJob: Job? = null
     private val cancellationToken = AtomicBoolean(false)
@@ -84,29 +87,100 @@ class BulkActionsViewModel(
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), false)
 
     init {
-        // MDM zero-touch: load and optionally auto-run Bulk Actions config from managed restrictions.
+        // Observe MDM configuration changes and handle auto-run / live updates
         managedConfigRepository?.let { repo ->
             viewModelScope.launch {
-                val config = repo.configFlow.first()
-                val json: String? = when {
-                    config.bulkActionsJson != null -> config.bulkActionsJson
-                    config.bulkActionsUrl != null  -> withContext(Dispatchers.IO) {
-                        runCatching { URL(config.bulkActionsUrl).readText() }.getOrNull()
-                    }
-                    else -> null
-                }
-                if (json != null) {
-                    try {
-                        val bulkConfig = BulkConfigParser.parse(json)
-                        loadConfig(bulkConfig, sourceName = "MDM")
-                        if (config.bulkActionsAutoRun) {
+                repo.configFlow.collect { config ->
+                    if (config.bulkActionsAutoRun && !config.bulkActionsJson.isNullOrBlank()) {
+                        setLoadMdmChecked(true)
+                        if (_uiState.value.configLoaded) {
                             onRunClicked()
                         }
-                    } catch (_: Exception) {
-                        // Silently ignore malformed MDM-provided JSON to avoid crashing on startup.
+                    } else if (_uiState.value.loadMdmChecked) {
+                        loadMdmConfig(config.bulkActionsJson)
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Toggles the "load bulk actions sent by MDM" checkbox.
+     * When checked, attempts to load the MDM-pushed bulk actions JSON configuration.
+     * When unchecked, unloads the MDM configuration if currently loaded.
+     */
+    fun setLoadMdmChecked(checked: Boolean) {
+        _uiState.value = _uiState.value.copy(loadMdmChecked = checked)
+        if (checked) {
+            loadMdmConfig()
+        } else {
+            if (_uiState.value.configFileName == MDM_SOURCE_NAME || _uiState.value.configFileName == "MDM") {
+                loadedBulkConfig = null
+                _uiState.value = _uiState.value.copy(
+                    configLoaded = false,
+                    configFileName = null,
+                    configUri = null,
+                    commandCount = 0,
+                    configTimeoutMs = null,
+                    validatedOutputFile = null,
+                    outputFilePath = null,
+                    validationMessage = null,
+                )
+            }
+        }
+    }
+
+    /**
+     * Loads the bulk actions JSON configuration from MDM (RestrictionsManager).
+     * If empty or not configured, leaves the config unloaded.
+     * If malformed, sets an error validation message.
+     */
+    internal fun loadMdmConfig(rawJson: String? = null) {
+        val mdmJson = rawJson ?: managedConfigRepository?.configFlow?.value?.bulkActionsJson
+        if (mdmJson.isNullOrBlank()) {
+            if (_uiState.value.configFileName == MDM_SOURCE_NAME || _uiState.value.configFileName == "MDM") {
+                loadedBulkConfig = null
+                _uiState.value = _uiState.value.copy(
+                    configLoaded = false,
+                    configFileName = null,
+                    configUri = null,
+                    commandCount = 0,
+                    configTimeoutMs = null,
+                    validatedOutputFile = null,
+                    outputFilePath = null,
+                    validationMessage = null,
+                )
+            }
+            return
+        }
+
+        try {
+            val config = BulkConfigParser.parse(mdmJson)
+            if (config.commands.isEmpty()) {
+                loadedBulkConfig = null
+                _uiState.value = _uiState.value.copy(
+                    configLoaded = false,
+                    configFileName = null,
+                    commandCount = 0,
+                    configTimeoutMs = null,
+                    validatedOutputFile = null,
+                    outputFilePath = null,
+                    validationMessage = null,
+                )
+                return
+            }
+            loadConfig(config, sourceName = MDM_SOURCE_NAME)
+        } catch (e: Exception) {
+            loadedBulkConfig = null
+            _uiState.value = _uiState.value.copy(
+                configLoaded = false,
+                configFileName = null,
+                commandCount = 0,
+                configTimeoutMs = null,
+                validatedOutputFile = null,
+                outputFilePath = null,
+                validationMessage = ValidationMessage.Error("Failed to parse MDM config: ${e.message}"),
+            )
         }
     }
 
@@ -115,9 +189,10 @@ class BulkActionsViewModel(
      * Used by [onFileSelected], [onLoadAndRun], and the MDM init block to avoid
      * duplicating the UI state update logic.
      */
-    private suspend fun loadConfig(
+    private fun loadConfig(
         config: BulkConfig,
         sourceName: String? = null,
+        configUri: String? = null,
     ) {
         val csvFromStore = csvOutputEnabled.value
         val outputFilePath = config.outputFile
@@ -138,10 +213,12 @@ class BulkActionsViewModel(
             resolvedPath to msg
         } ?: (null to null)
 
+        loadedBulkConfig = config
+
         _uiState.value = _uiState.value.copy(
             configLoaded        = true,
             configFileName      = sourceName,
-            configUri           = null,
+            configUri           = configUri,
             commandCount        = config.commands.size,
             configTimeoutMs     = config.timeoutMs,
             csvOutputEnabled    = config.outputAsCsv || csvFromStore,
@@ -159,22 +236,25 @@ class BulkActionsViewModel(
      * Parses the file and loads the config into UI state.
      */
     fun onFileSelected(uri: Uri, fileName: String) {
+        _uiState.value = _uiState.value.copy(loadMdmChecked = false)
         viewModelScope.launch {
             var json: String? = null
             var readError: String? = null
             withContext(Dispatchers.IO) {
                 try {
-                    json = context.contentResolver.openInputStream(uri)?.readBytes()?.decodeToString()
+                    json = context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
                 } catch (e: java.io.IOException) {
                     readError = e.message ?: "Permission denied or file not found"
                     json = ""
                 }
             }
             if (json.isNullOrBlank()) {
+                loadedBulkConfig = null
                 _uiState.value = _uiState.value.copy(
                     configLoaded = false,
                     configFileName = null,
                     commandCount = 0,
+                    loadMdmChecked = false,
                     validationMessage = ValidationMessage.Error(
                         readError ?: "Failed to read config file: $fileName"
                     )
@@ -184,47 +264,14 @@ class BulkActionsViewModel(
 
             try {
                 val config = BulkConfigParser.parse(json)
-                // Load DataStore CSV setting (JSON field overrides)
-                val csvFromStore = csvOutputEnabled.value
-
-                // Auto-validate output-file if present
-                val outputFilePath = config.outputFile
-                val (validatedOutputFile, validationMsg) = config.outputFile?.let { rawPath ->
-                    val validation = BulkConfigParser.validateOutputFile(rawPath)
-                    val msg = when (validation) {
-                        is BulkConfigParser.OutputFileValidationResult.Valid ->
-                            ValidationMessage.Success("output-file: ${validation.path} is writable")
-                        is BulkConfigParser.OutputFileValidationResult.Invalid ->
-                            ValidationMessage.Info(
-                                "'$rawPath' is not writable. Use: ${validation.suggestedPath}"
-                            )
-                    }
-                    val resolvedPath = when (validation) {
-                        is BulkConfigParser.OutputFileValidationResult.Valid -> validation.path
-                        is BulkConfigParser.OutputFileValidationResult.Invalid -> validation.suggestedPath
-                    }
-                    resolvedPath to msg
-                } ?: (null to null)
-
-                _uiState.value = _uiState.value.copy(
-                    configLoaded = true,
-                    configFileName = fileName,
-                    configUri = uri.toString(),
-                    commandCount = config.commands.size,
-                    configTimeoutMs = config.timeoutMs,
-                    csvOutputEnabled = config.outputAsCsv || csvFromStore,
-                    validatedOutputFile = validatedOutputFile,
-                    outputFilePath = outputFilePath,
-                    validationMessage = validationMsg,
-                    results = emptyList(),
-                    progress = 0f,
-                    outputFileWritten = null,
-                )
+                loadConfig(config, sourceName = fileName, configUri = uri.toString())
             } catch (e: IllegalArgumentException) {
+                loadedBulkConfig = null
                 _uiState.value = _uiState.value.copy(
                     configLoaded = false,
                     configFileName = null,
                     commandCount = 0,
+                    loadMdmChecked = false,
                     validationMessage = ValidationMessage.Error("Failed to parse config: ${e.message}"),
                 )
             }
@@ -250,10 +297,12 @@ class BulkActionsViewModel(
                 }
             }
             if (json.isNullOrBlank()) {
+                loadedBulkConfig = null
                 _uiState.value = _uiState.value.copy(
                     configLoaded = false,
                     configFileName = null,
                     commandCount = 0,
+                    loadMdmChecked = false,
                     validationMessage = ValidationMessage.Error(
                         readError ?: "Config file is empty or unreadable: $fileName"
                     )
@@ -264,50 +313,25 @@ class BulkActionsViewModel(
             val config = try {
                 BulkConfigParser.parse(json)
             } catch (e: IllegalArgumentException) {
+                loadedBulkConfig = null
                 _uiState.value = _uiState.value.copy(
                     configLoaded = false,
                     configFileName = null,
                     commandCount = 0,
+                    loadMdmChecked = false,
                     validationMessage = ValidationMessage.Error("Failed to parse config: ${e.message}"),
                 )
                 return@launch
             }
 
-            val csvFromStore = csvOutputEnabled.value
-            val outputFilePath = config.outputFile
-            val (validatedOutputFile, validationMsg) = config.outputFile?.let { rawPath ->
-                val validation = BulkConfigParser.validateOutputFile(rawPath)
-                val msg = when (validation) {
-                    is BulkConfigParser.OutputFileValidationResult.Valid ->
-                        ValidationMessage.Success("output-file: ${validation.path} is writable")
-                    is BulkConfigParser.OutputFileValidationResult.Invalid ->
-                        ValidationMessage.Info(
-                            "'$rawPath' is not writable. Use: ${validation.suggestedPath}"
-                        )
-                }
-                val resolvedPath = when (validation) {
-                    is BulkConfigParser.OutputFileValidationResult.Valid -> validation.path
-                    is BulkConfigParser.OutputFileValidationResult.Invalid -> validation.suggestedPath
-                }
-                resolvedPath to msg
-            } ?: (null to null)
-
+            loadedBulkConfig = config
+            loadConfig(config, sourceName = fileName)
             _uiState.value = _uiState.value.copy(
-                configLoaded = true,
-                configFileName = fileName,
                 configUri = uri.toString(),
-                commandCount = config.commands.size,
-                configTimeoutMs = config.timeoutMs,
-                csvOutputEnabled = config.outputAsCsv || csvFromStore,
-                validatedOutputFile = validatedOutputFile,
-                outputFilePath = outputFilePath,
-                validationMessage = validationMsg,
-                results = emptyList(),
-                progress = 0f,
-                outputFileWritten = null,
+                loadMdmChecked = false,
             )
 
-            // Now run the config (reuses the same execution logic as onRunClicked)
+            // Now run the config
             cancellationToken.set(false)
             createRunningFile()
             _uiState.value = _uiState.value.copy(
@@ -317,63 +341,7 @@ class BulkActionsViewModel(
                 currentCommand = null,
             )
 
-            val commands = config.commands.toList()
-            val total = commands.size
-            val defaultTimeoutMs = config.timeoutMs ?: 30_000L
-            val allResults = mutableListOf<BulkCommandResult>()
-
-            // Set up proxy resolver from config-level PAC URL (if any)
-            val pacSource = config.fileProxyPac ?: config.urlProxyPac
-            repository.setupProxyResolver(pacSource, forceLogging = config.logProxy == true)
-
-            try {
-                commands.forEachIndexed { index, (name, cmd) ->
-                    if (cancellationToken.get()) {
-                        allResults.add(BulkCommandError(name, cmd, "Cancelled"))
-                        return@forEachIndexed
-                    }
-
-                    _uiState.value = _uiState.value.copy(
-                        currentCommand = "$name: $cmd",
-                        progress = index.toFloat() / total,
-                    )
-
-                    val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
-
-                    val result = try {
-                        withTimeout(commandTimeoutMs) {
-                            repository.executeSingleCommand(name, cmd, commandTimeoutMs)
-                        }
-                    } catch (e: Exception) {
-                        null
-                    }
-
-                    val finalResult = result ?: BulkCommandTimeout(name, cmd)
-                    allResults.add(finalResult)
-                }
-
-                // Auto-save if output-file is defined
-                var autoSavedPath: String? = null
-                if (config.outputFile != null) {
-                    val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
-                    val saved = autoSaveResults(outputPath, allResults)
-                    if (saved) {
-                        autoSavedPath = outputPath
-                    }
-                }
-
-                _uiState.value = _uiState.value.copy(
-                    isExecuting = false,
-                    results = allResults,
-                    progress = 1f,
-                    currentCommand = null,
-                    autoSaved = autoSavedPath != null,
-                    autoSavedPath = autoSavedPath,
-                )
-            } finally {
-                repository.clearProxyResolver()
-                deleteRunningFile()
-            }
+            executeConfig(config)
         }
     }
 
@@ -392,75 +360,86 @@ class BulkActionsViewModel(
 
         executionJob = viewModelScope.launch {
             try {
-                val configUriStr = _uiState.value.configUri
-                if (configUriStr == null) {
-                    _uiState.value = _uiState.value.copy(isExecuting = false)
-                    return@launch
-                }
-
-                val config = withContext(Dispatchers.IO) {
-                    val json = context.contentResolver.openInputStream(android.net.Uri.parse(configUriStr))?.readBytes()?.decodeToString() ?: ""
-                    BulkConfigParser.parse(json)
-                }
-
-                val commands = config.commands.toList()
-                val total = commands.size
-                val defaultTimeoutMs = config.timeoutMs ?: 30_000L
-                val allResults = mutableListOf<BulkCommandResult>()
-
-                // Set up proxy resolver from config-level PAC URL (if any)
-                val pacSource = config.fileProxyPac ?: config.urlProxyPac
-            repository.setupProxyResolver(pacSource, forceLogging = config.logProxy == true)
-
-                commands.forEachIndexed { index, (name, cmd) ->
-                    if (cancellationToken.get()) {
-                        allResults.add(BulkCommandError(name, cmd, "Cancelled"))
-                        return@forEachIndexed
+                val config = loadedBulkConfig ?: run {
+                    val configUriStr = _uiState.value.configUri
+                    if (configUriStr == null) {
+                        _uiState.value = _uiState.value.copy(isExecuting = false)
+                        return@launch
                     }
-
-                    // Update progress
-                    _uiState.value = _uiState.value.copy(
-                        currentCommand = "$name: $cmd",
-                        progress = index.toFloat() / total,
-                    )
-
-                    // Per-command `-t N` overrides config-level timeout
-                    val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
-
-                    val result = try {
-                        withTimeout(commandTimeoutMs) {
-                            repository.executeSingleCommand(name, cmd, commandTimeoutMs)
-                        }
-                    } catch (e: Exception) {
-                        null
-                    }
-
-                    val finalResult = result ?: BulkCommandTimeout(name, cmd)
-                    allResults.add(finalResult)
-                }
-
-                // Auto-save if output-file is defined
-                var autoSavedPath: String? = null
-                if (config.outputFile != null) {
-                    val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
-                    val saved = autoSaveResults(outputPath, allResults)
-                    if (saved) {
-                        autoSavedPath = outputPath
+                    withContext(Dispatchers.IO) {
+                        val json = context.contentResolver.openInputStream(android.net.Uri.parse(configUriStr))?.readBytes()?.decodeToString() ?: ""
+                        BulkConfigParser.parse(json)
                     }
                 }
-
+                executeConfig(config)
+            } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isExecuting = false,
-                    results = allResults,
-                    progress = 1f,
-                    currentCommand = null,
-                    autoSaved = autoSavedPath != null,
-                    autoSavedPath = autoSavedPath,
+                    validationMessage = ValidationMessage.Error("Execution failed: ${e.message}"),
                 )
-            } finally {
-                repository.clearProxyResolver()
-                deleteRunningFile()
             }
+        }
+    }
+
+    private suspend fun executeConfig(config: BulkConfig) {
+        val commands = config.commands.toList()
+        val total = commands.size
+        val defaultTimeoutMs = config.timeoutMs ?: 30_000L
+        val allResults = mutableListOf<BulkCommandResult>()
+
+        // Set up proxy resolver from config-level PAC URL (if any)
+        val pacSource = config.fileProxyPac ?: config.urlProxyPac
+        repository.setupProxyResolver(pacSource, forceLogging = config.logProxy == true)
+
+        try {
+            commands.forEachIndexed { index, (name, cmd) ->
+                if (cancellationToken.get()) {
+                    allResults.add(BulkCommandError(name, cmd, "Cancelled"))
+                    return@forEachIndexed
+                }
+
+                // Update progress
+                _uiState.value = _uiState.value.copy(
+                    currentCommand = "$name: $cmd",
+                    progress = index.toFloat() / total,
+                )
+
+                // Per-command `-t N` overrides config-level timeout
+                val commandTimeoutMs = BulkConfigParser.extractCommandTimeout(cmd) ?: defaultTimeoutMs
+
+                val result = try {
+                    withTimeout(commandTimeoutMs) {
+                        repository.executeSingleCommand(name, cmd, commandTimeoutMs)
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+
+                val finalResult = result ?: BulkCommandTimeout(name, cmd)
+                allResults.add(finalResult)
+            }
+
+            // Auto-save if output-file is defined
+            var autoSavedPath: String? = null
+            if (config.outputFile != null) {
+                val outputPath = _uiState.value.validatedOutputFile ?: config.outputFile
+                val saved = autoSaveResults(outputPath, allResults)
+                if (saved) {
+                    autoSavedPath = outputPath
+                }
+            }
+
+            _uiState.value = _uiState.value.copy(
+                isExecuting = false,
+                results = allResults,
+                progress = 1f,
+                currentCommand = null,
+                autoSaved = autoSavedPath != null,
+                autoSavedPath = autoSavedPath,
+            )
+        } finally {
+            repository.clearProxyResolver()
+            deleteRunningFile()
         }
     }
 
@@ -836,6 +815,8 @@ class BulkActionsViewModel(
     // ── Factory ──────────────────────────────────────────────
 
     companion object {
+        const val MDM_SOURCE_NAME = "Bulk Actions JSON Config"
+
         fun factory(context: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
