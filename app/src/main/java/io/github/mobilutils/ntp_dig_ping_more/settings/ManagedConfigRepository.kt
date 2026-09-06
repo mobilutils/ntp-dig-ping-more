@@ -51,7 +51,29 @@ data class ManagedConfig(
     val bulkActionsUrl: String? = null,
     /** When true, auto-executes the loaded Bulk Actions config without user interaction. */
     val bulkActionsAutoRun: Boolean = false,
-)
+    /** Tracks whether [bulkActionsAutoRun] was explicitly provided in the restrictions bundle. */
+    val bulkActionsAutoRunSet: Boolean = false,
+) {
+    /**
+     * Returns true if any of the 14 MDM configuration fields has been set.
+     */
+    fun hasAnyConfig(): Boolean =
+        !ntpServer.isNullOrBlank() ||
+        !ntpPort.isNullOrBlank() ||
+        !digServer.isNullOrBlank() ||
+        !digFqdn.isNullOrBlank() ||
+        !pingHost.isNullOrBlank() ||
+        !portScannerHost.isNullOrBlank() ||
+        !httpsCertHost.isNullOrBlank() ||
+        !httpsCertPort.isNullOrBlank() ||
+        proxyEnabled != null ||
+        !proxyPacUrl.isNullOrBlank() ||
+        proxyLoggingEnabled != null ||
+        !bulkActionsJson.isNullOrBlank() ||
+        !bulkActionsUrl.isNullOrBlank() ||
+        bulkActionsAutoRunSet ||
+        bulkActionsAutoRun
+}
 
 /**
  * Repository that bridges Android's [RestrictionsManager] with the app's MVVM architecture.
@@ -82,7 +104,25 @@ class ManagedConfigRepository(private val context: Context) {
      * Useful for the Device Info screen "App is managed" indicator.
      */
     val isAppManaged: Boolean
-        get() = restrictionsManager.applicationRestrictions.size() > 0
+        get() = try {
+            restrictionsManager.applicationRestrictions.size() > 0
+        } catch (_: Exception) {
+            false
+        }
+
+    /**
+     * Returns true if MDM configuration has been received (via restrictions bundle or active config).
+     */
+    val hasMdmConfig: Boolean
+        get() = try {
+            val bundle = restrictionsManager.applicationRestrictions
+            bundle.size() > 0 || configFlow.value.hasAnyConfig()
+        } catch (_: Exception) {
+            configFlow.value.hasAnyConfig()
+        }
+
+    private val _isAppManagedFlow = MutableStateFlow(hasMdmConfig)
+    val isAppManagedFlow: StateFlow<Boolean> = _isAppManagedFlow.asStateFlow()
 
     // ── BroadcastReceiver for live restriction changes ────────────────
 
@@ -90,6 +130,7 @@ class ManagedConfigRepository(private val context: Context) {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED) {
                 _configFlow.value = readConfig()
+                _isAppManagedFlow.value = hasMdmConfig
             }
         }
     }
@@ -147,6 +188,7 @@ class ManagedConfigRepository(private val context: Context) {
             bulkActionsJson     = bundle.getString("bulk_actions_json")?.takeIfNotBlank(),
             bulkActionsUrl      = bundle.getString("bulk_actions_url")?.takeIfNotBlank(),
             bulkActionsAutoRun  = bundle.getBoolean("bulk_actions_auto_run", false),
+            bulkActionsAutoRunSet = bundle.containsKey("bulk_actions_auto_run"),
         )
     }
 
