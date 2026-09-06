@@ -264,6 +264,8 @@
     <string name="bulk_title">Bulk Actions</string>
     <string name="bulk_btn_load_config">Load JSON Config</string>
     <string name="bulk_label_csv_output">CSV output</string>
+    <string name="bulk_label_load_mdm">Load bulk actions sent by MDM</string>
+    <string name="bulk_help_load_mdm">This will show bulk actions added to mdm configuration, if any. If you don\'t see any bulk actions payload then MDM admin didn\'t configured any, or missconfigured</string>
     <string name="bulk_config_loaded_title">Config loaded</string>
     <string name="bulk_config_commands_count">%1$d command(s)</string>
     <string name="bulk_config_output_file_valid">output-file: %1$s</string>
