@@ -18,6 +18,7 @@ local.properties
 *.kotlin_module
 
 # ── APKs / AABs (build outputs) ───────────────────────────────────────────────
+app/release
 *.apk
 *.aab
 *.ap_

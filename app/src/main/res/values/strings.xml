@@ -21,6 +21,7 @@
     <string name="nav_bulk_actions">Bulk Actions</string>
     <string name="nav_settings">Settings</string>
     <string name="nav_more">More</string>
+    <string name="nav_show_mdm_configs">Config Loaded via MDM</string>
 
     <!-- ══════════════════════════════════════════════════════════════ -->
     <!-- Common / shared strings                                        -->
@@ -356,7 +357,34 @@
     <!-- ══════════════════════════════════════════════════════════════ -->
     <!-- More Tools screen                                              -->
     <!-- ══════════════════════════════════════════════════════════════ -->
-    <!-- (labels come from nav_* strings above — no extra strings needed) -->
+    <string name="more_tools_show_mdm_configs">Show MDMConfig(s)</string>
+    <string name="more_tools_mdm_not_configured">No MDM configuration received</string>
+    <string name="more_tools_mdm_configured">MDM configuration active</string>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- Show MDM Configurations screen ("Config Loaded via MDM")      -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <string name="mdm_configs_screen_title">Config Loaded via MDM</string>
+    <string name="mdm_section_ntp">NTP Client</string>
+    <string name="mdm_section_dig">DIG / DNS Lookup</string>
+    <string name="mdm_section_ping">Ping</string>
+    <string name="mdm_section_port_scanner">Port Scanner</string>
+    <string name="mdm_section_https_cert">HTTPS Certificate Inspector</string>
+    <string name="mdm_section_proxy">Settings — Proxy PAC</string>
+    <string name="mdm_section_bulk_actions">Bulk Actions (Zero-Touch Provisioning)</string>
+    <string name="mdm_status_configured">Configured</string>
+    <string name="mdm_status_not_set">(not set)</string>
+    <string name="mdm_stat_configured_count">%1$d of %2$d configured</string>
+    <string name="mdm_badge_active">MDM ACTIVE</string>
+    <string name="mdm_badge_unmanaged">UNMANAGED</string>
+    <string name="mdm_copy_all">Copy All</string>
+    <string name="mdm_copied_to_clipboard">Copied configuration to clipboard</string>
+    <string name="mdm_search_placeholder">Search restriction key or title…</string>
+    <string name="mdm_filter_all">All</string>
+    <string name="mdm_filter_configured">Configured</string>
+    <string name="mdm_filter_not_set">Not Set</string>
+    <string name="mdm_type_string">string</string>
+    <string name="mdm_type_bool">bool</string>
 
     <!-- ══════════════════════════════════════════════════════════════ -->
     <!-- Managed Configuration (App Restrictions) — MDM console titles  -->

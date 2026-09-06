@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Error
@@ -108,6 +109,7 @@ sealed class AppScreen(
     object HttpsCert      : AppScreen("https_cert",       R.string.nav_https_cert,       Icons.Filled.Lock)
     object DeviceInfo     : AppScreen("device_info",      R.string.nav_device_info,      Icons.Filled.Info)
     object BulkActions    : AppScreen("bulk_actions",     R.string.nav_bulk_actions,     Icons.Filled.Dns)
+    object ShowMdmConfigurations : AppScreen("show_mdm_configurations", R.string.nav_show_mdm_configs, Icons.Filled.AdminPanelSettings)
     object Settings       : AppScreen("settings",         R.string.nav_settings,         Icons.Filled.Settings)
     object MoreTools      : AppScreen("more_tools",       R.string.nav_more,             Icons.Filled.MoreHoriz)
 }
@@ -123,6 +125,7 @@ private val allAppScreens = listOf(
     AppScreen.HttpsCert,
     AppScreen.DeviceInfo,
     AppScreen.BulkActions,
+    AppScreen.ShowMdmConfigurations,
     AppScreen.Settings,
     AppScreen.MoreTools,
 )
@@ -235,6 +238,7 @@ fun AppRoot(
                         AppScreen.HttpsCert.route,
                         AppScreen.DeviceInfo.route,
                         AppScreen.BulkActions.route,
+                        AppScreen.ShowMdmConfigurations.route,
                         AppScreen.Settings.route,
                         AppScreen.MoreTools.route
                     )
@@ -314,6 +318,9 @@ fun AppRoot(
             }
             composable(AppScreen.BulkActions.route) {
                 BulkActionsScreen(configUri = configUri, autoRun = autoRun)
+            }
+            composable(AppScreen.ShowMdmConfigurations.route) {
+                ShowMDMConfigurationsScreen()
             }
         }
     }
