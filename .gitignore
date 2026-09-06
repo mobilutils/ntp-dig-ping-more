@@ -100,3 +100,4 @@ notes/
 .github/ISSUE_TEMPLATE
 tmp/
 test-results/
+app/release/
