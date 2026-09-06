@@ -143,6 +143,7 @@ private val bottomNavItems = listOf(
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         // Clean up stale .running-tasks marker from a previous crash
         try {
@@ -166,7 +167,6 @@ class MainActivity : ComponentActivity() {
             ).enabled = loggingEnabled
         }
 
-        enableEdgeToEdge()
         val configUri = intent?.data?.toString()
         val autoRun = intent?.getBooleanExtra("auto_run", false) ?: false
         setContent {
