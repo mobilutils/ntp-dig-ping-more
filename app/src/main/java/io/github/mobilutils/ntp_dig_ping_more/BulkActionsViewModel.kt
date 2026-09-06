@@ -53,6 +53,7 @@ data class BulkUiState(
     val validationMessage: BulkActionsViewModel.ValidationMessage? = null,
     val outputFilePath: String? = null,
     val loadMdmChecked: Boolean = false,
+    val hasMdmBulkActions: Boolean = false,
 )
 
 // ────────────────────────────────────────────────────────────────────
@@ -65,7 +66,11 @@ class BulkActionsViewModel(
     private val managedConfigRepository: ManagedConfigRepository? = null,
 ) : ViewModel() {
 
-    internal val _uiState = MutableStateFlow(BulkUiState())
+    internal val _uiState = MutableStateFlow(
+        BulkUiState(
+            hasMdmBulkActions = !managedConfigRepository?.configFlow?.value?.bulkActionsJson.isNullOrBlank(),
+        )
+    )
     val uiState: StateFlow<BulkUiState> = _uiState.asStateFlow()
 
     internal var loadedBulkConfig: BulkConfig? = null
@@ -91,7 +96,9 @@ class BulkActionsViewModel(
         managedConfigRepository?.let { repo ->
             viewModelScope.launch {
                 repo.configFlow.collect { config ->
-                    if (config.bulkActionsAutoRun && !config.bulkActionsJson.isNullOrBlank()) {
+                    val hasMdm = !config.bulkActionsJson.isNullOrBlank()
+                    _uiState.value = _uiState.value.copy(hasMdmBulkActions = hasMdm)
+                    if (config.bulkActionsAutoRun && hasMdm) {
                         setLoadMdmChecked(true)
                         if (_uiState.value.configLoaded) {
                             onRunClicked()
@@ -106,12 +113,13 @@ class BulkActionsViewModel(
 
     /**
      * Toggles the "load bulk actions sent by MDM" checkbox.
-     * When checked, attempts to load the MDM-pushed bulk actions JSON configuration.
+     * When checked, clears previous run results and attempts to load the MDM-pushed bulk actions JSON configuration.
      * When unchecked, unloads the MDM configuration if currently loaded.
      */
     fun setLoadMdmChecked(checked: Boolean) {
         _uiState.value = _uiState.value.copy(loadMdmChecked = checked)
         if (checked) {
+            onClearResults()
             loadMdmConfig()
         } else {
             if (_uiState.value.configFileName == MDM_SOURCE_NAME || _uiState.value.configFileName == "MDM") {
@@ -810,6 +818,7 @@ class BulkActionsViewModel(
         super.onCleared()
         cancellationToken.set(true)
         executionJob?.cancel()
+        managedConfigRepository?.unregister()
     }
 
     // ── Factory ──────────────────────────────────────────────

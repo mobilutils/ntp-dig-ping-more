@@ -68,6 +68,7 @@ class BulkActionsViewModelTest {
         assertNull(state.outputFileWritten)
         assertNull(state.configTimeoutMs)
         assertFalse(state.loadMdmChecked)
+        assertFalse(state.hasMdmBulkActions)
     }
 
     @Test
@@ -346,5 +347,136 @@ class BulkActionsViewModelTest {
         assertTrue(state.configLoaded)
         assertEquals(1, state.results.size)
         assertEquals("cmd_auto", state.results[0].commandName)
+    }
+
+    @Test
+    fun `setLoadMdmChecked_true_clearsPreviousRunResults`() = runTest {
+        val validJson = """{"run":{"cmd1":"ping -c 2 google.com"}}"""
+        every { BulkConfigParser.parse(validJson) } returns BulkConfig(
+            outputFile = null,
+            commands = mapOf("cmd1" to "ping -c 2 google.com"),
+        )
+
+        val mockRepo = mockk<ManagedConfigRepository>(relaxed = true)
+        every { mockRepo.configFlow } returns MutableStateFlow(ManagedConfig(bulkActionsJson = validJson))
+        val vm = BulkActionsViewModel(
+            context = mockk(relaxed = true),
+            repository = mockk(relaxed = true),
+            managedConfigRepository = mockRepo,
+        )
+
+        // Seed previous results and progress into UI state
+        vm._uiState.value = vm._uiState.value.copy(
+            results = listOf(BulkCommandSuccess("prev_cmd", "ping 1.1.1.1", listOf("ok"), 10L)),
+            progress = 1.0f,
+            currentCommand = "prev_cmd",
+            autoSaved = true,
+            autoSavedPath = "/path/to/prev.txt",
+        )
+        assertEquals(1, vm.uiState.value.results.size)
+
+        // Checking loadMdm must clear previous results as if Clear was clicked
+        vm.setLoadMdmChecked(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertTrue(state.loadMdmChecked)
+        assertTrue(state.results.isEmpty())
+        assertEquals(0f, state.progress)
+        assertNull(state.currentCommand)
+        assertFalse(state.autoSaved)
+        assertNull(state.autoSavedPath)
+    }
+
+    @Test
+    fun `setLoadMdmChecked_true_whenMdmMalformed_stillClearsPreviousRunResults`() = runTest {
+        val malformedJson = "{ invalid"
+        every { BulkConfigParser.parse(malformedJson) } throws IllegalArgumentException("Malformed JSON")
+
+        val mockRepo = mockk<ManagedConfigRepository>(relaxed = true)
+        every { mockRepo.configFlow } returns MutableStateFlow(ManagedConfig(bulkActionsJson = malformedJson))
+        val vm = BulkActionsViewModel(
+            context = mockk(relaxed = true),
+            repository = mockk(relaxed = true),
+            managedConfigRepository = mockRepo,
+        )
+
+        vm._uiState.value = vm._uiState.value.copy(
+            results = listOf(BulkCommandSuccess("old_cmd", "ping 1.1.1.1", listOf("ok"), 10L)),
+            progress = 1.0f,
+        )
+        assertEquals(1, vm.uiState.value.results.size)
+
+        vm.setLoadMdmChecked(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertTrue(state.loadMdmChecked)
+        assertTrue(state.results.isEmpty())
+        assertEquals(0f, state.progress)
+        assertTrue(state.validationMessage is BulkActionsViewModel.ValidationMessage.Error)
+    }
+
+    @Test
+    fun `hasMdmBulkActions_whenNoRepo_isFalse`() = runTest {
+        val vm = BulkActionsViewModel(
+            context = mockk(relaxed = true),
+            repository = mockk(relaxed = true),
+            managedConfigRepository = null,
+        )
+        assertFalse(vm.uiState.value.hasMdmBulkActions)
+    }
+
+    @Test
+    fun `hasMdmBulkActions_whenBulkActionsJsonNullOrBlank_isFalse`() = runTest {
+        val mockRepoNull = mockk<ManagedConfigRepository>(relaxed = true)
+        every { mockRepoNull.configFlow } returns MutableStateFlow(ManagedConfig(bulkActionsJson = null))
+        val vmNull = BulkActionsViewModel(
+            context = mockk(relaxed = true),
+            repository = mockk(relaxed = true),
+            managedConfigRepository = mockRepoNull,
+        )
+        assertFalse(vmNull.uiState.value.hasMdmBulkActions)
+
+        val mockRepoBlank = mockk<ManagedConfigRepository>(relaxed = true)
+        every { mockRepoBlank.configFlow } returns MutableStateFlow(ManagedConfig(bulkActionsJson = "   "))
+        val vmBlank = BulkActionsViewModel(
+            context = mockk(relaxed = true),
+            repository = mockk(relaxed = true),
+            managedConfigRepository = mockRepoBlank,
+        )
+        assertFalse(vmBlank.uiState.value.hasMdmBulkActions)
+    }
+
+    @Test
+    fun `hasMdmBulkActions_whenBulkActionsJsonPresent_isTrue`() = runTest {
+        val mockRepo = mockk<ManagedConfigRepository>(relaxed = true)
+        every { mockRepo.configFlow } returns MutableStateFlow(ManagedConfig(bulkActionsJson = """{"run":{"cmd":"ping"}}"""))
+        val vm = BulkActionsViewModel(
+            context = mockk(relaxed = true),
+            repository = mockk(relaxed = true),
+            managedConfigRepository = mockRepo,
+        )
+        assertTrue(vm.uiState.value.hasMdmBulkActions)
+    }
+
+    @Test
+    fun `hasMdmBulkActions_liveUpdate_updatesState`() = runTest {
+        val flow = MutableStateFlow(ManagedConfig(bulkActionsJson = """{"run":{"cmd":"ping"}}"""))
+        val mockRepo = mockk<ManagedConfigRepository>(relaxed = true)
+        every { mockRepo.configFlow } returns flow
+        val vm = BulkActionsViewModel(
+            context = mockk(relaxed = true),
+            repository = mockk(relaxed = true),
+            managedConfigRepository = mockRepo,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value.hasMdmBulkActions)
+
+        // Clear MDM config dynamically
+        flow.value = ManagedConfig(bulkActionsJson = null)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.hasMdmBulkActions)
     }
 }

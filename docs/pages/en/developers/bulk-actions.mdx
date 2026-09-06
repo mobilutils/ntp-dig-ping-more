@@ -771,12 +771,14 @@ data class BulkUiState(
     val autoSaved: Boolean = false,
     val autoSavedPath: String? = null,
     val validatedOutputFile: String? = null,
-    val validationMessage: ValidationMessage? = null,
+    val validationMessage: BulkActionsViewModel.ValidationMessage? = null,
     val outputFilePath: String? = null,
+    val loadMdmChecked: Boolean = false,
+    val hasMdmBulkActions: Boolean = false,
 )
 ```
 
-17 fields — the most complex UI state in the app. Covers config loading, execution state, progress tracking, results, file I/O, and validation messages.
+19 fields — the most complex UI state in the app. Covers config loading, execution state, progress tracking, results, file I/O, validation messages, and MDM bulk actions integration.
 
 ### Three code paths for loading/running
 

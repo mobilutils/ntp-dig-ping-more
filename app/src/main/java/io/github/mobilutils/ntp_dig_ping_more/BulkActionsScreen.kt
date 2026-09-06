@@ -293,6 +293,7 @@ fun BulkActionsScreen(
             }
 
             // ── Load MDM Bulk Actions Checkbox with Help mark (i) ──
+            val isMdmCheckboxEnabled = !uiState.isExecuting && uiState.hasMdmBulkActions
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -305,7 +306,7 @@ fun BulkActionsScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier
                         .weight(1f)
-                        .clickable(enabled = !uiState.isExecuting) {
+                        .clickable(enabled = isMdmCheckboxEnabled) {
                             viewModel.setLoadMdmChecked(!uiState.loadMdmChecked)
                         },
                 ) {
@@ -314,7 +315,7 @@ fun BulkActionsScreen(
                         onCheckedChange = { checked ->
                             viewModel.setLoadMdmChecked(checked)
                         },
-                        enabled = !uiState.isExecuting,
+                        enabled = isMdmCheckboxEnabled,
                         colors = CheckboxDefaults.colors(
                             checkedColor = MaterialTheme.colorScheme.primary,
                         ),
@@ -322,6 +323,11 @@ fun BulkActionsScreen(
                     Text(
                         text = stringResource(R.string.bulk_label_load_mdm),
                         style = MaterialTheme.typography.bodyMedium,
+                        color = if (isMdmCheckboxEnabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        },
                     )
                 }
                 IconButton(
