@@ -58,6 +58,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -916,7 +917,17 @@ private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null)
                         fontStyle = FontStyle.Italic,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
+                    modifier = Modifier.weight(1f, fill = false),
                 )
+                if (result.isProxyfied) {
+                    Spacer(Modifier.weight(1f))
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_proxy),
+                        contentDescription = stringResource(R.string.cd_proxy_used),
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
 
             // Output lines

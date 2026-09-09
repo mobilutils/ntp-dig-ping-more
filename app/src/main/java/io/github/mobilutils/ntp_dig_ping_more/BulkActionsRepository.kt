@@ -60,6 +60,7 @@ data class BulkConfig(
 sealed class BulkCommandResult {
     abstract val commandName: String
     abstract val command: String
+    abstract val isProxyfied: Boolean
 }
 
 data class BulkCommandSuccess(
@@ -67,17 +68,20 @@ data class BulkCommandSuccess(
     override val command: String,
     val outputLines: List<String>,
     val durationMs: Long,
+    override val isProxyfied: Boolean = false,
 ) : BulkCommandResult()
 
 data class BulkCommandError(
     override val commandName: String,
     override val command: String,
     val errorMessage: String,
+    override val isProxyfied: Boolean = false,
 ) : BulkCommandResult()
 
 data class BulkCommandTimeout(
     override val commandName: String,
     override val command: String,
+    override val isProxyfied: Boolean = false,
 ) : BulkCommandResult()
 
 data class BulkCommandClosed(
@@ -85,6 +89,7 @@ data class BulkCommandClosed(
     override val command: String,
     val outputLines: List<String>,
     val durationMs: Long,
+    override val isProxyfied: Boolean = false,
 ) : BulkCommandResult()
 
 
@@ -97,6 +102,7 @@ data class BulkCommandWarning(
     override val command: String,
     val outputLines: List<String>,
     val durationMs: Long,
+    override val isProxyfied: Boolean = false,
 ) : BulkCommandResult()
 
 /** Progress callback emitted during bulk execution. */
@@ -706,13 +712,14 @@ class BulkActionsRepository(
                         add("  Open ports: ${openPorts.joinToString(", ")}")
                      }
                  }
+                val isProxyfied = bulkProxyResolver != null
                 if (openPorts.isEmpty()) {
-                    BulkCommandClosed(name, cmd, lines, duration)
+                    BulkCommandClosed(name, cmd, lines, duration, isProxyfied = isProxyfied)
                  } else {
-                    BulkCommandSuccess(name, cmd, lines, duration)
+                    BulkCommandSuccess(name, cmd, lines, duration, isProxyfied = isProxyfied)
                  }
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN, isProxyfied = bulkProxyResolver != null)
             }
         }
     }
@@ -789,13 +796,14 @@ class BulkActionsRepository(
                         lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: PROXY ERROR - ${result.reason} (${duration}ms)")
                     }
 
+                val isProxyfied = bulkProxyResolver != null
                 when {
-                    warningResult != null -> warningResult
-                    result is HttpsCertResult.Success -> BulkCommandSuccess(name, cmd, lines, duration)
-                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: ERROR_UNKNOWN)
+                    warningResult != null -> warningResult.copy(isProxyfied = isProxyfied)
+                    result is HttpsCertResult.Success -> BulkCommandSuccess(name, cmd, lines, duration, isProxyfied = isProxyfied)
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: ERROR_UNKNOWN, isProxyfied = isProxyfied)
                  }
              } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN, isProxyfied = bulkProxyResolver != null)
             }
         }
     }
@@ -965,12 +973,13 @@ class BulkActionsRepository(
                     }
                 }
 
+                val isProxyfied = bulkProxyResolver != null
                 when (result) {
-                    is GoogleTimeSyncResult.Success -> BulkCommandSuccess(name, cmd, lines, dur)
-                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: ERROR_UNKNOWN)
+                    is GoogleTimeSyncResult.Success -> BulkCommandSuccess(name, cmd, lines, dur, isProxyfied = isProxyfied)
+                    else -> BulkCommandError(name, cmd, lines.lastOrNull() ?: ERROR_UNKNOWN, isProxyfied = isProxyfied)
                  }
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN, isProxyfied = bulkProxyResolver != null)
             }
         }
     }

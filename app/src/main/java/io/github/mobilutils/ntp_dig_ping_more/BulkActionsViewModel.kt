@@ -472,7 +472,7 @@ class BulkActionsViewModel(
     }
 
     /** Generates the full output file content including a summary table at the end. */
-    private fun generateOutputContent(results: List<BulkCommandResult>): String {
+    internal fun generateOutputContent(results: List<BulkCommandResult>): String {
         val total = results.size
         val successCount = results.count { it is BulkCommandSuccess }
         val errorCount = results.count { it is BulkCommandError }
@@ -497,28 +497,25 @@ class BulkActionsViewModel(
         lines.add("── COMMAND RESULTS ──────────────────────────────────")
         lines.add("")
         results.forEachIndexed { index, result ->
+            val proxySuffix = if (result.isProxyfied) " ( PROXYFIED )" else ""
+            lines.add("[${index + 1}] ${result.commandName}: ${result.command}$proxySuffix")
             when (result) {
                 is BulkCommandSuccess -> {
-                    lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
                     lines.add("    Status: SUCCESS (${result.durationMs}ms)")
                     result.outputLines.forEach { line -> lines.add("     $line") }
                 }
                 is BulkCommandError -> {
-                    lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
                     lines.add("    Status: ERROR")
                     lines.add("     ${result.errorMessage}")
                 }
                 is BulkCommandTimeout -> {
-                    lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
                     lines.add("    Status: TIMEOUT")
                 }
                 is BulkCommandClosed -> {
-                    lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
                     lines.add("    Status: CLOSED (${result.durationMs}ms)")
                     result.outputLines.forEach { line -> lines.add("        $line") }
                 }
                 is BulkCommandWarning -> {
-                    lines.add("[${index + 1}] ${result.commandName}: ${result.command}")
                     lines.add("    Status: WARNING (${result.durationMs}ms)")
                     result.outputLines.forEach { line -> lines.add("         $line") }
                 }

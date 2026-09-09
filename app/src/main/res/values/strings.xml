@@ -447,5 +447,7 @@
     <string name="google_time_sync_result_offset_format">%1$s%2$d ms</string>
     <string name="google_time_sync_copy_offset_format">Copy Offset (%1$s%2$d ms)</string>
     <string name="traceroute_cd_error">Error</string>
+    <string name="cd_proxy_active">Proxy routing active</string>
+    <string name="cd_proxy_used">Executed via proxy</string>
 
 </resources>

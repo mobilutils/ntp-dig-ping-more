@@ -67,6 +67,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -207,6 +209,12 @@ fun AppRoot(
         currentDest?.hierarchy?.any { it.route == screen.route } == true
     } ?: AppScreen.NtpCheck
 
+    val context = LocalContext.current
+    val settingsRepository = remember { SettingsRepository(context) }
+    val proxyConfig by settingsRepository.proxyConfigFlow.collectAsState(
+        initial = io.github.mobilutils.ntp_dig_ping_more.settings.ProxyConfig()
+    )
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -219,6 +227,23 @@ fun AppRoot(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(currentScreen.labelResId), fontWeight = FontWeight.SemiBold)
+                    }
+                },
+                actions = {
+                    if (proxyConfig.enabled && currentScreen in listOf(
+                            AppScreen.PortScanner,
+                            AppScreen.GoogleTimeSync,
+                            AppScreen.HttpsCert,
+                        )
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_proxy),
+                            contentDescription = stringResource(R.string.cd_proxy_active),
+                            modifier = Modifier
+                                .padding(end = 12.dp)
+                                .size(24.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

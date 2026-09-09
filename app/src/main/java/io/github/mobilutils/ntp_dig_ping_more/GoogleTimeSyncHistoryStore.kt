@@ -28,6 +28,7 @@ data class GoogleTimeSyncHistoryEntry(
     val offsetMs: Long,
     val rttMs: Long,
     val success: Boolean,
+    val isProxyfied: Boolean = false,
 )
 
 /**
@@ -35,7 +36,7 @@ data class GoogleTimeSyncHistoryEntry(
  * in Preferences DataStore.
  *
  * Serialisation format (single string preference):
- *   `timestamp|url|offsetMs|rttMs|success` — one entry per line (`\n` separated).
+ *   `timestamp|url|offsetMs|rttMs|success|isProxyfied` — one entry per line (`\n` separated).
  *
  * Fields are separated by `|`.  URLs never contain `|`, and the other
  * constituent types (Long, Boolean) also satisfy this invariant, so the
@@ -64,7 +65,8 @@ class GoogleTimeSyncHistoryStore(private val context: Context) {
                 "${entry.url}$FIELD_SEP" +
                 "${entry.offsetMs}$FIELD_SEP" +
                 "${entry.rttMs}$FIELD_SEP" +
-                "${entry.success}"
+                "${entry.success}$FIELD_SEP" +
+                "${entry.isProxyfied}"
             }
         }
     }
@@ -81,12 +83,14 @@ class GoogleTimeSyncHistoryStore(private val context: Context) {
                     val rttMs    = parts.getOrNull(3)?.toLongOrNull() ?: return@mapNotNull null
                     // parts[4] may be absent in entries saved before the success field was added
                     val success  = parts.getOrNull(4)?.toBooleanStrictOrNull() ?: false
+                    val isProxyfied = parts.getOrNull(5)?.toBooleanStrictOrNull() ?: false
                     GoogleTimeSyncHistoryEntry(
-                        timestamp = parts[0],
-                        url       = parts[1],
-                        offsetMs  = offsetMs,
-                        rttMs     = rttMs,
-                        success   = success,
+                        timestamp   = parts[0],
+                        url         = parts[1],
+                        offsetMs    = offsetMs,
+                        rttMs       = rttMs,
+                        success     = success,
+                        isProxyfied = isProxyfied,
                     )
                 } else null
             }

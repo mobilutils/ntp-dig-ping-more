@@ -54,6 +54,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 
@@ -214,13 +215,29 @@ fun PortScannerScreen() {
                         .fillMaxWidth()
                         .padding(14.dp)
                 ) {
-                    Text(
-                        text = stringResource(R.string.port_scanner_result_open_ports, uiState.discoveredPorts.size),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.port_scanner_result_open_ports, uiState.discoveredPorts.size),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        if (uiState.lastScanProxyfied) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_proxy),
+                                contentDescription = stringResource(R.string.cd_proxy_used),
+                                modifier = Modifier
+                                    .padding(bottom = 8.dp)
+                                    .size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -356,6 +373,15 @@ private fun PortScannerHistoryRow(entry: PortScannerHistoryEntry, onClick: () ->
                 color = MaterialTheme.colorScheme.primary,
               )
           }
+        if (entry.isProxyfied) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_proxy),
+                contentDescription = stringResource(R.string.cd_proxy_used),
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(6.dp))
+        }
         val badgeColor = if (entry.openPortsCount > 0)
             MaterialTheme.colorScheme.primary
         else

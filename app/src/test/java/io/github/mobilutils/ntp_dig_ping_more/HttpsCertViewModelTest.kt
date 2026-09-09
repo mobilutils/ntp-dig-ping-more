@@ -640,4 +640,30 @@ class HttpsCertViewModelTest {
         // Should complete without issues
         assertTrue(viewModel.uiState.value is HttpsCertUiState.Success)
     }
+
+    @Test
+    fun `fetchCert with proxy enabled sets isProxyfied in state and history`() = runTest {
+        val mockSettingsRepo = mockk<io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository>(relaxed = true)
+        coEvery { mockSettingsRepo.proxyConfigFlow } returns flowOf(io.github.mobilutils.ntp_dig_ping_more.settings.ProxyConfig(enabled = true))
+
+        val capturedEntries = mutableListOf<List<HttpsCertHistoryEntry>>()
+        coEvery { historyStore.save(capture(capturedEntries)) } coAnswers { }
+        coEvery { repository.fetchCertificate(any(), any()) } returns HttpsCertResult.Success(sampleCertificateInfo)
+
+        val vm = HttpsCertViewModel(
+            repository = repository,
+            historyStore = historyStore,
+            settingsRepository = mockSettingsRepo,
+        )
+
+        vm.fetchCert()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertTrue(state is HttpsCertUiState.Success)
+        assertTrue((state as HttpsCertUiState.Success).isProxyfied)
+
+        val saved = capturedEntries.firstOrNull()?.firstOrNull()
+        assertTrue(saved?.isProxyfied == true)
+    }
 }

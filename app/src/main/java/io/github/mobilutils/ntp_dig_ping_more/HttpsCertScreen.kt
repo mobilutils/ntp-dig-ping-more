@@ -75,6 +75,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
@@ -204,9 +205,9 @@ fun HttpsCertScreen(
                 exit    = fadeOut(tween(200)),
             ) {
                 when (val state = uiState) {
-                    is HttpsCertUiState.Success        -> CertResultContent(info = state.info, chain = listOf(state.info), warning = null, onRetry = { vm.fetchCert() })
-                    is HttpsCertUiState.PartialSuccess -> CertResultContent(info = state.chain.first(), chain = state.chain, warning = state.warningMessage.resolve(), onRetry = { vm.fetchCert() })
-                    is HttpsCertUiState.Error          -> CertErrorCard(message = state.message.resolve(), onRetry = { vm.fetchCert() })
+                    is HttpsCertUiState.Success        -> CertResultContent(info = state.info, chain = listOf(state.info), warning = null, isProxyfied = state.isProxyfied, onRetry = { vm.fetchCert() })
+                    is HttpsCertUiState.PartialSuccess -> CertResultContent(info = state.chain.first(), chain = state.chain, warning = state.warningMessage.resolve(), isProxyfied = state.isProxyfied, onRetry = { vm.fetchCert() })
+                    is HttpsCertUiState.Error          -> CertErrorCard(message = state.message.resolve(), isProxyfied = state.isProxyfied, onRetry = { vm.fetchCert() })
                     else                               -> {}
                 }
             }
@@ -240,6 +241,7 @@ private fun CertResultContent(
     info:    CertificateInfo,
     chain:   List<CertificateInfo>,
     warning: String?,
+    isProxyfied: Boolean = false,
     onRetry: () -> Unit,
 ) {
     val clipboardManager = LocalClipboardManager.current
@@ -274,7 +276,20 @@ private fun CertResultContent(
 
          // ── Leaf cert (index 0) ────────────────────────────────────────
          // ── Subject ───────────────────────────────────────────────────
-        CertSection(title = stringResource(R.string.https_cert_section_subject), icon = Icons.Filled.Badge) {
+        CertSection(
+            title = stringResource(R.string.https_cert_section_subject),
+            icon = Icons.Filled.Badge,
+            trailing = if (isProxyfied) {
+                {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_proxy),
+                        contentDescription = stringResource(R.string.cd_proxy_used),
+                        modifier = Modifier.size(22.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            } else null,
+        ) {
             DnRows(info.subject)
          }
 
@@ -630,6 +645,7 @@ private fun WarningBanner(message: String) {
 private fun CertSection(
     title:   String,
     icon:    ImageVector,
+    trailing: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Card(
@@ -641,6 +657,7 @@ private fun CertSection(
         Column(modifier = Modifier.padding(16.dp)) {
             // Section header
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -666,6 +683,10 @@ private fun CertSection(
                     fontWeight = FontWeight.SemiBold,
                     color      = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (trailing != null) {
+                    Spacer(Modifier.weight(1f))
+                    trailing()
+                }
             }
 
             Spacer(Modifier.height(10.dp))
@@ -772,7 +793,11 @@ private fun CopyableRow(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun CertErrorCard(message: String, onRetry: () -> Unit) {
+private fun CertErrorCard(
+    message: String,
+    isProxyfied: Boolean = false,
+    onRetry: () -> Unit,
+) {
     Card(
         modifier  = Modifier.fillMaxWidth(),
         shape     = RoundedCornerShape(16.dp),
@@ -780,7 +805,10 @@ private fun CertErrorCard(message: String, onRetry: () -> Unit) {
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(
                     imageVector        = Icons.Filled.Error,
                     contentDescription = stringResource(R.string.https_cert_cd_error),
@@ -788,7 +816,7 @@ private fun CertErrorCard(message: String, onRetry: () -> Unit) {
                     modifier           = Modifier.size(32.dp),
                 )
                 Spacer(Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text       = stringResource(R.string.https_cert_error_title),
                         style      = MaterialTheme.typography.titleMedium,
@@ -799,6 +827,14 @@ private fun CertErrorCard(message: String, onRetry: () -> Unit) {
                         text  = message,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                    )
+                }
+                if (isProxyfied) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_proxy),
+                        contentDescription = stringResource(R.string.cd_proxy_used),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.error,
                     )
                 }
             }
@@ -903,6 +939,15 @@ private fun HttpsCertHistoryRow(
             }
         }
         Spacer(Modifier.width(8.dp))
+        if (entry.isProxyfied) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_proxy),
+                contentDescription = stringResource(R.string.cd_proxy_used),
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(6.dp))
+        }
         Text(
             text  = when (entry.status) {
                 CertHistoryStatus.VALID         -> "🟢"

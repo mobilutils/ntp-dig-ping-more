@@ -31,10 +31,10 @@ sealed class GoogleTimeSyncUiState {
     data object Loading : GoogleTimeSyncUiState()
 
     /** The sync completed successfully. */
-    data class Success(val result: TimeSyncResult) : GoogleTimeSyncUiState()
+    data class Success(val result: TimeSyncResult, val isProxyfied: Boolean = false) : GoogleTimeSyncUiState()
 
     /** The sync failed for any reason. */
-    data class Error(val message: String) : GoogleTimeSyncUiState()
+    data class Error(val message: String, val isProxyfied: Boolean = false) : GoogleTimeSyncUiState()
 }
 
 /**
@@ -97,6 +97,7 @@ class GoogleTimeSyncViewModel(
 
         syncJob = viewModelScope.launch {
             val timeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
+            val isProxyfied = runCatching { settingsRepository.proxyConfigFlow.first().enabled }.getOrDefault(false)
             val result = try {
                 withTimeout(timeoutMs) {
                     repository.fetchGoogleTime(effectiveUrl)
@@ -113,13 +114,14 @@ class GoogleTimeSyncViewModel(
 
             when (result) {
                 is GoogleTimeSyncResult.Success -> {
-                    syncState = GoogleTimeSyncUiState.Success(result.data)
+                    syncState = GoogleTimeSyncUiState.Success(result.data, isProxyfied = isProxyfied)
                     newEntry  = GoogleTimeSyncHistoryEntry(
-                        timestamp = timestamp,
-                        url       = effectiveUrl,
-                        offsetMs  = result.data.offsetMillis,
-                        rttMs     = result.data.rttMillis,
-                        success   = true,
+                        timestamp   = timestamp,
+                        url         = effectiveUrl,
+                        offsetMs    = result.data.offsetMillis,
+                        rttMs       = result.data.rttMillis,
+                        success     = true,
+                        isProxyfied = isProxyfied,
                     )
                 }
                 else -> {
@@ -131,13 +133,14 @@ class GoogleTimeSyncViewModel(
                         is GoogleTimeSyncResult.Error      -> result.message
                         else                               -> "Unknown error"
                     }
-                    syncState = GoogleTimeSyncUiState.Error(message)
+                    syncState = GoogleTimeSyncUiState.Error(message, isProxyfied = isProxyfied)
                     newEntry  = GoogleTimeSyncHistoryEntry(
-                        timestamp = timestamp,
-                        url       = effectiveUrl,
-                        offsetMs  = 0L,
-                        rttMs     = 0L,
-                        success   = false,
+                        timestamp   = timestamp,
+                        url         = effectiveUrl,
+                        offsetMs    = 0L,
+                        rttMs       = 0L,
+                        success     = false,
+                        isProxyfied = isProxyfied,
                     )
                 }
             }
