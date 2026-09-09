@@ -785,6 +785,8 @@ class BulkActionsRepository(
                          }
                     is HttpsCertResult.Error ->
                         lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: ERROR - ${result.message} (${duration}ms)")
+                    is HttpsCertResult.ProxyError ->
+                        lines.add("[${timestampFmt.format(LocalDateTime.now())}] Status: PROXY ERROR - ${result.reason} (${duration}ms)")
                     }
 
                 when {
@@ -958,6 +960,8 @@ class BulkActionsRepository(
                             add("[${timestampFmt.format(LocalDateTime.now())}] Status: PARSE ERROR - ${result.message} (${dur}ms)")
                         is GoogleTimeSyncResult.Error ->
                             add("[${timestampFmt.format(LocalDateTime.now())}] Status: ERROR - ${result.message} (${dur}ms)")
+                        is GoogleTimeSyncResult.ProxyError ->
+                            add("[${timestampFmt.format(LocalDateTime.now())}] Status: PROXY ERROR - ${result.reason} (${dur}ms)")
                     }
                 }
 

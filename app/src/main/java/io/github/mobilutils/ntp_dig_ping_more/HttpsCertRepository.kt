@@ -1,5 +1,6 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolutionResult
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -119,6 +120,9 @@ sealed class HttpsCertResult {
 
      /** Any other error during the handshake or parsing phase. */
     data class Error(val message: String) : HttpsCertResult()
+
+    /** Proxy PAC fetch or evaluation failed — connection was not attempted. */
+    data class ProxyError(val reason: String) : HttpsCertResult()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,7 +227,16 @@ class HttpsCertRepository(
             ensureActive()
 
             // ── Establish connection (direct or proxied) ─────────────────
-            val proxy = proxyResolver?.resolveProxy("https://$host:$port")
+            val proxy = if (proxyResolver != null) {
+                when (val result = proxyResolver.resolveProxyStrict("https://$host:$port")) {
+                    is ProxyResolutionResult.Resolved -> result.proxy
+                    is ProxyResolutionResult.NoProxyConfigured -> null
+                    is ProxyResolutionResult.PacFetchFailed ->
+                        return@withContext HttpsCertResult.ProxyError(result.reason)
+                }
+            } else {
+                null
+            }
 
             socket = if (proxy != null && proxy.type() == java.net.Proxy.Type.HTTP) {
                 // HTTP CONNECT tunneling for proxied SSL
