@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
@@ -197,6 +198,7 @@ fun GoogleTimeSyncScreen() {
                 is GoogleTimeSyncUiState.Success -> {
                     TimeSyncResultCard(
                         result = syncState.result,
+                        isProxyfied = syncState.isProxyfied,
                         copied = copied,
                         onCopy = {
                             val sign = if (syncState.result.offsetMillis >= 0) "+" else ""
@@ -210,6 +212,7 @@ fun GoogleTimeSyncScreen() {
                 is GoogleTimeSyncUiState.Error -> {
                     ErrorCard(
                         message = syncState.message,
+                        isProxyfied = syncState.isProxyfied,
                         onRetry = {
                             if (url.isBlank()) url = GoogleTimeSyncRepository.DEFAULT_URL
                             vm.syncTime(url)
@@ -251,6 +254,7 @@ fun GoogleTimeSyncScreen() {
 @Composable
 private fun TimeSyncResultCard(
     result: TimeSyncResult,
+    isProxyfied: Boolean = false,
     copied: Boolean,
     onCopy: () -> Unit,
 ) {
@@ -283,7 +287,10 @@ private fun TimeSyncResultCard(
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(
                     imageVector        = Icons.Filled.CheckCircle,
                     contentDescription = stringResource(R.string.google_time_sync_cd_success),
@@ -291,7 +298,7 @@ private fun TimeSyncResultCard(
                     modifier           = Modifier.size(32.dp),
                 )
                 Spacer(Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text       = stringResource(R.string.google_time_sync_status_success),
                         style      = MaterialTheme.typography.titleMedium,
@@ -301,6 +308,14 @@ private fun TimeSyncResultCard(
                         text  = stringResource(R.string.google_time_sync_result_rtt_offset_format, result.rttMillis, offsetSign, result.offsetMillis),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (isProxyfied) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_proxy),
+                        contentDescription = stringResource(R.string.cd_proxy_used),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.secondary,
                     )
                 }
             }
@@ -377,7 +392,11 @@ private fun TimeSyncResultCard(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ErrorCard(message: String, onRetry: () -> Unit) {
+private fun ErrorCard(
+    message: String,
+    isProxyfied: Boolean = false,
+    onRetry: () -> Unit,
+) {
     Card(
         modifier  = Modifier.fillMaxWidth(),
         shape     = RoundedCornerShape(16.dp),
@@ -387,7 +406,10 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(
                     imageVector        = Icons.Filled.Error,
                     contentDescription = stringResource(R.string.google_time_sync_cd_error),
@@ -395,7 +417,7 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
                     modifier           = Modifier.size(32.dp),
                 )
                 Spacer(Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text       = stringResource(R.string.google_time_sync_status_failed),
                         style      = MaterialTheme.typography.titleMedium,
@@ -406,6 +428,14 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
                         text  = message,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                    )
+                }
+                if (isProxyfied) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_proxy),
+                        contentDescription = stringResource(R.string.cd_proxy_used),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.error,
                     )
                 }
             }
@@ -513,6 +543,15 @@ private fun HistoryRow(
             }
         }
         Spacer(Modifier.width(8.dp))
+        if (entry.isProxyfied) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_proxy),
+                contentDescription = stringResource(R.string.cd_proxy_used),
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(6.dp))
+        }
         Icon(
             imageVector        = if (entry.success) Icons.Filled.CheckCircle else Icons.Filled.Error,
             contentDescription = if (entry.success) stringResource(R.string.common_cd_success) else stringResource(R.string.common_cd_failed),

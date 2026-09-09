@@ -27,7 +27,7 @@ sealed class HttpsCertUiState {
     data object Loading : HttpsCertUiState()
 
     /** Handshake succeeded and the chain is fully trusted. */
-    data class Success(val info: CertificateInfo) : HttpsCertUiState()
+    data class Success(val info: CertificateInfo, val isProxyfied: Boolean = false) : HttpsCertUiState()
 
     /**
      * The certificate was extracted but the chain has a trust issue (expired
@@ -36,10 +36,11 @@ sealed class HttpsCertUiState {
     data class PartialSuccess(
         val chain: List<CertificateInfo>,
         val warningMessage: UiText,
+        val isProxyfied: Boolean = false,
     ) : HttpsCertUiState()
 
     /** A hard failure — no certificate data to display. */
-    data class Error(val message: UiText) : HttpsCertUiState()
+    data class Error(val message: UiText, val isProxyfied: Boolean = false) : HttpsCertUiState()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +57,7 @@ class HttpsCertViewModel(
     private val repository:    HttpsCertRepository,
     private val historyStore:  HttpsCertHistoryStore,
     private val managedConfigRepository: ManagedConfigRepository? = null,
+    private val settingsRepository: io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<HttpsCertUiState>(HttpsCertUiState.Idle)
@@ -124,9 +126,10 @@ class HttpsCertViewModel(
         _uiState.value = HttpsCertUiState.Loading
 
         fetchJob = viewModelScope.launch {
+            val isProxyfied = settingsRepository?.proxyConfigFlow?.first()?.enabled == true
             val newState = when (val result = repository.fetchCertificate(h, p)) {
                 is HttpsCertResult.Success ->
-                    HttpsCertUiState.Success(result.info)
+                    HttpsCertUiState.Success(result.info, isProxyfied = isProxyfied)
 
                 is HttpsCertResult.CertExpired ->
                     HttpsCertUiState.PartialSuccess(
@@ -135,6 +138,7 @@ class HttpsCertViewModel(
                             R.string.https_cert_warning_expired,
                             listOf(result.reason),
                         ),
+                        isProxyfied = isProxyfied,
                     )
 
                 is HttpsCertResult.UntrustedChain ->
@@ -144,30 +148,33 @@ class HttpsCertViewModel(
                             R.string.https_cert_warning_untrusted,
                             listOf(result.reason),
                         ),
+                        isProxyfied = isProxyfied,
                     )
 
                 is HttpsCertResult.NoNetwork ->
-                    HttpsCertUiState.Error(UiText.Res(R.string.https_cert_error_no_network))
+                    HttpsCertUiState.Error(UiText.Res(R.string.https_cert_error_no_network), isProxyfied = isProxyfied)
 
                 is HttpsCertResult.HostnameUnresolved ->
                     HttpsCertUiState.Error(
-                        UiText.Res(R.string.https_cert_error_hostname_unresolved, listOf(result.host))
+                        UiText.Res(R.string.https_cert_error_hostname_unresolved, listOf(result.host)),
+                        isProxyfied = isProxyfied,
                     )
 
                 is HttpsCertResult.Timeout ->
                     HttpsCertUiState.Error(
-                        UiText.Res(R.string.https_cert_error_timeout, listOf(result.host))
+                        UiText.Res(R.string.https_cert_error_timeout, listOf(result.host)),
+                        isProxyfied = isProxyfied,
                     )
 
                 is HttpsCertResult.Error ->
-                    HttpsCertUiState.Error(UiText.Res(R.string.common_label_error))
+                    HttpsCertUiState.Error(UiText.Res(R.string.common_label_error), isProxyfied = isProxyfied)
 
                 is HttpsCertResult.ProxyError ->
-                    HttpsCertUiState.Error(UiText.Plain("Proxy error: ${result.reason}"))
+                    HttpsCertUiState.Error(UiText.Plain("Proxy error: ${result.reason}"), isProxyfied = isProxyfied)
             }
 
             _uiState.value = newState
-            saveHistory(h, p, newState)
+            saveHistory(h, p, newState, isProxyfied)
         }
     }
 
@@ -186,7 +193,7 @@ class HttpsCertViewModel(
 
     // ── History persistence ────────────────────────────────────────────────────
 
-    private suspend fun saveHistory(host: String, port: Int, state: HttpsCertUiState) {
+    private suspend fun saveHistory(host: String, port: Int, state: HttpsCertUiState, isProxyfied: Boolean = false) {
         if (host.isBlank()) return
 
         val (status, summary) = when (state) {
@@ -218,11 +225,12 @@ class HttpsCertViewModel(
             .format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
 
         val newEntry = HttpsCertHistoryEntry(
-            timestamp = timestamp,
-            host      = host,
-            port      = port,
-            status    = status,
-            summary   = summary,
+            timestamp   = timestamp,
+            host        = host,
+            port        = port,
+            status      = status,
+            summary     = summary,
+            isProxyfied = isProxyfied,
         )
 
         // Deduplicate by host+port — keep newer entry on top
@@ -256,6 +264,7 @@ class HttpsCertViewModel(
                         repository   = HttpsCertRepository(proxyResolver),
                         historyStore = HttpsCertHistoryStore(appContext),
                         managedConfigRepository = ManagedConfigRepository(appContext),
+                        settingsRepository = settingsRepo,
                     ) as T
                 }
             }

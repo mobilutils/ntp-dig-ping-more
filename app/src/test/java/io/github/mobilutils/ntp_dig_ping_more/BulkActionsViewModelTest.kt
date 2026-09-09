@@ -479,4 +479,30 @@ class BulkActionsViewModelTest {
 
         assertFalse(vm.uiState.value.hasMdmBulkActions)
     }
+
+    @Test
+    fun `generateOutputContent_withProxyfiedResult_appendsProxyfiedMarker`() {
+        val results = listOf(
+            BulkCommandSuccess(
+                commandName = "GOOGLE-TIMESYNC",
+                command = "google-timesync",
+                outputLines = listOf("Status: SUCCESS (50ms)"),
+                durationMs = 50L,
+                isProxyfied = true,
+            ),
+            BulkCommandSuccess(
+                commandName = "CHECKCERT",
+                command = "checkcert google.com",
+                outputLines = listOf("Status: SUCCESS (100ms)"),
+                durationMs = 100L,
+                isProxyfied = false,
+            ),
+        )
+
+        val output = viewModel.generateOutputContent(results)
+
+        assertTrue(output.contains("[1] GOOGLE-TIMESYNC: google-timesync ( PROXYFIED )"))
+        assertTrue(output.contains("[2] CHECKCERT: checkcert google.com"))
+        assertFalse(output.contains("[2] CHECKCERT: checkcert google.com ( PROXYFIED )"))
+    }
 }

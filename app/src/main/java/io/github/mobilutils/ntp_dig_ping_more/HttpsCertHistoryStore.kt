@@ -24,6 +24,7 @@ data class HttpsCertHistoryEntry(
     val status: CertHistoryStatus,
     /** Short label: e.g. "valid · 47d", "expired", "RSA 2048". */
     val summary: String,
+    val isProxyfied: Boolean = false,
 )
 
 /**
@@ -31,7 +32,7 @@ data class HttpsCertHistoryEntry(
  * Preferences DataStore.
  *
  * Serialisation format (single string preference):
- *   timestamp|host|port|status|summary — one entry per line ('\n' separated)
+ *   timestamp|host|port|status|isProxyfied|summary — one entry per line ('\n' separated)
  */
 class HttpsCertHistoryStore(private val context: Context) {
 
@@ -52,7 +53,7 @@ class HttpsCertHistoryStore(private val context: Context) {
     suspend fun save(history: List<HttpsCertHistoryEntry>) {
         context.httpsCertHistoryDataStore.edit { prefs ->
             prefs[KEY] = history.take(MAX_ENTRIES).joinToString(ENTRY_SEP) { e ->
-                "${e.timestamp}$FIELD_SEP${e.host}$FIELD_SEP${e.port}$FIELD_SEP${e.status.name}$FIELD_SEP${e.summary}"
+                "${e.timestamp}$FIELD_SEP${e.host}$FIELD_SEP${e.port}$FIELD_SEP${e.status.name}$FIELD_SEP${e.isProxyfied}$FIELD_SEP${e.summary}"
             }
         }
     }
@@ -68,12 +69,19 @@ class HttpsCertHistoryStore(private val context: Context) {
                     val status = runCatching {
                         CertHistoryStatus.valueOf(parts[3])
                     }.getOrDefault(CertHistoryStatus.ERROR)
+                    val isProxyfied = parts.getOrNull(4)?.toBooleanStrictOrNull()
+                    val (proxyfied, summary) = if (isProxyfied != null) {
+                        isProxyfied to parts.drop(5).joinToString(FIELD_SEP)
+                    } else {
+                        false to parts.drop(4).joinToString(FIELD_SEP)
+                    }
                     HttpsCertHistoryEntry(
-                        timestamp = parts[0],
-                        host      = parts[1],
-                        port      = parts[2].toIntOrNull() ?: 443,
-                        status    = status,
-                        summary   = parts.drop(4).joinToString(FIELD_SEP), // re-join if summary itself had "|"
+                        timestamp   = parts[0],
+                        host        = parts[1],
+                        port        = parts[2].toIntOrNull() ?: 443,
+                        status      = status,
+                        summary     = summary,
+                        isProxyfied = proxyfied,
                     )
                 } else null
             }

@@ -1,6 +1,7 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -112,6 +113,26 @@ class HistoryStoreParsingTest {
         assertEquals(PortScannerProtocol.UDP, entries[0].protocol)
     }
 
+    @Test
+    fun `PortScannerHistoryStore parsing - with proxyfied true`() {
+        val raw = "2024/01/15 10:30:00|192.168.1.1|1|1000|TCP|3|true"
+        val entries = parsePortScannerHistory(raw)
+
+        assertEquals(1, entries.size)
+        assertEquals(3, entries[0].openPortsCount)
+        assertTrue(entries[0].isProxyfied)
+    }
+
+    @Test
+    fun `PortScannerHistoryStore parsing - backward compat without proxyfied`() {
+        val raw = "2024/01/15 10:30:00|192.168.1.1|1|1000|TCP"
+        val entries = parsePortScannerHistory(raw)
+
+        assertEquals(1, entries.size)
+        assertEquals(0, entries[0].openPortsCount)
+        assertFalse(entries[0].isProxyfied)
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // DigHistoryStore parsing tests
     // ─────────────────────────────────────────────────────────────────────
@@ -154,6 +175,26 @@ class HistoryStoreParsingTest {
         assertTrue(!entries[0].success) // defaults to false
     }
 
+    @Test
+    fun `GoogleTimeSyncHistoryStore parsing - with proxyfied true`() {
+        val raw = "2024/01/15 10:30:00|http://google.com|45|120|true|true"
+        val entries = parseGoogleTimeSyncHistory(raw)
+
+        assertEquals(1, entries.size)
+        assertTrue(entries[0].success)
+        assertTrue(entries[0].isProxyfied)
+    }
+
+    @Test
+    fun `GoogleTimeSyncHistoryStore parsing - backward compat without proxyfied`() {
+        val raw = "2024/01/15 10:30:00|http://google.com|45|120|true"
+        val entries = parseGoogleTimeSyncHistory(raw)
+
+        assertEquals(1, entries.size)
+        assertTrue(entries[0].success)
+        assertFalse(entries[0].isProxyfied)
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // HttpsCertHistoryStore parsing tests
     // ─────────────────────────────────────────────────────────────────────
@@ -181,6 +222,38 @@ class HistoryStoreParsingTest {
         val entries = parseHttpsCertHistory(raw)
 
         assertEquals(CertHistoryStatus.ERROR, entries[0].status)
+    }
+
+    @Test
+    fun `HttpsCertHistoryStore parsing - with proxyfied true`() {
+        val raw = "2024/01/15 10:30:00|example.com|443|VALID|true|RSA 2048"
+        val entries = parseHttpsCertHistory(raw)
+
+        assertEquals(1, entries.size)
+        assertEquals(CertHistoryStatus.VALID, entries[0].status)
+        assertTrue(entries[0].isProxyfied)
+        assertEquals("RSA 2048", entries[0].summary)
+    }
+
+    @Test
+    fun `HttpsCertHistoryStore parsing - backward compat without proxyfied`() {
+        val raw = "2024/01/15 10:30:00|example.com|443|VALID|RSA 2048"
+        val entries = parseHttpsCertHistory(raw)
+
+        assertEquals(1, entries.size)
+        assertEquals(CertHistoryStatus.VALID, entries[0].status)
+        assertFalse(entries[0].isProxyfied)
+        assertEquals("RSA 2048", entries[0].summary)
+    }
+
+    @Test
+    fun `HttpsCertHistoryStore parsing - proxyfied true and summary with pipes`() {
+        val raw = "2024/01/15 10:30:00|example.com|443|VALID|true|summary|with|pipes"
+        val entries = parseHttpsCertHistory(raw)
+
+        assertEquals(1, entries.size)
+        assertTrue(entries[0].isProxyfied)
+        assertEquals("summary|with|pipes", entries[0].summary)
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -307,9 +380,13 @@ class HistoryStoreParsingTest {
                         "UDP" -> PortScannerProtocol.UDP
                         else -> PortScannerProtocol.TCP
                     }
+                    val openPortsCount = if (parts.size >= 6) parts[5].toIntOrNull() ?: 0 else 0
+                    val isProxyfied = if (parts.size >= 7) parts[6].toBooleanStrictOrNull() ?: false else false
                     PortScannerHistoryEntry(
                         timestamp = parts[0], host = parts[1],
-                        startPort = parts[2], endPort = parts[3], protocol = protocol
+                        startPort = parts[2], endPort = parts[3], protocol = protocol,
+                        openPortsCount = openPortsCount,
+                        isProxyfied = isProxyfied,
                     )
                 } else null
             }
@@ -339,9 +416,11 @@ class HistoryStoreParsingTest {
                     val offsetMs = parts.getOrNull(2)?.toLongOrNull() ?: return@mapNotNull null
                     val rttMs = parts.getOrNull(3)?.toLongOrNull() ?: return@mapNotNull null
                     val success = parts.getOrNull(4)?.toBooleanStrictOrNull() ?: false
+                    val isProxyfied = parts.getOrNull(5)?.toBooleanStrictOrNull() ?: false
                     GoogleTimeSyncHistoryEntry(
                         timestamp = parts[0], url = parts[1],
-                        offsetMs = offsetMs, rttMs = rttMs, success = success
+                        offsetMs = offsetMs, rttMs = rttMs, success = success,
+                        isProxyfied = isProxyfied,
                     )
                 } else null
             }
@@ -356,10 +435,17 @@ class HistoryStoreParsingTest {
                     val status = runCatching {
                         CertHistoryStatus.valueOf(parts[3])
                     }.getOrDefault(CertHistoryStatus.ERROR)
+                    val isProxyfied = parts.getOrNull(4)?.toBooleanStrictOrNull()
+                    val (proxyfied, summary) = if (isProxyfied != null) {
+                        isProxyfied to parts.drop(5).joinToString("|")
+                    } else {
+                        false to parts.drop(4).joinToString("|")
+                    }
                     HttpsCertHistoryEntry(
                         timestamp = parts[0], host = parts[1],
                         port = parts[2].toIntOrNull() ?: 443,
-                        status = status, summary = parts.drop(4).joinToString("|")
+                        status = status, summary = summary,
+                        isProxyfied = proxyfied,
                     )
                 } else null
             }

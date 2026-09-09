@@ -36,8 +36,9 @@ class GoogleTimeSyncViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun fakeSettingsRepository(): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
+    private fun fakeSettingsRepository(proxyEnabled: Boolean = false): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
         coEvery { it.timeoutSecondsFlow } returns flowOf(5)
+        coEvery { it.proxyConfigFlow } returns flowOf(io.github.mobilutils.ntp_dig_ping_more.settings.ProxyConfig(enabled = proxyEnabled))
     }
 
     private fun createViewModel(
@@ -388,5 +389,36 @@ class GoogleTimeSyncViewModelTest {
 
         val state = viewModel.uiState.value
         assertEquals(5, state.history.size)
+    }
+
+    @Test
+    fun `syncTime with proxy enabled sets isProxyfied in state and history`() = runTest {
+        val repository = mockk<GoogleTimeSyncRepository>(relaxed = true)
+        val historyStore = mockk<GoogleTimeSyncHistoryStore>(relaxed = true)
+        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
+
+        val timeResult = TimeSyncResult(
+            serverTimeMillis = System.currentTimeMillis(),
+            rttMillis = 100L,
+            offsetMillis = 50L,
+            correctedServerTimeMillis = System.currentTimeMillis(),
+            requestTimestamp = System.currentTimeMillis(),
+            responseTimestamp = System.currentTimeMillis()
+        )
+        coEvery { repository.fetchGoogleTime(any()) } returns GoogleTimeSyncResult.Success(timeResult)
+
+        val capturedEntries = mutableListOf<List<GoogleTimeSyncHistoryEntry>>()
+        coEvery { historyStore.save(capture(capturedEntries)) } coAnswers { }
+
+        val viewModel = GoogleTimeSyncViewModel(repository, historyStore, fakeSettingsRepository(proxyEnabled = true))
+        viewModel.syncTime("http://clients2.google.com/time/1/current")
+        advanceUntilIdle()
+
+        val syncState = viewModel.uiState.value.syncState
+        assertTrue(syncState is GoogleTimeSyncUiState.Success)
+        assertTrue((syncState as GoogleTimeSyncUiState.Success).isProxyfied)
+
+        val saved = capturedEntries.firstOrNull()?.firstOrNull()
+        assertTrue(saved?.isProxyfied == true)
     }
 }
