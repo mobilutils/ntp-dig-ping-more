@@ -31,6 +31,9 @@ sealed class UiText {
         val formatArgs: List<Any> = emptyList(),
     ) : UiText()
 
+    /** A plain string message (not backed by a string resource). */
+    data class Plain(val text: String) : UiText()
+
     /**
      * Resolves the [UiText] to a human-readable [String].
      * Must be called from a Composable context.
@@ -42,5 +45,6 @@ sealed class UiText {
         } else {
             stringResource(resId, *formatArgs.toTypedArray())
         }
+        is Plain -> text
     }
 }

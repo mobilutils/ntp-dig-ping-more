@@ -161,6 +161,9 @@ class HttpsCertViewModel(
 
                 is HttpsCertResult.Error ->
                     HttpsCertUiState.Error(UiText.Res(R.string.common_label_error))
+
+                is HttpsCertResult.ProxyError ->
+                    HttpsCertUiState.Error(UiText.Plain("Proxy error: ${result.reason}"))
             }
 
             _uiState.value = newState

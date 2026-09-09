@@ -30,6 +30,32 @@ data class ProxyTestResult(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Proxy resolution result (strict)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Result of [ProxyResolver.resolveProxyStrict].
+ *
+ * Unlike the nullable [Proxy] returned by [ProxyResolver.resolveProxy], this
+ * sealed hierarchy explicitly distinguishes three outcomes:
+ *
+ *  - [Resolved]:          A proxy (or [Proxy.NO_PROXY]) was successfully determined.
+ *  - [NoProxyConfigured]: No PAC URL is configured — the caller should use a
+ *                         system-default / direct connection.
+ *  - [PacFetchFailed]:    A PAC URL **is** configured but the script could not be
+ *                         fetched or evaluated. The caller should treat this as an
+ *                         error when proxy usage is mandatory (e.g. BulkActions).
+ */
+sealed class ProxyResolutionResult {
+    /** A proxy was resolved (may be [Proxy.NO_PROXY] for DIRECT). */
+    data class Resolved(val proxy: Proxy) : ProxyResolutionResult()
+    /** No proxy is configured — caller should use system default. */
+    data object NoProxyConfigured : ProxyResolutionResult()
+    /** A proxy was configured but PAC fetch/evaluation failed. */
+    data class PacFetchFailed(val reason: String) : ProxyResolutionResult()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FileSystemIO abstraction
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -258,6 +284,90 @@ class ProxyResolver(
         } catch (e: Exception) {
             logIfEnabled("PROXY_ERROR step=resolveProxy reason=${e.message}")
             null
+        }
+    }
+
+    /**
+     * Strict variant of [resolveProxy] that distinguishes between
+     * "no proxy configured" and "PAC fetch/eval failed".
+     *
+     * Use this in contexts where a proxy PAC URL **has been explicitly
+     * configured** and a fetch failure must be surfaced as an error
+     * (e.g. BulkActions with `url-proxypac`).
+     *
+     * @return [ProxyResolutionResult.Resolved]          on success,
+     *         [ProxyResolutionResult.NoProxyConfigured]  when no PAC URL is set,
+     *         [ProxyResolutionResult.PacFetchFailed]     when PAC fetch or eval fails.
+     */
+    suspend fun resolveProxyStrict(targetUrl: String): ProxyResolutionResult = withContext(Dispatchers.IO) {
+        try {
+            // Determine the effective PAC URL: static override or persisted config
+            val effectivePacUrl = if (staticPacUrl != null) {
+                staticPacUrl
+            } else {
+                val config = settingsRepository.proxyConfigFlow.first()
+                if (!config.enabled || config.pacUrl.isBlank()) {
+                    return@withContext ProxyResolutionResult.NoProxyConfigured
+                }
+                config.pacUrl
+            }
+
+            val host = extractHost(targetUrl)
+                ?: return@withContext ProxyResolutionResult.PacFetchFailed("Cannot extract host from URL: $targetUrl")
+
+            // Check per-host cache
+            val now = System.currentTimeMillis()
+            synchronized(proxyCache) {
+                proxyCache[host]?.let { cached ->
+                    if (now - cached.resolvedAt < PAC_CACHE_TTL_MS && cached.proxy != null) {
+                        return@withContext ProxyResolutionResult.Resolved(cached.proxy)
+                    }
+                }
+            }
+
+            // Fetch (or use cached) PAC script — dispatch by source type
+            val pacScript = when {
+                effectivePacUrl.startsWith("http://") || effectivePacUrl.startsWith("https://") ->
+                    fetchPacScript(effectivePacUrl)
+                else ->
+                    if (appContext != null) {
+                        fetchPacFromFile(effectivePacUrl)
+                    } else {
+                        logIfEnabled("PAC_FETCH_FAIL reason=no Context for file access")
+                        null
+                    }
+            }
+
+            if (pacScript == null) {
+                return@withContext ProxyResolutionResult.PacFetchFailed(
+                    "Failed to fetch PAC script from: $effectivePacUrl"
+                )
+            }
+
+            // Evaluate FindProxyForURL
+            val pacResult = try {
+                jsEngine.evaluatePac(pacScript, targetUrl, host)
+            } catch (e: Exception) {
+                logIfEnabled("PROXY_ERROR step=evaluatePac reason=${e.message}")
+                return@withContext ProxyResolutionResult.PacFetchFailed(
+                    "PAC evaluation failed: ${e.message}"
+                )
+            }
+
+            // Parse PAC result into a Proxy
+            val proxy = parsePacResult(pacResult) ?: Proxy.NO_PROXY
+            val resultLabel = if (proxy.type() != Proxy.Type.DIRECT) proxy.address().toString() else "DIRECT"
+            logIfEnabled("PROXY_RESOLVED host=$host result=$resultLabel")
+
+            // Cache the result
+            synchronized(proxyCache) {
+                proxyCache[host] = CachedProxy(proxy, now)
+            }
+
+            ProxyResolutionResult.Resolved(proxy)
+        } catch (e: Exception) {
+            logIfEnabled("PROXY_ERROR step=resolveProxyStrict reason=${e.message}")
+            ProxyResolutionResult.PacFetchFailed("Proxy resolution error: ${e.message}")
         }
     }
 

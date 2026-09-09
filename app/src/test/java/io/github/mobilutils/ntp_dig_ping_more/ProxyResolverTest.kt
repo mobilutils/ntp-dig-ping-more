@@ -4,6 +4,7 @@ import io.github.mobilutils.ntp_dig_ping_more.proxy.DefaultFileSystemIO
 import io.github.mobilutils.ntp_dig_ping_more.proxy.FileSystemIO
 import io.github.mobilutils.ntp_dig_ping_more.proxy.JsEngine
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyPacLogger
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolutionResult
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import io.github.mobilutils.ntp_dig_ping_more.settings.ProxyConfig
 import io.github.mobilutils.ntp_dig_ping_more.settings.SettingsRepository
@@ -363,4 +364,79 @@ class ProxyResolverTest {
         val result = resolverWithoutFileSupport.resolveProxy("http://example.com")
         assertNull(result) // Should fail because appContext is null
         }
+
+    // ── resolveProxyStrict tests ─────────────────────────────────────────────
+
+    @Test
+    fun `resolveProxyStrict returns NoProxyConfigured when proxy is disabled`() = runTest {
+        coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
+            ProxyConfig(enabled = false, pacUrl = "http://example.com/pac")
+        )
+
+        val result = resolver.resolveProxyStrict("http://example.com")
+        assertTrue(
+            "Expected NoProxyConfigured but got $result",
+            result is ProxyResolutionResult.NoProxyConfigured
+        )
+    }
+
+    @Test
+    fun `resolveProxyStrict returns NoProxyConfigured when PAC URL is blank`() = runTest {
+        coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
+            ProxyConfig(enabled = true, pacUrl = "")
+        )
+
+        val result = resolver.resolveProxyStrict("http://example.com")
+        assertTrue(
+            "Expected NoProxyConfigured but got $result",
+            result is ProxyResolutionResult.NoProxyConfigured
+        )
+    }
+
+    @Test
+    fun `resolveProxyStrict returns PacFetchFailed when PAC URL is unreachable`() = runTest {
+        coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
+            ProxyConfig(enabled = true, pacUrl = "http://pac.unreachable.example.com/proxy.pac")
+        )
+
+        val result = resolver.resolveProxyStrict("http://example.com")
+        assertTrue(
+            "Expected PacFetchFailed but got $result",
+            result is ProxyResolutionResult.PacFetchFailed
+        )
+    }
+
+    @Test
+    fun `resolveProxyStrict returns PacFetchFailed for static PAC URL when unreachable`() = runTest {
+        // Create a resolver with a static PAC URL that will fail to fetch
+        val staticResolver = ProxyResolver(
+            settingsRepository, jsEngine,
+            staticPacUrl = "http://unreachable.example.com/proxy.pac"
+        )
+
+        val result = staticResolver.resolveProxyStrict("http://example.com")
+        assertTrue(
+            "Expected PacFetchFailed but got $result",
+            result is ProxyResolutionResult.PacFetchFailed
+        )
+        assertTrue(
+            "Reason should mention the PAC URL",
+            (result as ProxyResolutionResult.PacFetchFailed).reason.contains("unreachable.example.com")
+        )
+    }
+
+    @Test
+    fun `resolveProxyStrict returns PacFetchFailed for file path without Context`() = runTest {
+        coEvery { settingsRepository.proxyConfigFlow } returns flowOf(
+            ProxyConfig(enabled = true, pacUrl = "/tmp/test.pac")
+        )
+
+        val resolverWithoutFileSupport = ProxyResolver(settingsRepository, jsEngine)
+
+        val result = resolverWithoutFileSupport.resolveProxyStrict("http://example.com")
+        assertTrue(
+            "Expected PacFetchFailed but got $result",
+            result is ProxyResolutionResult.PacFetchFailed
+        )
+    }
 }

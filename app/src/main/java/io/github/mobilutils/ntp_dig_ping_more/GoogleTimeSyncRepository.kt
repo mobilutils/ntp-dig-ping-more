@@ -1,5 +1,6 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
+import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolutionResult
 import io.github.mobilutils.ntp_dig_ping_more.proxy.ProxyResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -47,6 +48,7 @@ sealed class GoogleTimeSyncResult {
     data class HttpError(val code: Int, val host: String) : GoogleTimeSyncResult()
     data class ParseError(val message: String) : GoogleTimeSyncResult()
     data class Error(val message: String) : GoogleTimeSyncResult()
+    data class ProxyError(val reason: String) : GoogleTimeSyncResult()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,8 +96,17 @@ class GoogleTimeSyncRepository(
             // T1: record timestamp BEFORE the request goes out.
             val t1 = System.currentTimeMillis()
 
-            // Resolve proxy (if configured); null → direct connection
-            val proxy = proxyResolver?.resolveProxy(url)
+            // Resolve proxy (if configured); use strict resolution to detect PAC failures
+            val proxy = if (proxyResolver != null) {
+                when (val result = proxyResolver.resolveProxyStrict(url)) {
+                    is ProxyResolutionResult.Resolved -> result.proxy
+                    is ProxyResolutionResult.NoProxyConfigured -> null
+                    is ProxyResolutionResult.PacFetchFailed ->
+                        return@withContext GoogleTimeSyncResult.ProxyError(result.reason)
+                }
+            } else {
+                null
+            }
 
             // Check for cancellation before opening connection
             ensureActive()
