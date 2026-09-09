@@ -105,6 +105,17 @@ data class BulkCommandWarning(
     override val isProxyfied: Boolean = false,
 ) : BulkCommandResult()
 
+/**
+ * Result for comment pseudo-commands that display annotations in bulk action reports.
+ * Comments are informational only and not accounted for as actions in report summaries.
+ */
+data class BulkCommandComment(
+    override val commandName: String,
+    override val command: String,
+    val comment: String,
+    override val isProxyfied: Boolean = false,
+) : BulkCommandResult()
+
 /** Progress callback emitted during bulk execution. */
 data class BulkProgress(
     val currentIndex: Int,
@@ -448,6 +459,7 @@ class BulkActionsRepository(
             prefix == "google-timesync" -> executeGoogleTimeSync(name, trimmed, timeoutMs)
             prefix == "lan-scan"        -> executeLanScan(name, trimmed, timeoutMs)
             prefix == "sleep"              -> executeSleep(name, trimmed, timeoutMs)
+            prefix == "comment"            -> executeComment(name, trimmed)
             else                        -> executeRaw(name, trimmed, timeoutMs)
         }
     }
@@ -1071,6 +1083,18 @@ class BulkActionsRepository(
          }
      }
 
+    // ── comment ─────────────────────────────────────────────────────
+
+    private fun executeComment(name: String, cmd: String): BulkCommandResult {
+        val commentRaw = cmd.replaceFirst(Regex("""(?i)^\s*comment\b\s*"""), "")
+        val commentText = stripCommentQuotes(commentRaw)
+        return BulkCommandComment(
+            commandName = name,
+            command = cmd,
+            comment = commentText,
+        )
+    }
+
     // ── raw ────────────────────────────────────────────────────────────────
 
     private suspend fun executeRaw(name: String, cmd: String, timeoutMs: Long?): BulkCommandResult {
@@ -1132,5 +1156,25 @@ class BulkActionsRepository(
         const val ERROR_UNKNOWN_HOST = "Unknown host"
         const val ERROR_NO_WIFI = "No active WiFi network found"
         const val ERROR_HOST_NOT_FOUND = "HOST NOT FOUND"
+
+        /** Strips surrounding matching single/double quotes or unclosed leading quote. */
+        fun stripCommentQuotes(raw: String): String {
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty()) return ""
+            if (trimmed.length >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+                return trimmed.substring(1, trimmed.length - 1).trim()
+            }
+            if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
+                return trimmed.substring(1, trimmed.length - 1).trim()
+            }
+            if (trimmed.startsWith("\"") || trimmed.startsWith("'")) {
+                var unquoted = trimmed.substring(1).trim()
+                if (unquoted.endsWith("\"") || unquoted.endsWith("'")) {
+                    unquoted = unquoted.substring(0, unquoted.length - 1).trim()
+                }
+                return unquoted
+            }
+            return trimmed
+        }
     }
 }

@@ -19,6 +19,8 @@ A **pseudo-command** is a built-in command keyword recognized by the Bulk Action
 | `tracert` | Traceroute (TTL probing) |
 | `google-timesync` | Google Time Sync |
 | `lan-scan` | LAN subnet ping sweep |
+| `sleep` | Pause execution for N seconds |
+| `comment` | Add comment/annotation to reports (not counted as action) |
 
 Unrecognized keywords fall through to a raw `Runtime.exec()` fallback.
 
@@ -28,8 +30,9 @@ Unrecognized keywords fall through to a raw `Runtime.exec()` fallback.
 JSON config file
    "commands": {
      "ping_google":       "ping -c 5 google.com",
+     "note_sync":         "comment 'sync completed'",
      "dig_example":       "dig example.com",
-     "checkcert_google": "checkcert https://google.com"
+     "checkcert_google":  "checkcert https://google.com"
    }
         │
         ▼
@@ -50,11 +53,13 @@ BulkActionsRepository.executeAllCommands(commands)
         │            "ntp"          → executeNtp()           → NtpRepository.query()
         │            "port-scan"    → executePortScan()      → Socket.connect(port, timeout) × N
         │            "checkcert"    → executeCheckcert()     → HttpsCertRepository.fetchCertificate()
-        │            "device-info" → executeDeviceInfo()    → SystemInfoRepository.getDeviceInfo()
+        │            "device-info"  → executeDeviceInfo()    → SystemInfoRepository.getDeviceInfo()
         │            "tracert"      → executeTracert()       → Runtime.exec("ping -c 1 -t TTL host")
         │            "google-timesync" → executeGoogleTimeSync() → GoogleTimeSyncRepository.fetchGoogleTime()
         │            "lan-scan"     → executeLanScan()       → LanScannerRepository.pingSweep()
-        │           else           → executeRaw()           → Runtime.exec(full string)
+        │            "sleep"        → executeSleep()         → delay() loop
+        │            "comment"      → executeComment()       → BulkCommandComment (unquoted text)
+        │           else            → executeRaw()           → Runtime.exec(full string)
         │
         ▼
 BulkCommandResult   (sealed hierarchy)
@@ -62,7 +67,8 @@ BulkCommandResult   (sealed hierarchy)
    ├── BulkCommandError      — failed with error message
    ├── BulkCommandTimeout    — timed out
    ├── BulkCommandClosed     — manually stopped
-   └── BulkCommandWarning    — succeeded but with a warning (e.g. expired cert)
+   ├── BulkCommandWarning    — succeeded but with a warning (e.g. expired cert)
+   └── BulkCommandComment    — comment annotation (not accounted for as action in summaries)
         │
         ├──→ BulkActionsViewModel.generateOutputContent()   → text report with summary table
         ├──→ BulkActionsViewModel.generateCsvContent()       → CSV export

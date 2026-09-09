@@ -473,15 +473,16 @@ class BulkActionsViewModel(
 
     /** Generates the full output file content including a summary table at the end. */
     internal fun generateOutputContent(results: List<BulkCommandResult>): String {
-        val total = results.size
-        val successCount = results.count { it is BulkCommandSuccess }
-        val errorCount = results.count { it is BulkCommandError }
-        val timeoutCount = results.count { it is BulkCommandTimeout }
-        val closedCount = results.count { it is BulkCommandClosed }
-        val warningCount = results.count { it is BulkCommandWarning }
-        val totalDurationMs = results
+        val actionResults = results.filter { it !is BulkCommandComment }
+        val total = actionResults.size
+        val successCount = actionResults.count { it is BulkCommandSuccess }
+        val errorCount = actionResults.count { it is BulkCommandError }
+        val timeoutCount = actionResults.count { it is BulkCommandTimeout }
+        val closedCount = actionResults.count { it is BulkCommandClosed }
+        val warningCount = actionResults.count { it is BulkCommandWarning }
+        val totalDurationMs = actionResults
                 .filterIsInstance<BulkCommandSuccess>().sumOf { it.durationMs }
-                .plus(results.filterIsInstance<BulkCommandClosed>().sumOf { it.durationMs })
+                .plus(actionResults.filterIsInstance<BulkCommandClosed>().sumOf { it.durationMs })
 
         val lines = mutableListOf<String>()
 
@@ -496,28 +497,42 @@ class BulkActionsViewModel(
         // Individual results
         lines.add("── COMMAND RESULTS ──────────────────────────────────")
         lines.add("")
-        results.forEachIndexed { index, result ->
-            val proxySuffix = if (result.isProxyfied) " ( PROXYFIED )" else ""
-            lines.add("[${index + 1}] ${result.commandName}: ${result.command}$proxySuffix")
+        var actionIndex = 0
+        results.forEach { result ->
             when (result) {
-                is BulkCommandSuccess -> {
-                    lines.add("    Status: SUCCESS (${result.durationMs}ms)")
-                    result.outputLines.forEach { line -> lines.add("     $line") }
+                is BulkCommandComment -> {
+                    if (result.comment.isNotBlank()) {
+                        lines.add("// ${result.commandName}: ${result.comment}")
+                    } else {
+                        lines.add("// ${result.commandName}")
+                    }
                 }
-                is BulkCommandError -> {
-                    lines.add("    Status: ERROR")
-                    lines.add("     ${result.errorMessage}")
-                }
-                is BulkCommandTimeout -> {
-                    lines.add("    Status: TIMEOUT")
-                }
-                is BulkCommandClosed -> {
-                    lines.add("    Status: CLOSED (${result.durationMs}ms)")
-                    result.outputLines.forEach { line -> lines.add("        $line") }
-                }
-                is BulkCommandWarning -> {
-                    lines.add("    Status: WARNING (${result.durationMs}ms)")
-                    result.outputLines.forEach { line -> lines.add("         $line") }
+                else -> {
+                    actionIndex++
+                    val proxySuffix = if (result.isProxyfied) " ( PROXYFIED )" else ""
+                    lines.add("[$actionIndex] ${result.commandName}: ${result.command}$proxySuffix")
+                    when (result) {
+                        is BulkCommandSuccess -> {
+                            lines.add("    Status: SUCCESS (${result.durationMs}ms)")
+                            result.outputLines.forEach { line -> lines.add("     $line") }
+                        }
+                        is BulkCommandError -> {
+                            lines.add("    Status: ERROR")
+                            lines.add("     ${result.errorMessage}")
+                        }
+                        is BulkCommandTimeout -> {
+                            lines.add("    Status: TIMEOUT")
+                        }
+                        is BulkCommandClosed -> {
+                            lines.add("    Status: CLOSED (${result.durationMs}ms)")
+                            result.outputLines.forEach { line -> lines.add("        $line") }
+                        }
+                        is BulkCommandWarning -> {
+                            lines.add("    Status: WARNING (${result.durationMs}ms)")
+                            result.outputLines.forEach { line -> lines.add("         $line") }
+                        }
+                        is BulkCommandComment -> Unit
+                    }
                 }
             }
 
@@ -556,7 +571,7 @@ class BulkActionsViewModel(
     }
 
     /** Generates CSV content for export. */
-    private fun generateCsvContent(results: List<BulkCommandResult>): String {
+    internal fun generateCsvContent(results: List<BulkCommandResult>): String {
         val lines = mutableListOf<String>()
         lines.add("cmdname,command,time,result")
         results.forEach { result ->
@@ -583,7 +598,11 @@ class BulkActionsViewModel(
                     val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
                     val resultText = result.outputLines.joinToString("; ")
                     lines.add("${result.commandName},${result.command},${time},WARNING")
-                  }
+                }
+                is BulkCommandComment -> {
+                    val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                    lines.add("${result.commandName},${result.command},${time},${result.comment}")
+                }
             }
         }
         return lines.joinToString("\n")

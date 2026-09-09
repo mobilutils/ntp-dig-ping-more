@@ -31,6 +31,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloseFullscreen
@@ -728,8 +729,9 @@ private fun ResultsContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val actionCount = uiState.results.count { it !is BulkCommandComment }
             Text(
-                text = "Results (${uiState.results.count { it is BulkCommandSuccess }}/ ${uiState.results.size})",
+                text = "Results (${uiState.results.count { it is BulkCommandSuccess }}/ $actionCount)",
                 style = if (resultsExpanded) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -883,6 +885,8 @@ private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null)
             Triple(Icons.Filled.Warning, stringResource(R.string.bulk_status_closed), MaterialTheme.colorScheme.error)
         is BulkCommandWarning ->
             Triple(Icons.Filled.Warning, stringResource(R.string.bulk_status_warning), MaterialTheme.colorScheme.tertiary)
+        is BulkCommandComment ->
+            Triple(Icons.AutoMirrored.Filled.Comment, stringResource(R.string.bulk_status_comment), MaterialTheme.colorScheme.onSurfaceVariant)
     }
 
     Card(
@@ -911,7 +915,11 @@ private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null)
                     color = statusColor,
                 )
                 Text(
-                    text = stringResource(R.string.bulk_result_command_format, result.command),
+                    text = if (result is BulkCommandComment) {
+                        if (result.comment.isNotBlank()) "// ${result.comment}" else "//"
+                    } else {
+                        stringResource(R.string.bulk_result_command_format, result.command)
+                    },
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace,
                         fontStyle = FontStyle.Italic,
@@ -951,6 +959,7 @@ private fun ResultItem(result: BulkCommandResult, configTimeoutMs: Long? = null)
                     ),
                 )
             } else if (result is BulkCommandTimeout) {
+            } else if (result is BulkCommandComment) {
             } else if (result is BulkCommandClosed) {
                 result.outputLines.forEach { line ->
                     Text(
