@@ -114,23 +114,31 @@ class HistoryStoreParsingTest {
     }
 
     @Test
-    fun `PortScannerHistoryStore parsing - with proxyfied true`() {
+    fun `PortScannerHistoryStore parsing - with legacy 7-field proxyfied string`() {
         val raw = "2024/01/15 10:30:00|192.168.1.1|1|1000|TCP|3|true"
         val entries = parsePortScannerHistory(raw)
 
         assertEquals(1, entries.size)
         assertEquals(3, entries[0].openPortsCount)
-        assertTrue(entries[0].isProxyfied)
+        assertEquals(PortScannerProtocol.TCP, entries[0].protocol)
     }
 
     @Test
-    fun `PortScannerHistoryStore parsing - backward compat without proxyfied`() {
+    fun `PortScannerHistoryStore parsing - standard 6-field entry`() {
+        val raw = "2024/01/15 10:30:00|192.168.1.1|1|1000|TCP|5"
+        val entries = parsePortScannerHistory(raw)
+
+        assertEquals(1, entries.size)
+        assertEquals(5, entries[0].openPortsCount)
+    }
+
+    @Test
+    fun `PortScannerHistoryStore parsing - backward compat 5-field entry`() {
         val raw = "2024/01/15 10:30:00|192.168.1.1|1|1000|TCP"
         val entries = parsePortScannerHistory(raw)
 
         assertEquals(1, entries.size)
         assertEquals(0, entries[0].openPortsCount)
-        assertFalse(entries[0].isProxyfied)
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -381,12 +389,10 @@ class HistoryStoreParsingTest {
                         else -> PortScannerProtocol.TCP
                     }
                     val openPortsCount = if (parts.size >= 6) parts[5].toIntOrNull() ?: 0 else 0
-                    val isProxyfied = if (parts.size >= 7) parts[6].toBooleanStrictOrNull() ?: false else false
                     PortScannerHistoryEntry(
                         timestamp = parts[0], host = parts[1],
                         startPort = parts[2], endPort = parts[3], protocol = protocol,
                         openPortsCount = openPortsCount,
-                        isProxyfied = isProxyfied,
                     )
                 } else null
             }

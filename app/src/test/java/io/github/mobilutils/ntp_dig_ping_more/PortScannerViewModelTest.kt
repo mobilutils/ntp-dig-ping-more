@@ -23,9 +23,8 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortScannerViewModelTest {
 
-    private fun fakeSettingsRepository(proxyEnabled: Boolean = false): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
+    private fun fakeSettingsRepository(): SettingsRepository = mockk<SettingsRepository>(relaxed = true).also {
         coEvery { it.timeoutSecondsFlow } returns flowOf(5)
-        coEvery { it.proxyConfigFlow } returns flowOf(io.github.mobilutils.ntp_dig_ping_more.settings.ProxyConfig(enabled = proxyEnabled))
     }
 
     private fun createViewModel(testDispatcher: TestDispatcher): PortScannerViewModel {
@@ -241,35 +240,5 @@ class PortScannerViewModelTest {
         // History should not have grown if deduplication works
         // Or might have grown by 1 if dedup doesn't apply to identical scans
         assertTrue(state.history.size <= historySizeAfterFirst + 1)
-    }
-
-    @Test
-    fun `startScan with proxy enabled sets lastScanProxyfied and passes to history`() = runTest {
-        val testDispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(testDispatcher)
-        val historyStore = mockk<PortScannerHistoryStore>(relaxed = true)
-        coEvery { historyStore.historyFlow } returns flowOf(emptyList())
-
-        val capturedEntries = mutableListOf<List<PortScannerHistoryEntry>>()
-        coEvery { historyStore.save(capture(capturedEntries)) } coAnswers { }
-
-        val viewModel = PortScannerViewModel(
-            historyStore = historyStore,
-            settingsRepository = fakeSettingsRepository(proxyEnabled = true),
-            scanDispatcher = testDispatcher,
-        )
-        viewModel.onHostChange("127.0.0.1")
-        viewModel.onStartPortChange("80")
-        viewModel.onEndPortChange("80")
-
-        viewModel.startScan()
-        testScheduler.runCurrent()
-        assertTrue(viewModel.uiState.value.lastScanProxyfied)
-
-        viewModel.stopScan()
-        advanceUntilIdle()
-
-        val saved = capturedEntries.firstOrNull()?.firstOrNull()
-        assertTrue(saved?.isProxyfied == true)
     }
 }

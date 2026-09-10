@@ -231,7 +231,6 @@ fun AppRoot(
                 },
                 actions = {
                     if (proxyConfig.enabled && currentScreen in listOf(
-                            AppScreen.PortScanner,
                             AppScreen.GoogleTimeSync,
                             AppScreen.HttpsCert,
                         )

@@ -724,14 +724,13 @@ class BulkActionsRepository(
                         add("  Open ports: ${openPorts.joinToString(", ")}")
                      }
                  }
-                val isProxyfied = bulkProxyResolver != null
                 if (openPorts.isEmpty()) {
-                    BulkCommandClosed(name, cmd, lines, duration, isProxyfied = isProxyfied)
-                 } else {
-                    BulkCommandSuccess(name, cmd, lines, duration, isProxyfied = isProxyfied)
-                 }
+                    BulkCommandClosed(name, cmd, lines, duration)
+                } else {
+                    BulkCommandSuccess(name, cmd, lines, duration)
+                }
             } catch (e: Exception) {
-                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN, isProxyfied = bulkProxyResolver != null)
+                BulkCommandError(name, cmd, e.message ?: ERROR_UNKNOWN)
             }
         }
     }

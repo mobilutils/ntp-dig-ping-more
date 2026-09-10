@@ -42,7 +42,6 @@ data class PortScannerUiState(
     val progress: Float = 0f,
     val discoveredPorts: List<Int> = emptyList(),
     val history: List<PortScannerHistoryEntry> = emptyList(),
-    val lastScanProxyfied: Boolean = false,
 )
 
 class PortScannerViewModel(
@@ -110,10 +109,6 @@ class PortScannerViewModel(
         )
 
         scanJob = viewModelScope.launch(scanDispatcher) {
-            val isProxyfied = runCatching { settingsRepository.proxyConfigFlow.first().enabled }.getOrDefault(false)
-            withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(lastScanProxyfied = isProxyfied)
-            }
             val baseTimeoutMs = settingsRepository.timeoutSecondsFlow.first() * 1000L
             val portCount = endPort - startPort + 1
             // Port scanning takes longer than ping/dig/ntp — calculate a minimum timeout
@@ -263,7 +258,6 @@ class PortScannerViewModel(
             endPort = endPort,
             protocol = protocol,
             openPortsCount = _uiState.value.discoveredPorts.size,
-            isProxyfied = _uiState.value.lastScanProxyfied,
         )
         val updatedHistory = (listOf(newEntry) + _uiState.value.history
             .filter { it.host != host || it.protocol != protocol || it.startPort != startPort || it.endPort != endPort })
