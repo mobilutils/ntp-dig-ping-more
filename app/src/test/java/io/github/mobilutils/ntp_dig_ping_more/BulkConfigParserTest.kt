@@ -85,14 +85,14 @@ class BulkConfigParserTest {
         val runContent = runMatch.groupValues[1]
         val commands = mutableMapOf<String, String>()
 
-        val commandPattern = Regex("""\"([^\"]+)\"\s*:\s*\"([^\"]*)\"""")
+        val commandPattern = Regex("""\"([^\"]+)\"\s*:\s*\"((?:\\\"|[^\"])*)\"""")
         commandPattern.findAll(runContent).forEach { match ->
             val key = match.groupValues[1]
-            val value = match.groupValues[2].trim()
+            val value = match.groupValues[2].replace("\\\"", "\"").trim()
             if (value.isNotBlank()) {
                 commands[key] = value
-              }
-          }
+            }
+        }
 
         return BulkConfig(outputFile, commands, timeoutMs, urlProxyPac = urlProxyPac, fileProxyPac = fileProxyPac, logProxy = logProxy)
        }
@@ -706,6 +706,27 @@ class BulkConfigParserTest {
         val config = parseBulkConfig(json)
         assertEquals("/sdcard/Downloads/proxy.pac", config.fileProxyPac)
        }
+
+    @Test
+    fun `parseConfigWithCommentCommands_parsedCorrectly`() {
+        val json = """{
+            "output-file": "~/blkacts_res-output.txt",
+            "timeout": "421",
+            "run": {
+                "COMMAND1": "google-timesync",
+                "COMMAND2": "comment 'after google timesync'",
+                "COMMAND3": "comment \"below will show device informations",
+                "COMMAND4": "device-info"
+            }
+        }"""
+
+        val config = parseBulkConfig(json)
+        assertEquals(4, config.commands.size)
+        assertEquals("google-timesync", config.commands["COMMAND1"])
+        assertEquals("comment 'after google timesync'", config.commands["COMMAND2"])
+        assertEquals("comment \"below will show device informations", config.commands["COMMAND3"])
+        assertEquals("device-info", config.commands["COMMAND4"])
+    }
 
        // ────────────────────────────────────────────────────────────────
        // Helper: assertThrows for JUnit 4 compatibility

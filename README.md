@@ -37,6 +37,8 @@ More to Github pages : [Github Pages](https://mobilutils.github.io/ntp-dig-ping-
 | `tracert` | `tracert host [-t H]` | TTL-probing traceroute (-t H = max hops, also sets coroutine timeout) |
 | `google-timesync` | `google-timesync` | Google time sync (no -t) |
 | `lan-scan` | `lan-scan` | LAN subnet device discovery (no -t) |
+| `sleep` | `sleep N` | Pause execution for N seconds (1–3600s) |
+| `comment` | `comment 'text'` | Report annotation / comment (not counted as an action) |
 
 **Timeout precedence:** per-command `-t` > config-level `"timeout"` > default 30s.
 

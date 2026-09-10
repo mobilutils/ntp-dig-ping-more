@@ -1,5 +1,7 @@
 package io.github.mobilutils.ntp_dig_ping_more
 
+import android.content.Context
+import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -10,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -223,4 +226,106 @@ class BulkActionsRepositoryTest {
             durationMs = durationMs,
            )
        }
+
+    // ────────────────────────────────────────────────────────────────
+    // Comment pseudo-command tests
+    // ────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `stripCommentQuotes_matchingSingleQuotes_removesQuotes`() {
+        assertEquals("after google timesync", BulkActionsRepository.stripCommentQuotes("'after google timesync'"))
+    }
+
+    @Test
+    fun `stripCommentQuotes_matchingDoubleQuotes_removesQuotes`() {
+        assertEquals("below will show device informations", BulkActionsRepository.stripCommentQuotes("\"below will show device informations\""))
+    }
+
+    @Test
+    fun `stripCommentQuotes_unclosedDoubleQuote_removesLeadingQuote`() {
+        assertEquals("below will show device informations", BulkActionsRepository.stripCommentQuotes("\"below will show device informations"))
+    }
+
+    @Test
+    fun `stripCommentQuotes_unclosedSingleQuote_removesLeadingQuote`() {
+        assertEquals("below will show device informations", BulkActionsRepository.stripCommentQuotes("'below will show device informations"))
+    }
+
+    @Test
+    fun `stripCommentQuotes_plainText_returnsSameText`() {
+        assertEquals("hello world", BulkActionsRepository.stripCommentQuotes("hello world"))
+    }
+
+    @Test
+    fun `stripCommentQuotes_emptyAndBlank_returnsEmpty`() {
+        assertEquals("", BulkActionsRepository.stripCommentQuotes(""))
+        assertEquals("", BulkActionsRepository.stripCommentQuotes("   "))
+        assertEquals("", BulkActionsRepository.stripCommentQuotes("\"\""))
+        assertEquals("", BulkActionsRepository.stripCommentQuotes("''"))
+        assertEquals("", BulkActionsRepository.stripCommentQuotes("\""))
+        assertEquals("", BulkActionsRepository.stripCommentQuotes("'"))
+    }
+
+    @Test
+    fun `executeComment_withSingleQuotes_returnsBulkCommandComment`() = runTest {
+        val mockContext = mockk<Context>(relaxed = true)
+        val repo = BulkActionsRepository(mockContext)
+
+        val result = repo.executeSingleCommand("COMMAND2", "comment 'after google timesync'")
+
+        assertTrue(result is BulkCommandComment)
+        val comment = result as BulkCommandComment
+        assertEquals("COMMAND2", comment.commandName)
+        assertEquals("comment 'after google timesync'", comment.command)
+        assertEquals("after google timesync", comment.comment)
+        assertFalse(comment.isProxyfied)
+    }
+
+    @Test
+    fun `executeComment_withUnmatchedOpeningQuote_returnsBulkCommandComment`() = runTest {
+        val mockContext = mockk<Context>(relaxed = true)
+        val repo = BulkActionsRepository(mockContext)
+
+        val result = repo.executeSingleCommand("COMMAND3", "comment \"below will show device informations")
+
+        assertTrue(result is BulkCommandComment)
+        val comment = result as BulkCommandComment
+        assertEquals("COMMAND3", comment.commandName)
+        assertEquals("below will show device informations", comment.comment)
+    }
+
+    @Test
+    fun `executeComment_caseInsensitivePrefix_parsesCorrectly`() = runTest {
+        val mockContext = mockk<Context>(relaxed = true)
+        val repo = BulkActionsRepository(mockContext)
+
+        val resultUpper = repo.executeSingleCommand("C1", "COMMENT 'uppercase'")
+        val resultMixed = repo.executeSingleCommand("C2", "Comment \"mixed\"")
+
+        assertEquals("uppercase", (resultUpper as BulkCommandComment).comment)
+        assertEquals("mixed", (resultMixed as BulkCommandComment).comment)
+    }
+
+    @Test
+    fun `executeComment_emptyComment_returnsEmptyCommentText`() = runTest {
+        val mockContext = mockk<Context>(relaxed = true)
+        val repo = BulkActionsRepository(mockContext)
+
+        val result = repo.executeSingleCommand("C3", "comment")
+
+        assertTrue(result is BulkCommandComment)
+        assertEquals("", (result as BulkCommandComment).comment)
+    }
+
+    @Test
+    fun `executeComment_withExtraWhitespace_parsesCorrectly`() = runTest {
+        val mockContext = mockk<Context>(relaxed = true)
+        val repo = BulkActionsRepository(mockContext)
+
+        val result = repo.executeSingleCommand("C4", "   comment    'spaces in comment'   ")
+
+        assertTrue(result is BulkCommandComment)
+        assertEquals("spaces in comment", (result as BulkCommandComment).comment)
+    }
 }
+

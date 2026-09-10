@@ -285,6 +285,7 @@
     <string name="bulk_status_timeout">TIMEOUT</string>
     <string name="bulk_status_closed">CLOSED</string>
     <string name="bulk_status_warning">WARNING</string>
+    <string name="bulk_status_comment">COMMENT</string>
     <string name="bulk_btn_clear">Clear</string>
     <string name="bulk_results_header">Results (%1$d/%2$d)</string>
     <string name="bulk_cmd_timed_out">Command timed out after %1$s</string>

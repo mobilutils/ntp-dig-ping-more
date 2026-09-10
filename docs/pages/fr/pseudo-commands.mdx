@@ -19,6 +19,8 @@ Une **pseudo-commande** est un mot-clé intégré reconnu par la fonctionnalité
 | `tracert` | Traceroute (sondage TTL) |
 | `google-timesync` | Google Time Sync |
 | `lan-scan` | Balayage de sous-réseau LAN |
+| `sleep` | Pause de l'exécution pendant N secondes |
+| `comment` | Ajout de commentaire dans les rapports (non comptabilisé comme action) |
 
 Les mots-clés non reconnus passent par un fallback `Runtime.exec()` brut.
 
@@ -28,8 +30,9 @@ Les mots-clés non reconnus passent par un fallback `Runtime.exec()` brut.
 Fichier de config JSON
     "commands": {
       "ping_google":        "ping -c 5 google.com",
+      "note_sync":          "comment 'synchronisation terminée'",
       "dig_example":        "dig example.com",
-      "checkcert_google": "checkcert https://google.com"
+      "checkcert_google":   "checkcert https://google.com"
     }
          │
          ▼
@@ -50,11 +53,13 @@ BulkActionsRepository.executeAllCommands(commands)
          │             "ntp"           → executeNtp()            → NtpRepository.query()
          │             "port-scan"     → executePortScan()       → Socket.connect(port, timeout) × N
          │             "checkcert"     → executeCheckcert()      → HttpsCertRepository.fetchCertificate()
-         │             "device-info"  → executeDeviceInfo()     → SystemInfoRepository.getDeviceInfo()
+         │             "device-info"   → executeDeviceInfo()     → SystemInfoRepository.getDeviceInfo()
          │             "tracert"       → executeTracert()        → Runtime.exec("ping -c 1 -t TTL host")
          │             "google-timesync" → executeGoogleTimeSync() → GoogleTimeSyncRepository.fetchGoogleTime()
          │             "lan-scan"      → executeLanScan()        → LanScannerRepository.pingSweep()
-         │           else            → executeRaw()            → Runtime.exec(full string)
+         │             "sleep"         → executeSleep()          → boucle delay()
+         │             "comment"       → executeComment()        → BulkCommandComment (texte sans guillemets)
+         │           else              → executeRaw()            → Runtime.exec(full string)
          │
          ▼
 BulkCommandResult    (hiérarchie scellée)
@@ -62,7 +67,8 @@ BulkCommandResult    (hiérarchie scellée)
     ├── BulkCommandError       — échoué avec message d'erreur
     ├── BulkCommandTimeout     — délai d'attente dépassé
     ├── BulkCommandClosed      — arrêté manuellement
-    └── BulkCommandWarning     — réussi mais avec un avertissement (ex: cert expiré)
+    ├── BulkCommandWarning     — réussi mais avec un avertissement (ex: cert expiré)
+    └── BulkCommandComment     — commentaire/annotation (non comptabilisé comme action)
          │
          ├──→ BulkActionsViewModel.generateOutputContent()    → rapport texte avec tableau récapitulatif
          ├──→ BulkActionsViewModel.generateCsvContent()        → export CSV

@@ -1,0 +1,10 @@
+{
+    "output-file": "~/blkacts_res-output.txt",
+    "timeout": "421",
+    "run": { 
+        "COMMAND1": "google-timesync",
+        "COMMAND2": "comment 'after google timesync'",
+        "COMMAND3": "comment \"below will show device informations",
+        "COMMAND4": "device-info"
+    }
+}

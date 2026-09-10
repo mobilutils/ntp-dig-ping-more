@@ -505,4 +505,103 @@ class BulkActionsViewModelTest {
         assertTrue(output.contains("[2] CHECKCERT: checkcert google.com"))
         assertFalse(output.contains("[2] CHECKCERT: checkcert google.com ( PROXYFIED )"))
     }
+
+    @Test
+    fun `generateOutputContent_withComments_doesNotAccountCommentsInActionCountsAndFormatsComments`() {
+        val resultsWithoutComments = listOf(
+            BulkCommandSuccess(
+                commandName = "COMMAND1",
+                command = "google-timesync",
+                outputLines = listOf("Status: SUCCESS (20ms)"),
+                durationMs = 20L,
+            ),
+            BulkCommandSuccess(
+                commandName = "COMMAND4",
+                command = "device-info",
+                outputLines = listOf("Status: SUCCESS (10ms)"),
+                durationMs = 10L,
+            ),
+        )
+
+        val resultsWithComments = listOf(
+            BulkCommandSuccess(
+                commandName = "COMMAND1",
+                command = "google-timesync",
+                outputLines = listOf("Status: SUCCESS (20ms)"),
+                durationMs = 20L,
+            ),
+            BulkCommandComment(
+                commandName = "COMMAND2",
+                command = "comment 'after google timesync'",
+                comment = "after google timesync",
+            ),
+            BulkCommandComment(
+                commandName = "COMMAND3",
+                command = "comment \"below will show device informations",
+                comment = "below will show device informations",
+            ),
+            BulkCommandSuccess(
+                commandName = "COMMAND4",
+                command = "device-info",
+                outputLines = listOf("Status: SUCCESS (10ms)"),
+                durationMs = 10L,
+            ),
+        )
+
+        val outputWithout = viewModel.generateOutputContent(resultsWithoutComments)
+        val outputWith = viewModel.generateOutputContent(resultsWithComments)
+
+        // Action numbering: COMMAND4 is [2] in both cases
+        assertTrue(outputWith.contains("[1] COMMAND1: google-timesync"))
+        assertTrue(outputWith.contains("// COMMAND2: after google timesync"))
+        assertTrue(outputWith.contains("// COMMAND3: below will show device informations"))
+        assertTrue(outputWith.contains("[2] COMMAND4: device-info"))
+
+        // Total commands count in summary table must be identical (2 commands)
+        val expectedTotalRow = "│ Total commands          │      2 │  100.0% │"
+        val expectedSuccessRow = "│ ✓ SUCCESS               │      2 │  100.0% │"
+        assertTrue(outputWithout.contains(expectedTotalRow))
+        assertTrue(outputWith.contains(expectedTotalRow))
+        assertTrue(outputWithout.contains(expectedSuccessRow))
+        assertTrue(outputWith.contains(expectedSuccessRow))
+
+        // Progress bar is 2/2 in both cases
+        assertTrue(outputWithout.contains("Progress: [██] 2/2"))
+        assertTrue(outputWith.contains("Progress: [██] 2/2"))
+    }
+
+    @Test
+    fun `generateOutputContent_emptyComment_formatsOnlyCommandName`() {
+        val results = listOf(
+            BulkCommandComment(
+                commandName = "NOTE",
+                command = "comment",
+                comment = "",
+            ),
+        )
+        val output = viewModel.generateOutputContent(results)
+        assertTrue(output.contains("// NOTE"))
+    }
+
+    @Test
+    fun `generateCsvContent_withComments_outputsCommentRow`() {
+        val results = listOf(
+            BulkCommandSuccess(
+                commandName = "CMD1",
+                command = "ping 1.1.1.1",
+                outputLines = listOf("SUCCESS"),
+                durationMs = 5L,
+            ),
+            BulkCommandComment(
+                commandName = "NOTE1",
+                command = "comment 'hello world'",
+                comment = "hello world",
+            ),
+        )
+
+        val csv = viewModel.generateCsvContent(results)
+        val lines = csv.lines()
+        assertEquals("cmdname,command,time,result", lines[0])
+        assertTrue(lines.any { it.startsWith("NOTE1,comment 'hello world',") && it.endsWith(",hello world") })
+    }
 }

@@ -8,7 +8,7 @@ How the Bulk Actions feature works: JSON config parsing, sequential command disp
 
 ## Overview
 
-Bulk Actions is the app's **batch execution engine**. It loads a JSON configuration file that describes a sequence of commands, each mapped to one of the app's 9 built-in tools (ping, dig, ntp, port-scan, checkcert, device-info, tracert, google-timesync, lan-scan) plus a generic `sleep` command and a catch-all `raw` executor. Commands run **sequentially**, each with its own timeout, and results are streamed live to the UI.
+Bulk Actions is the app's **batch execution engine**. It loads a JSON configuration file that describes a sequence of commands, each mapped to one of the app's 9 built-in tools (ping, dig, ntp, port-scan, checkcert, device-info, tracert, google-timesync, lan-scan) plus generic `sleep` and `comment` commands and a catch-all `raw` executor. Commands run **sequentially**, each with its own timeout, and results are streamed live to the UI.
 
 You can go to the dedicated screen ...More/Bulk Actions and load a JSON configuration of you choice.
 
@@ -16,7 +16,7 @@ The feature is also designed for **headless automation** via ADB intents — a c
 
 The feature supports:
 
-- **10 command types** — `ping`, `dig`, `ntp`, `port-scan`, `checkcert`, `device-info`, `tracert`, `google-timesync`, `lan-scan`, `sleep` (plus raw shell execution as a catch-all)
+- **11 command types** — `ping`, `dig`, `ntp`, `port-scan`, `checkcert`, `device-info`, `tracert`, `google-timesync`, `lan-scan`, `sleep`, `comment` (plus raw shell execution as a catch-all)
 - **Per-command timeouts** — `-t N` in the command string overrides the config-level timeout
 - **Config-level timeout** — `timeout` in the JSON root (seconds)
 - **Proxy routing** — optional PAC URL or file path for `checkcert` and `google-timesync` commands
@@ -274,12 +274,11 @@ suspend fun executeSingleCommand(name: String, cmd: String, timeoutMs: Long? = n
         prefix == "google-timesync"   -> executeGoogleTimeSync(name, trimmed, timeoutMs)
         prefix == "lan-scan"          -> executeLanScan(name, trimmed, timeoutMs)
         prefix == "sleep"             -> executeSleep(name, trimmed, timeoutMs)
+        prefix == "comment"           -> executeComment(name, trimmed)
         else                          -> executeRaw(name, trimmed, timeoutMs)
     }
 }
 ```
-
-The `when` block matches the **first word** of the command (lowercased) to one of 10 executors. The 11th branch (`else`) is the **raw executor** — it runs the command as a shell command via `Runtime.exec()`.
 
 ### Sequential execution
 
@@ -699,6 +698,25 @@ Key behaviors:
 2. **Clamping** — values > 3600 are clamped to 3600 (1 hour max)
 3. **1-second granularity** — delays in 1-second increments with `ensureActive()` check each iteration (allows cancellation mid-sleep)
 4. **Three exception types** — `TimeoutCancellationException` → `BulkCommandTimeout`, `CancellationException` → `BulkCommandClosed`, other `Exception` → `BulkCommandError`
+
+#### `comment` — report annotations and comments
+
+```kotlin
+private fun executeComment(name: String, cmd: String): BulkCommandResult {
+    val commentRaw = cmd.replaceFirst(Regex("""(?i)^\s*comment\b\s*"""), "")
+    val commentText = stripCommentQuotes(commentRaw)
+    return BulkCommandComment(
+        commandName = name,
+        command = cmd,
+        comment = commentText,
+    )
+}
+```
+
+Key behaviors:
+1. **Report annotations** — Comments appear in the bulk action text report as `// <COMMAND_NAME>: <comment_text>`.
+2. **Quote stripping** — Single quotes (`'...'`), double quotes (`"..."`), or unclosed opening quotes (`"text`, `'text`) are stripped cleanly.
+3. **Action exclusion** — Comments are **not accounted for as actions** in the report summary table (`Total commands`, success percentage, progress bar) or action numbering `[1]`, `[2]`.
 
 #### `raw` — generic shell execution
 
