@@ -22,7 +22,6 @@ data class PortScannerHistoryEntry(
     val endPort: String,
     val protocol: PortScannerProtocol,
     val openPortsCount: Int = 0,
-    val isProxyfied: Boolean = false,
 )
 
 class PortScannerHistoryStore(private val context: Context) {
@@ -40,7 +39,7 @@ class PortScannerHistoryStore(private val context: Context) {
     suspend fun save(history: List<PortScannerHistoryEntry>) {
         context.portScannerHistoryDataStore.edit { prefs ->
             prefs[KEY] = history.take(MAX_ENTRIES).joinToString(ENTRY_SEP) { entry ->
-                "${entry.timestamp}$FIELD_SEP${entry.host}$FIELD_SEP${entry.startPort}$FIELD_SEP${entry.endPort}$FIELD_SEP${entry.protocol.name}$FIELD_SEP${entry.openPortsCount}$FIELD_SEP${entry.isProxyfied}"
+                "${entry.timestamp}$FIELD_SEP${entry.host}$FIELD_SEP${entry.startPort}$FIELD_SEP${entry.endPort}$FIELD_SEP${entry.protocol.name}$FIELD_SEP${entry.openPortsCount}"
             }
         }
     }
@@ -56,7 +55,6 @@ class PortScannerHistoryStore(private val context: Context) {
                         else -> PortScannerProtocol.TCP
                     }
                     val openPortsCount = if (parts.size >= 6) parts[5].toIntOrNull() ?: 0 else 0
-                    val isProxyfied = if (parts.size >= 7) parts[6].toBooleanStrictOrNull() ?: false else false
                     PortScannerHistoryEntry(
                         timestamp = parts[0],
                         host = parts[1],
@@ -64,7 +62,6 @@ class PortScannerHistoryStore(private val context: Context) {
                         endPort = parts[3],
                         openPortsCount = openPortsCount,
                         protocol = protocol,
-                        isProxyfied = isProxyfied,
                     )
                 } else null
             }
